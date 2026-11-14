@@ -1,4 +1,4 @@
-# Rust (desde F1; hoy no existe Cargo.toml)
+# Rust (desde F1; Cargo.lock sí se versiona)
 /target/
 **/target/
 *.rs.bk
