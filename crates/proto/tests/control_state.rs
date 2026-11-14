@@ -649,7 +649,7 @@ fn conflict_reports_current_revision_and_applies_nothing() {
 }
 
 #[test]
-fn retry_of_conflict_after_reading_revision_succeeds_then_replays() {
+fn retry_of_conflict_after_reading_revision_uses_new_request_id() {
     let mut session = session();
     let _ = send(
         &mut session,
@@ -662,19 +662,135 @@ fn retry_of_conflict_after_reading_revision_succeeds_then_replays() {
         NOW + 1,
     );
     assert_eq!(error_code(&conflict), ErrorCode::Conflict);
-    let retry = send(
+    // Reintentar con el mismo id y otra revisión esperada cambia la identidad
+    // canónica de la operación: request_id_reuse, nunca una aplicación.
+    let reused = send(
         &mut session,
         &set_json("c-2", 1, "audio.gain_db", "4.0"),
         NOW + 2,
     );
-    assert!(expect_ack(&retry).applied);
-    assert_eq!(session.revision(), 2);
+    assert_eq!(error_code(&reused), ErrorCode::RequestIdReuse);
+    assert!(!expect_error(&reused).code.retryable());
+    assert_eq!(session.revision(), 1);
+    // El conflicto original queda cacheado y se reproduce tal cual, sin
+    // reevaluarse contra la revisión vigente.
     let replay = send(
         &mut session,
-        &set_json("c-2", 1, "audio.gain_db", "4.0"),
+        &set_json("c-2", 0, "audio.gain_db", "4.0"),
         NOW + 3,
     );
-    assert_eq!(replay.response, retry.response);
+    assert_eq!(replay.response, conflict.response);
+    assert!(replay.events.is_empty());
+    assert_eq!(session.revision(), 1);
+    // El reintento correcto usa un request_id nuevo.
+    let retry = send(
+        &mut session,
+        &set_json("c-3", 1, "audio.gain_db", "4.0"),
+        NOW + 4,
+    );
+    assert!(expect_ack(&retry).applied);
+    assert_eq!(session.revision(), 2);
+    assert_eq!(retry.events.len(), 1);
+    let replay_retry = send(
+        &mut session,
+        &set_json("c-3", 1, "audio.gain_db", "4.0"),
+        NOW + 5,
+    );
+    assert_eq!(replay_retry.response, retry.response);
+    assert!(replay_retry.events.is_empty());
+    assert_eq!(session.revision(), 2);
+}
+
+#[test]
+fn cached_conflict_replays_original_after_global_revision_advances() {
+    let mut session = session();
+    let _ = send(
+        &mut session,
+        &set_json("c-1", 0, "audio.gain_db", "3.0"),
+        NOW,
+    );
+    let conflict = send(
+        &mut session,
+        &set_json("c-2", 0, "audio.mute", "true"),
+        NOW + 1,
+    );
+    assert_eq!(error_code(&conflict), ErrorCode::Conflict);
+    assert_eq!(expect_error(&conflict).current_revision, Some(1));
+    let applied = send(
+        &mut session,
+        &set_json("c-3", 1, "audio.mute", "true"),
+        NOW + 2,
+    );
+    assert!(expect_ack(&applied).applied);
+    assert_eq!(session.revision(), 2);
+    // La revisión avanzó, pero el reintento idéntico devuelve el conflicto
+    // original guardado (current_revision de entonces), no uno nuevo.
+    let replay = send(
+        &mut session,
+        &set_json("c-2", 0, "audio.mute", "true"),
+        NOW + 3,
+    );
+    assert_eq!(replay.response, conflict.response);
+    assert_eq!(expect_error(&replay).current_revision, Some(1));
+    assert!(replay.events.is_empty());
+    assert_eq!(session.revision(), 2);
+    assert_eq!(
+        session.snapshot().get(&key("audio.mute")),
+        Some(&ConfigValue::Bool(true))
+    );
+}
+
+#[test]
+fn same_request_id_with_other_expected_revision_is_request_id_reuse() {
+    let mut session = session();
+    let first = send(
+        &mut session,
+        &set_json("c-1", 0, "audio.gain_db", "3.0"),
+        NOW,
+    );
+    assert!(expect_ack(&first).applied);
+    let reused = send(
+        &mut session,
+        &set_json("c-1", 1, "audio.gain_db", "3.0"),
+        NOW + 1,
+    );
+    assert_eq!(error_code(&reused), ErrorCode::RequestIdReuse);
+    assert_eq!(session.revision(), 1);
+    assert_eq!(
+        session.snapshot().get(&key("audio.gain_db")),
+        Some(&ConfigValue::Number(3.0))
+    );
+    let replay = send(
+        &mut session,
+        &set_json("c-1", 0, "audio.gain_db", "3.0"),
+        NOW + 2,
+    );
+    assert_eq!(replay.response, first.response);
+    assert_eq!(session.revision(), 1);
+}
+
+#[test]
+fn equivalent_numeric_representation_is_the_same_operation() {
+    let mut session = session();
+    let first = send(&mut session, &set_json("n-1", 0, "audio.gain_db", "3"), NOW);
+    assert!(expect_ack(&first).applied);
+    // JSON no distingue 3 de 3.0: misma operación canónica, replay sin aplicar.
+    let replay = send(
+        &mut session,
+        &set_json("n-1", 0, "audio.gain_db", "3.0"),
+        NOW + 1,
+    );
+    assert_eq!(replay.response, first.response);
+    assert!(replay.events.is_empty());
+    assert_eq!(session.revision(), 1);
+    // Un número distinto con el mismo id no colisiona con el anterior.
+    let reused = send(
+        &mut session,
+        &set_json("n-1", 0, "audio.gain_db", "3.5"),
+        NOW + 2,
+    );
+    assert_eq!(error_code(&reused), ErrorCode::RequestIdReuse);
+    assert_eq!(session.revision(), 1);
 }
 
 #[test]

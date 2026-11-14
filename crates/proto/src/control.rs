@@ -898,10 +898,21 @@ impl CanonicalValue {
         match value {
             ConfigValue::Bool(value) => CanonicalValue::Bool(*value),
             ConfigValue::Integer(value) => CanonicalValue::Integer(*value),
-            ConfigValue::Number(value) => {
-                CanonicalValue::Number(if *value == 0.0 { 0.0 } else { *value })
-            }
+            ConfigValue::Number(value) => CanonicalValue::from_number(*value),
             ConfigValue::String(value) => CanonicalValue::String(value.clone()),
+        }
+    }
+
+    /// JSON no distingue `3` de `3.0` y `validate_value` acepta ambas formas
+    /// para claves enteras y numéricas: la identidad canónica usa la misma
+    /// representación para no reportar `request_id_reuse` en un replay
+    /// equivalente. Los valores no integrales siguen siendo `Number`, así que
+    /// operaciones numéricamente distintas no colisionan.
+    fn from_number(value: f64) -> Self {
+        if value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
+            CanonicalValue::Integer(value as i64)
+        } else {
+            CanonicalValue::Number(value)
         }
     }
 }
@@ -912,6 +923,7 @@ enum CanonicalOpKey {
         key: Option<ConfigKey>,
     },
     Set {
+        expected_revision: u64,
         key: ConfigKey,
         value: CanonicalValue,
     },
@@ -921,7 +933,12 @@ impl CanonicalOp {
     fn key(&self) -> CanonicalOpKey {
         match self {
             CanonicalOp::Get { key } => CanonicalOpKey::Get { key: key.clone() },
-            CanonicalOp::Set { key, value, .. } => CanonicalOpKey::Set {
+            CanonicalOp::Set {
+                expected_revision,
+                key,
+                value,
+            } => CanonicalOpKey::Set {
+                expected_revision: *expected_revision,
                 key: key.clone(),
                 value: CanonicalValue::from(value),
             },
@@ -1058,6 +1075,9 @@ impl ControlSession {
     pub fn handle_frame(&mut self, frame: &[u8], now_ms: u64) -> Outcome {
         match crate::wire::decode_message(frame) {
             Ok(message) => self.handle(&message, now_ms),
+            // Los errores de forma no se cachean: el frame no produjo una
+            // operación tipada, así que no existe identidad canónica ni un
+            // `request_id` confiable que registrar. No se finge una.
             Err(error) => Outcome {
                 response: error.to_error_message(),
                 events: Vec::new(),
@@ -1181,8 +1201,12 @@ impl ControlSession {
                         "conflict response failed",
                     )
                 });
-            // Un conflicto es reintentable y depende de la revisión vigente, no
-            // del payload: no se cachea para no bloquear el reintento corregido.
+            // Un conflicto es una respuesta de operación válida y forma parte
+            // de la identidad `request_id` + operación canónica (que incluye
+            // `expected_revision`): se cachea para que el reintento idéntico
+            // reproduzca el mismo error sin reevaluarse. El reintento
+            // corregido debe llevar un `request_id` nuevo.
+            self.cache.store(&set.request_id, &op, &conflict, now_ms);
             return Outcome::reply(conflict);
         }
         let spec = match lookup_key(set.key.as_str()) {
