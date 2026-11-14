@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">the reference app</string>
+    <string name="placeholder_title">Base Android de the reference app</string>
+    <string name="placeholder_body">Esta compilación sólo muestra la pantalla inicial. Todavía no captura audio ni se conecta a ningún equipo.</string>
+    <string name="placeholder_note">La captura y el transporte se incorporan en tareas posteriores.</string>
+</resources>
