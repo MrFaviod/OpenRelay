@@ -1,8 +1,10 @@
-//! Core de audio de arl: frame v1 y perfil PCM16LE mono 48 kHz.
+//! Core de audio de arl: frame v1, perfil PCM16LE mono 48 kHz, jitter buffer
+//! acotado y control de drift con resampling.
 //!
 //! Este crate no hace red, no codifica, no toca dispositivos y no usa
 //! `unsafe`. El frame es el contrato de `contracts/audio-frame-v1.schema.json`:
-//! cabecera big-endian de 28 bytes y payload PCM16LE de 480 bytes.
+//! cabecera big-endian de 28 bytes y payload PCM16LE de 480 bytes. Jitter (T06)
+//! y drift/resample (T07) consumen ese frame sin redefinir el contrato.
 //!
 //! Interfaz para consumidores (jitter/PLC en T06, captura en T14):
 //!
@@ -20,8 +22,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod drift;
 pub mod frame;
+pub mod jitter;
+pub mod metrics;
 pub mod pcm16;
+pub mod resample;
 
 pub use frame::{
     AudioFrame, Flags, FrameError, FrameHeader, BYTES_PER_SAMPLE, CHANNELS, DATAGRAM_LEN,
