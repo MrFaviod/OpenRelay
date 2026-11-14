@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
 publish.workspace = true
 description = "Control y wire de control de arl v1 (sin red, sin codec, sin criptografia)"
 
