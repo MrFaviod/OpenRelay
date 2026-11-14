@@ -5,9 +5,10 @@
 //! El audio no se implementa aquí: sólo se citan sus límites del contrato.
 
 use arl_proto::control::{
-    classify_remote_action, config_keys, AuthorizedPeer, Capabilities, ConfigKey, ConfigPair,
-    ConfigState, ConfigValue, ControlSession, EffectivePolicy, ErrorCode, ErrorMsg, Feature,
-    IdentityPolicy, Outcome, PeerRole, RemoteAction, SessionState, ValueType,
+    classify_remote_action, config_keys, AuthorizedPeer, Capabilities, ConfigKey,
+    ConfigKeyDeclaration, ConfigPair, ConfigScope, ConfigState, ConfigValue, ControlSession,
+    EffectivePolicy, ErrorCode, ErrorMsg, Feature, IdentityPolicy, Limits, Outcome, PeerRole,
+    RemoteAction, SessionState, Snapshot, ValueType,
 };
 use arl_proto::wire::{
     self, AckEffective, AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg, ControlMessage,
@@ -1355,4 +1356,383 @@ fn events_are_closed_and_session_state_detail_is_bounded() {
         ErrorCode::Invalid
     );
     assert_eq!(SessionState::Active.as_str(), "active");
+}
+
+// ------------------------------------------------- encoder/decoder equivalencia --
+//
+// `encode_message` es la puerta pública de emisión: todo lo que devuelve `Ok`
+// tiene que poder decodificarse al mismo mensaje tipado. Estos casos fijan esa
+// equivalencia para las nueve variantes y para los bordes que el decodificador
+// ya rechaza.
+
+fn hello(version: &str, protocol_version: &str) -> ControlMessage {
+    ControlMessage::Hello(HelloMsg {
+        request_id: "h-1".into(),
+        role: PeerRole::Android,
+        version: version.into(),
+        protocol_version: protocol_version.into(),
+    })
+}
+
+fn capabilities_message(revision: u64, capabilities: Capabilities) -> ControlMessage {
+    ControlMessage::Capabilities(CapabilitiesMsg {
+        request_id: "c-1".into(),
+        revision,
+        capabilities,
+    })
+}
+
+fn session_event(revision: u64) -> ControlMessage {
+    ControlMessage::Event(EventMsg {
+        revision,
+        event: EventBody::SessionState {
+            state: SessionState::Active,
+            detail: None,
+        },
+    })
+}
+
+fn pair_event(revision: u64, key_name: &str, value: ConfigValue) -> ControlMessage {
+    ControlMessage::Event(EventMsg {
+        revision,
+        event: EventBody::ConfigChanged {
+            key: key(key_name),
+            requested: value.clone(),
+            effective: value,
+        },
+    })
+}
+
+fn ack_pair(request_id: &str, revision: u64, key_name: &str, value: ConfigValue) -> ControlMessage {
+    ControlMessage::Ack(AckMsg {
+        request_id: request_id.into(),
+        revision,
+        applied: true,
+        requested: None,
+        effective: AckEffective::Pair(ConfigPair {
+            key: key(key_name),
+            value,
+        }),
+    })
+}
+
+#[test]
+fn encode_rejects_hello_with_invalid_version_or_protocol() {
+    let good = hello("0.1.0", "arl.control/v1");
+    assert!(wire::encode_message(&good).is_ok());
+    for bad in ["", &"a".repeat(65), "0.1 beta", "ñ-1"] {
+        assert!(
+            wire::encode_message(&hello(bad, "arl.control/v1")).is_err(),
+            "version {bad:?}"
+        );
+    }
+    let other_major = wire::encode_message(&hello("0.1.0", "arl.control/v2")).unwrap_err();
+    assert_eq!(other_major.kind(), wire::WireErrorKind::UnsupportedVersion);
+    assert_eq!(other_major.request_id(), Some("h-1"));
+}
+
+#[test]
+fn encode_rejects_revisions_above_exact_json_limit() {
+    let too_big = MAX_REVISION + 1;
+    let capabilities = Capabilities::from_peer(
+        "device-0001",
+        PeerRole::LinuxDaemon,
+        vec![RemoteAction::ConfigRead],
+    );
+    let messages = [
+        capabilities_message(too_big, capabilities),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-1".into(),
+            expected_revision: too_big,
+            key: key("audio.mute"),
+            value: ConfigValue::Bool(true),
+        }),
+        ack_pair("s-1", too_big, "audio.mute", ConfigValue::Bool(true)),
+        session_event(too_big),
+    ];
+    for message in messages {
+        assert!(
+            wire::encode_message(&message).is_err(),
+            "revisión {too_big} aceptada: {message:?}"
+        );
+    }
+    // El máximo exacto sigue siendo emitible y decodificable.
+    let max = ack_pair("s-1", MAX_REVISION, "audio.mute", ConfigValue::Bool(true));
+    let encoded = wire::encode_message(&max).expect("encode en el máximo");
+    assert!(String::from_utf8_lossy(&encoded[4..]).contains(r#""revision":9007199254740991"#));
+    assert_eq!(wire::decode_message(&encoded).expect("decode"), max);
+}
+
+#[test]
+fn encode_rejects_values_invalid_for_their_key() {
+    let invalid = [
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-1".into(),
+            expected_revision: 0,
+            key: key("audio.gain_db"),
+            value: ConfigValue::Number(0.3),
+        }),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-2".into(),
+            expected_revision: 0,
+            key: key("audio.sample_rate_hz"),
+            value: ConfigValue::Integer(44_100),
+        }),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-3".into(),
+            expected_revision: 0,
+            key: key("audio.jitter_target_ms"),
+            value: ConfigValue::Number(3.0),
+        }),
+        pair_event(1, "audio.mute", ConfigValue::Integer(1)),
+        pair_event(1, "audio.gain_db", ConfigValue::Number(0.3)),
+        ack_pair("s-4", 1, "audio.gain_db", ConfigValue::Number(0.3)),
+        ack_pair(
+            "s-5",
+            1,
+            "audio.jitter_target_ms",
+            ConfigValue::Integer(100),
+        ),
+        ControlMessage::Ack(AckMsg {
+            request_id: "s-6".into(),
+            revision: 1,
+            applied: true,
+            requested: Some(ConfigPair {
+                key: key("audio.mute"),
+                value: ConfigValue::String("true".into()),
+            }),
+            effective: AckEffective::Snapshot(ConfigState::new().snapshot()),
+        }),
+    ];
+    for message in invalid {
+        assert!(
+            wire::encode_message(&message).is_err(),
+            "valor inválido emitido: {message:?}"
+        );
+    }
+    // Los valores legales siguen emitiéndose y decodificándose igual.
+    let legal = ack_pair("s-7", 1, "audio.gain_db", ConfigValue::Number(0.5));
+    let encoded = wire::encode_message(&legal).expect("encode legal");
+    assert_eq!(wire::decode_message(&encoded).expect("decode"), legal);
+}
+
+#[test]
+fn encode_rejects_non_finite_and_out_of_schema_values() {
+    let invalid = [
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-1".into(),
+            expected_revision: 0,
+            key: key("audio.gain_db"),
+            value: ConfigValue::Number(f64::NAN),
+        }),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-2".into(),
+            expected_revision: 0,
+            key: key("audio.gain_db"),
+            value: ConfigValue::Number(f64::INFINITY),
+        }),
+        pair_event(1, "audio.gain_db", ConfigValue::Number(f64::NEG_INFINITY)),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-3".into(),
+            expected_revision: 0,
+            key: key("audio.gain_db"),
+            value: ConfigValue::Number(2_000_000.0),
+        }),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-4".into(),
+            expected_revision: 0,
+            key: key("ui.theme"),
+            value: ConfigValue::String("é".repeat(1025)),
+        }),
+    ];
+    for message in invalid {
+        assert!(
+            wire::encode_message(&message).is_err(),
+            "valor no representable emitido: {message:?}"
+        );
+    }
+}
+
+#[test]
+fn encode_rejects_snapshot_that_decodes_as_a_pair() {
+    let mut ambiguous = Snapshot::new();
+    ambiguous.insert(key("key"), ConfigValue::Bool(true));
+    ambiguous.insert(key("value"), ConfigValue::Bool(false));
+    let message = ControlMessage::Ack(AckMsg {
+        request_id: "g-1".into(),
+        revision: 0,
+        applied: true,
+        requested: None,
+        effective: AckEffective::Snapshot(ambiguous),
+    });
+    assert!(wire::encode_message(&message).is_err());
+
+    // Cualquier otro snapshot de dos claves se mantiene distinguible.
+    let mut legal = Snapshot::new();
+    legal.insert(key("audio.mute"), ConfigValue::Bool(true));
+    legal.insert(key("ui.theme"), ConfigValue::String("dark".into()));
+    let message = ControlMessage::Ack(AckMsg {
+        request_id: "g-2".into(),
+        revision: 0,
+        applied: true,
+        requested: None,
+        effective: AckEffective::Snapshot(legal),
+    });
+    let encoded = wire::encode_message(&message).expect("encode snapshot");
+    assert_eq!(wire::decode_message(&encoded).expect("decode"), message);
+}
+
+#[test]
+fn encode_rejects_oversized_or_inconsistent_capabilities() {
+    let good = capabilities_message(
+        0,
+        Capabilities::from_peer(
+            "device-0001",
+            PeerRole::LinuxDaemon,
+            vec![RemoteAction::ConfigRead, RemoteAction::ConfigWrite],
+        ),
+    );
+    assert!(wire::encode_message(&good).is_ok());
+
+    let declaration = ConfigKeyDeclaration {
+        key: key("audio.mute"),
+        scope: ConfigScope::Shared,
+        value_type: ValueType::Boolean,
+        minimum: None,
+        maximum: None,
+    };
+    let mut bad_limits = Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    bad_limits.limits = Limits {
+        max_reorder_ms: 21,
+        ..Limits::default()
+    };
+    let mut short_id = Capabilities::from_peer("short", PeerRole::LinuxDaemon, vec![]);
+    short_id.limits = Limits::default();
+    let mut many_keys = Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    many_keys.config_keys = vec![declaration.clone(); 33];
+    let mut nan_minimum = Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    nan_minimum.config_keys = vec![ConfigKeyDeclaration {
+        minimum: Some(f64::NAN),
+        ..declaration.clone()
+    }];
+    let mut too_many_features =
+        Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    too_many_features.features = vec![Feature::ControlV1; 9];
+    let mut duplicate_features =
+        Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    duplicate_features.features = vec![Feature::ControlV1, Feature::ControlV1];
+    let mut too_many_actions =
+        Capabilities::from_peer("device-0001", PeerRole::LinuxDaemon, vec![]);
+    too_many_actions.remote_actions = vec![
+        RemoteAction::ConfigRead,
+        RemoteAction::ConfigRead,
+        RemoteAction::ConfigWrite,
+    ];
+    let bad = [
+        capabilities_message(0, short_id),
+        capabilities_message(0, bad_limits),
+        capabilities_message(0, many_keys),
+        capabilities_message(0, nan_minimum),
+        capabilities_message(0, too_many_features),
+        capabilities_message(0, duplicate_features),
+        capabilities_message(0, too_many_actions),
+    ];
+    for message in bad {
+        assert!(
+            wire::encode_message(&message).is_err(),
+            "capabilities inválidas emitidas: {message:?}"
+        );
+    }
+}
+
+#[test]
+fn encode_rejects_error_retryable_and_current_revision_mismatch() {
+    let error_message = |code, retryable, current_revision| {
+        ControlMessage::Error(ErrorMsg {
+            request_id: "e-1".into(),
+            code,
+            message: "detail".into(),
+            retryable,
+            current_revision,
+        })
+    };
+    let inconsistent = [
+        error_message(ErrorCode::Conflict, false, Some(1)),
+        error_message(ErrorCode::Conflict, true, None),
+        error_message(ErrorCode::Invalid, true, None),
+        error_message(ErrorCode::Invalid, false, Some(1)),
+        error_message(ErrorCode::Conflict, true, Some(MAX_REVISION + 1)),
+    ];
+    for message in inconsistent {
+        assert!(
+            wire::encode_message(&message).is_err(),
+            "error incoherente emitido: {message:?}"
+        );
+    }
+    for legal in [
+        error_message(ErrorCode::Conflict, true, Some(MAX_REVISION)),
+        error_message(ErrorCode::Invalid, false, None),
+    ] {
+        let encoded = wire::encode_message(&legal).expect("encode error legal");
+        assert_eq!(wire::decode_message(&encoded).expect("decode"), legal);
+    }
+}
+
+#[test]
+fn every_encoded_variant_decodes_back_to_the_same_message() {
+    let messages = vec![
+        hello("0.1.0", "arl.control/v1"),
+        capabilities_message(
+            MAX_REVISION,
+            Capabilities::from_peer(
+                "device-0001",
+                PeerRole::Android,
+                vec![RemoteAction::ConfigRead, RemoteAction::ConfigWrite],
+            ),
+        ),
+        ControlMessage::ConfigGet(ConfigGetMsg {
+            request_id: "g-1".into(),
+            key: None,
+        }),
+        ControlMessage::ConfigSet(ConfigSetMsg {
+            request_id: "s-1".into(),
+            expected_revision: MAX_REVISION,
+            key: key("audio.gain_db"),
+            value: ConfigValue::Number(-24.0),
+        }),
+        ControlMessage::Ack(AckMsg {
+            request_id: "g-1".into(),
+            revision: MAX_REVISION,
+            applied: true,
+            requested: None,
+            effective: AckEffective::Snapshot(ConfigState::new().snapshot()),
+        }),
+        ack_pair(
+            "s-1",
+            MAX_REVISION,
+            "audio.gain_db",
+            ConfigValue::Number(-24.0),
+        ),
+        session_event(1),
+        pair_event(1, "audio.mute", ConfigValue::Bool(true)),
+        ControlMessage::Error(
+            ErrorMsg::new("s-2", ErrorCode::Conflict, "revision mismatch")
+                .unwrap()
+                .with_current_revision(MAX_REVISION)
+                .unwrap(),
+        ),
+        ControlMessage::Error(
+            ErrorMsg::new("s-3", ErrorCode::NotFound, "config key not found").unwrap(),
+        ),
+        ControlMessage::Ping {
+            request_id: "p-1".into(),
+        },
+        ControlMessage::Pong {
+            request_id: "p-1".into(),
+        },
+    ];
+    for message in messages {
+        let encoded = wire::encode_message(&message).expect("encode");
+        assert_eq!(wire::decode_message(&encoded).expect("decode"), message);
+    }
 }

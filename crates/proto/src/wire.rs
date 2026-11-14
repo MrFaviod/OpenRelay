@@ -13,8 +13,9 @@ use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 
 use crate::control::{
     validate_value, Capabilities, ConfigKey, ConfigKeyDeclaration, ConfigPair, ConfigScope,
-    ConfigValue, ErrorCode, ErrorMsg, Feature, PeerRole, RemoteAction, SessionState, Snapshot,
-    ValueType, MAX_MESSAGE_CHARS, MAX_REQUEST_ID_CHARS,
+    ConfigValue, ErrorCode, ErrorMsg, Feature, Limits, PeerRole, RemoteAction, SessionState,
+    Snapshot, ValueType, CONFIG_SNAPSHOT_MAX_KEYS, MAX_CONFIG_KEYS_DECLARED, MAX_MESSAGE_CHARS,
+    MAX_REQUEST_ID_CHARS,
 };
 
 /// Versión mayor del contrato que esta crate implementa.
@@ -285,6 +286,9 @@ impl<'de> Visitor<'de> for JsonVisitor {
 /// Rechaza BOM, claves duplicadas, números no estándar, bytes de más,
 /// profundidad > 8, objetos > 64 claves, arrays > 64 elementos y strings
 /// > 1024 caracteres. El límite de tamaño ya se aplicó en [`decode_frame`].
+///
+/// Frontera de bajo nivel: valida la forma JSON, no la semántica del mensaje;
+/// eso lo hace [`decode_message`].
 pub fn parse_json(payload: &[u8]) -> Result<JsonValue, WireError> {
     if payload.is_empty() || payload.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return Err(WireError::malformed());
@@ -311,6 +315,10 @@ fn json_depth(value: &JsonValue) -> usize {
 }
 
 /// Serializa un [`JsonValue`] a JSON UTF-8 compacto.
+///
+/// Frontera de bajo nivel: no valida el schema ni el mensaje, y un `Float` no
+/// finito se escribe como `null`. Para emitir un frame decodificable usa
+/// [`encode_message`].
 pub fn encode_json(value: &JsonValue) -> String {
     let mut out = String::new();
     write_json(value, &mut out);
@@ -325,7 +333,7 @@ fn write_json(value: &JsonValue, out: &mut String) {
         JsonValue::Number(number) => match *number {
             JsonNumber::Integer(value) => out.push_str(&value.to_string()),
             JsonNumber::Unsigned(value) => out.push_str(&value.to_string()),
-            JsonNumber::Float(value) => out.push_str(&format_float(value)),
+            JsonNumber::Float(value) => write_float(value, out),
         },
         JsonValue::String(text) => write_string(text, out),
         JsonValue::Array(items) => {
@@ -373,9 +381,22 @@ fn write_string(text: &str, out: &mut String) {
     out.push('"');
 }
 
+fn write_float(value: f64, out: &mut String) {
+    if value.is_finite() {
+        out.push_str(&format_float(value));
+    } else {
+        // JSON no puede representar NaN/±Infinity. El serializador de bajo
+        // nivel escribe `null` en vez de inventar `0.0` (que sí decodificaría
+        // como un número real); `encode_message` rechaza estos valores mucho
+        // antes, así que este camino sólo es alcanzable con un `JsonValue`
+        // construido a mano.
+        out.push_str("null");
+    }
+}
+
 fn format_float(value: f64) -> String {
     if !value.is_finite() {
-        return "0.0".to_owned();
+        return "null".to_owned();
     }
     let normalized = if value == 0.0 { 0.0 } else { value };
     if normalized.fract() == 0.0 && normalized.abs() < 1e15 {
@@ -388,6 +409,9 @@ fn format_float(value: f64) -> String {
 // ----------------------------------------------------------------- framing --
 
 /// Valida el prefijo `u32` BE y devuelve el payload exacto del frame.
+///
+/// Frontera de bajo nivel: no parsea JSON ni valida el mensaje; eso es
+/// [`decode_message`].
 pub fn decode_frame(frame: &[u8]) -> Result<&[u8], WireError> {
     if frame.len() < CONTROL_LENGTH_BYTES {
         return Err(WireError::new(WireErrorKind::LengthOutOfRange, None));
@@ -410,6 +434,9 @@ pub fn decode_frame(frame: &[u8]) -> Result<&[u8], WireError> {
 }
 
 /// Antepone el prefijo `u32` BE a un payload ya serializado.
+///
+/// Frontera de bajo nivel: sólo aplica los límites de tamaño, no valida el
+/// contenido; un payload inválido produce un frame que el peer rechazará.
 pub fn encode_frame(payload: &[u8]) -> Result<Vec<u8>, WireError> {
     if payload.is_empty() {
         return Err(WireError::new(WireErrorKind::LengthOutOfRange, None));
@@ -573,6 +600,9 @@ impl ControlMessage {
 }
 
 /// Decodifica un frame completo a un mensaje tipado.
+///
+/// Es la puerta semántica del decoder y la referencia que [`encode_message`]
+/// usa para garantizar que todo lo que emite se puede volver a leer.
 pub fn decode_message(frame: &[u8]) -> Result<ControlMessage, WireError> {
     let payload = decode_frame(frame)?;
     let value = parse_json(payload)?;
@@ -580,9 +610,25 @@ pub fn decode_message(frame: &[u8]) -> Result<ControlMessage, WireError> {
 }
 
 /// Codifica un mensaje tipado, validando sus campos antes de emitir.
+///
+/// Es la puerta semántica del encoder: toda salida `Ok` es un frame que
+/// [`decode_message`] devuelve como el mismo mensaje. Para garantizarlo sin
+/// duplicar reglas, el frame se pasa por el propio decodificador compartido y
+/// cualquier divergencia se rechaza como [`WireErrorKind::InvalidShape`] en vez
+/// de normalizarse. Los constructores públicos de los structs permiten crear
+/// combinaciones que el contrato no admite (revisiones fuera de rango, valores
+/// que no cumplen su clave, `error` incoherente, `hello` con otra versión de
+/// protocolo); todas se rechazan aquí.
 pub fn encode_message(message: &ControlMessage) -> Result<Vec<u8>, WireError> {
     let value = message_to_json(message)?;
-    encode_frame(encode_json(&value).as_bytes())
+    let payload = encode_json(&value);
+    let frame = encode_frame(payload.as_bytes())?;
+    let echo = message.request_id().map(str::to_owned);
+    let decoded = decode_message(&frame).map_err(|_| WireError::shape(echo.clone()))?;
+    if decoded != *message {
+        return Err(WireError::shape(echo));
+    }
+    Ok(frame)
 }
 
 fn is_valid_request_id(request_id: &str) -> bool {
@@ -591,6 +637,15 @@ fn is_valid_request_id(request_id: &str) -> bool {
         && request_id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Regla única de `version` en `hello`, compartida por encoder y decoder.
+fn is_valid_version(version: &str) -> bool {
+    let count = version.chars().count();
+    (1..=64).contains(&count)
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'))
 }
 
 fn require_request_id(value: String) -> Result<String, WireError> {
@@ -605,7 +660,16 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
     match message {
         ControlMessage::Hello(hello) => {
             require_request_id(hello.request_id.clone())?;
-            Ok(envelope(
+            if !is_valid_version(&hello.version) {
+                return Err(shape_error(Some(&hello.request_id)));
+            }
+            if hello.protocol_version != SCHEMA_VERSION {
+                return Err(WireError::new(
+                    WireErrorKind::UnsupportedVersion,
+                    Some(hello.request_id.clone()),
+                ));
+            }
+            envelope(
                 "hello",
                 Some(&hello.request_id),
                 None,
@@ -618,17 +682,18 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                         JsonValue::String(hello.protocol_version.clone()),
                     ),
                 ]),
-            ))
+            )
         }
         ControlMessage::Capabilities(message) => {
             require_request_id(message.request_id.clone())?;
-            Ok(envelope(
+            let payload = capabilities_to_json(&message.capabilities, Some(&message.request_id))?;
+            envelope(
                 "capabilities",
                 Some(&message.request_id),
                 Some(message.revision),
                 None,
-                capabilities_to_json(&message.capabilities),
-            ))
+                payload,
+            )
         }
         ControlMessage::ConfigGet(message) => {
             require_request_id(message.request_id.clone())?;
@@ -636,17 +701,18 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                 Some(key) => JsonValue::String(key.as_str().to_owned()),
                 None => JsonValue::Null,
             };
-            Ok(envelope(
+            envelope(
                 "config.get",
                 Some(&message.request_id),
                 None,
                 None,
                 JsonValue::Object(vec![("key".into(), key)]),
-            ))
+            )
         }
         ControlMessage::ConfigSet(message) => {
             require_request_id(message.request_id.clone())?;
-            Ok(envelope(
+            validate_key_value(&message.key, &message.value, Some(&message.request_id))?;
+            envelope(
                 "config.set",
                 Some(&message.request_id),
                 None,
@@ -656,23 +722,27 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                         "key".into(),
                         JsonValue::String(message.key.as_str().to_owned()),
                     ),
-                    ("value".into(), config_value_to_json(&message.value)),
+                    (
+                        "value".into(),
+                        config_value_to_json(&message.value, Some(&message.request_id))?,
+                    ),
                 ]),
-            ))
+            )
         }
         ControlMessage::Ack(ack) => {
             require_request_id(ack.request_id.clone())?;
+            let request_id = Some(ack.request_id.as_str());
             let requested = match &ack.requested {
-                Some(pair) => pair_to_json(pair),
+                Some(pair) => pair_to_json(pair, request_id)?,
                 None => JsonValue::Null,
             };
             let effective = match &ack.effective {
-                AckEffective::Pair(pair) => pair_to_json(pair),
-                AckEffective::Snapshot(snapshot) => snapshot_to_json(snapshot),
+                AckEffective::Pair(pair) => pair_to_json(pair, request_id)?,
+                AckEffective::Snapshot(snapshot) => snapshot_to_json(snapshot, request_id)?,
             };
-            Ok(envelope(
+            envelope(
                 "ack",
-                Some(&ack.request_id),
+                request_id,
                 Some(ack.revision),
                 None,
                 JsonValue::Object(vec![
@@ -680,28 +750,33 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                     ("requested".into(), requested),
                     ("effective".into(), effective),
                 ]),
-            ))
+            )
         }
         ControlMessage::Error(error) => {
             require_request_id(error.request_id.clone())?;
+            let request_id = Some(error.request_id.as_str());
             if error.message.is_empty() || error.message.chars().count() > MAX_MESSAGE_CHARS {
-                return Err(WireError::shape(Some(error.request_id.clone())));
+                return Err(shape_error(request_id));
             }
+            if error.retryable != error.code.retryable() {
+                return Err(shape_error(request_id));
+            }
+            let current_revision = match (error.code, error.current_revision) {
+                (ErrorCode::Conflict, Some(revision)) => {
+                    Some(revision_to_json(revision, request_id)?)
+                }
+                (ErrorCode::Conflict, None) | (_, Some(_)) => return Err(shape_error(request_id)),
+                (_, None) => None,
+            };
             let mut payload = vec![
                 ("code".into(), JsonValue::String(error.code.as_str().into())),
                 ("message".into(), JsonValue::String(error.message.clone())),
-                ("retryable".into(), JsonValue::Bool(error.code.retryable())),
+                ("retryable".into(), JsonValue::Bool(error.retryable)),
             ];
-            if let Some(revision) = error.current_revision {
-                payload.push(("current_revision".into(), revision_to_json(revision)?));
+            if let Some(revision) = current_revision {
+                payload.push(("current_revision".into(), revision));
             }
-            Ok(envelope(
-                "error",
-                Some(&error.request_id),
-                None,
-                None,
-                JsonValue::Object(payload),
-            ))
+            envelope("error", request_id, None, None, JsonValue::Object(payload))
         }
         ControlMessage::Event(event) => {
             let (name, data) = match &event.event {
@@ -709,14 +784,18 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                     key,
                     requested,
                     effective,
-                } => (
-                    "config.changed",
-                    JsonValue::Object(vec![
-                        ("key".into(), JsonValue::String(key.as_str().to_owned())),
-                        ("requested".into(), config_value_to_json(requested)),
-                        ("effective".into(), config_value_to_json(effective)),
-                    ]),
-                ),
+                } => {
+                    validate_key_value(key, requested, None)?;
+                    validate_key_value(key, effective, None)?;
+                    (
+                        "config.changed",
+                        JsonValue::Object(vec![
+                            ("key".into(), JsonValue::String(key.as_str().to_owned())),
+                            ("requested".into(), config_value_to_json(requested, None)?),
+                            ("effective".into(), config_value_to_json(effective, None)?),
+                        ]),
+                    )
+                }
                 EventBody::SessionState { state, detail } => {
                     let mut fields =
                         vec![("state".into(), JsonValue::String(state.as_str().into()))];
@@ -729,7 +808,7 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                     ("session.state", JsonValue::Object(fields))
                 }
             };
-            Ok(envelope(
+            envelope(
                 "event",
                 None,
                 Some(event.revision),
@@ -738,38 +817,44 @@ fn message_to_json(message: &ControlMessage) -> Result<JsonValue, WireError> {
                     ("name".into(), JsonValue::String(name.into())),
                     ("data".into(), data),
                 ]),
-            ))
+            )
         }
         ControlMessage::Ping { request_id } => {
             require_request_id(request_id.clone())?;
-            Ok(envelope(
+            envelope(
                 "ping",
                 Some(request_id),
                 None,
                 None,
                 JsonValue::Object(vec![]),
-            ))
+            )
         }
         ControlMessage::Pong { request_id } => {
             require_request_id(request_id.clone())?;
-            Ok(envelope(
+            envelope(
                 "pong",
                 Some(request_id),
                 None,
                 None,
                 JsonValue::Object(vec![]),
-            ))
+            )
         }
     }
 }
 
+/// Construye el sobre común.
+///
+/// `revision` y `expected_revision` se propagan con `Result`: una revisión por
+/// encima de [`MAX_REVISION`] no se omite en silencio (eso produciría un frame
+/// que el decodificador rechaza o, peor, un mensaje sin su revisión), se
+/// rechaza con el `request_id` disponible.
 fn envelope(
     type_name: &str,
     request_id: Option<&str>,
     revision: Option<u64>,
     expected_revision: Option<u64>,
     payload: JsonValue,
-) -> JsonValue {
+) -> Result<JsonValue, WireError> {
     let mut entries: Vec<(String, JsonValue)> = vec![
         (
             "schema_version".into(),
@@ -781,56 +866,141 @@ fn envelope(
         entries.push(("request_id".into(), JsonValue::String(request_id.into())));
     }
     if let Some(expected_revision) = expected_revision {
-        if let Ok(value) = revision_to_json(expected_revision) {
-            entries.push(("expected_revision".into(), value));
-        }
+        entries.push((
+            "expected_revision".into(),
+            revision_to_json(expected_revision, request_id)?,
+        ));
     }
     if let Some(revision) = revision {
-        if let Ok(value) = revision_to_json(revision) {
-            entries.push(("revision".into(), value));
-        }
+        entries.push(("revision".into(), revision_to_json(revision, request_id)?));
     }
     entries.push(("payload".into(), payload));
-    JsonValue::Object(entries)
+    Ok(JsonValue::Object(entries))
 }
 
-fn revision_to_json(revision: u64) -> Result<JsonValue, WireError> {
+fn revision_to_json(revision: u64, request_id: Option<&str>) -> Result<JsonValue, WireError> {
     if revision > MAX_REVISION {
-        return Err(WireError::shape(None));
+        return Err(shape_error(request_id));
     }
     Ok(JsonValue::Number(JsonNumber::Unsigned(revision)))
 }
 
-fn config_value_to_json(value: &ConfigValue) -> JsonValue {
-    match value {
+fn config_value_to_json(
+    value: &ConfigValue,
+    request_id: Option<&str>,
+) -> Result<JsonValue, WireError> {
+    let json = match value {
         ConfigValue::Bool(value) => JsonValue::Bool(*value),
         ConfigValue::Integer(value) => JsonValue::Number(JsonNumber::Integer(*value)),
-        ConfigValue::Number(value) => JsonValue::Number(JsonNumber::Float(*value)),
-        ConfigValue::String(value) => JsonValue::String(value.clone()),
-    }
+        ConfigValue::Number(value) => {
+            // `null`/`NaN`/`Infinity` no son JSON y `format_float` no debe
+            // inventar un número; el schema acota además a ±1e6.
+            if !value.is_finite() || value.abs() > 1_000_000.0 {
+                return Err(shape_error(request_id));
+            }
+            JsonValue::Number(JsonNumber::Float(*value))
+        }
+        ConfigValue::String(value) => {
+            if value.chars().count() > crate::control::MAX_CONFIG_STRING_CHARS {
+                return Err(shape_error(request_id));
+            }
+            JsonValue::String(value.clone())
+        }
+    };
+    Ok(json)
 }
 
-fn pair_to_json(pair: &ConfigPair) -> JsonValue {
-    JsonValue::Object(vec![
+/// Valida un valor contra la clave cuando la clave pertenece al catálogo.
+///
+/// Mismo criterio que el decodificador: una clave desconocida no se valida
+/// aquí (el daemon la rechaza en la máquina de control); una conocida debe
+/// cumplir tipo, rango y paso.
+fn validate_key_value(
+    key: &ConfigKey,
+    value: &ConfigValue,
+    request_id: Option<&str>,
+) -> Result<(), WireError> {
+    if let Some(spec) = crate::control::lookup_key(key.as_str()) {
+        validate_value(spec, value).map_err(|_| shape_error(request_id))?;
+    }
+    Ok(())
+}
+
+fn pair_to_json(pair: &ConfigPair, request_id: Option<&str>) -> Result<JsonValue, WireError> {
+    validate_key_value(&pair.key, &pair.value, request_id)?;
+    Ok(JsonValue::Object(vec![
         (
             "key".into(),
             JsonValue::String(pair.key.as_str().to_owned()),
         ),
-        ("value".into(), config_value_to_json(&pair.value)),
-    ])
+        (
+            "value".into(),
+            config_value_to_json(&pair.value, request_id)?,
+        ),
+    ]))
 }
 
-fn snapshot_to_json(snapshot: &Snapshot) -> JsonValue {
-    JsonValue::Object(
-        snapshot
-            .iter()
-            .map(|(key, value)| (key.as_str().to_owned(), config_value_to_json(value)))
-            .collect(),
-    )
+fn snapshot_to_json(snapshot: &Snapshot, request_id: Option<&str>) -> Result<JsonValue, WireError> {
+    if snapshot.len() > CONFIG_SNAPSHOT_MAX_KEYS {
+        return Err(shape_error(request_id));
+    }
+    // `effective` es `pair | snapshot`: un snapshot con exactamente las claves
+    // `key` y `value` (ambas legales como clave de configuración) es
+    // indistinguible de un par y el decodificador elegiría `Pair`.
+    if snapshot.len() == 2
+        && snapshot.iter().any(|(key, _)| key.as_str() == "key")
+        && snapshot.iter().any(|(key, _)| key.as_str() == "value")
+    {
+        return Err(shape_error(request_id));
+    }
+    let mut entries = Vec::with_capacity(snapshot.len());
+    for (key, value) in snapshot.iter() {
+        validate_key_value(key, value, request_id)?;
+        entries.push((
+            key.as_str().to_owned(),
+            config_value_to_json(value, request_id)?,
+        ));
+    }
+    Ok(JsonValue::Object(entries))
 }
 
-fn capabilities_to_json(capabilities: &Capabilities) -> JsonValue {
-    JsonValue::Object(vec![
+fn capabilities_to_json(
+    capabilities: &Capabilities,
+    request_id: Option<&str>,
+) -> Result<JsonValue, WireError> {
+    if !(8..=64).contains(&capabilities.device_id.chars().count())
+        || !capabilities
+            .device_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(shape_error(request_id));
+    }
+    if capabilities.features.len() > 8 || has_duplicates(&capabilities.features) {
+        return Err(shape_error(request_id));
+    }
+    if capabilities.remote_actions.len() > 2 || has_duplicates(&capabilities.remote_actions) {
+        return Err(shape_error(request_id));
+    }
+    // Los límites son constantes del contrato renegociadas por `capabilities`:
+    // el decodificador sólo acepta los valores exactos.
+    if capabilities.limits != Limits::default() {
+        return Err(shape_error(request_id));
+    }
+    if capabilities.config_keys.len() > MAX_CONFIG_KEYS_DECLARED {
+        return Err(shape_error(request_id));
+    }
+    for declaration in &capabilities.config_keys {
+        for bound in [declaration.minimum, declaration.maximum]
+            .into_iter()
+            .flatten()
+        {
+            if !bound.is_finite() {
+                return Err(shape_error(request_id));
+            }
+        }
+    }
+    Ok(JsonValue::Object(vec![
         (
             "schema_version".into(),
             JsonValue::String("arl.capabilities/v1".into()),
@@ -902,7 +1072,14 @@ fn capabilities_to_json(capabilities: &Capabilities) -> JsonValue {
                     .collect(),
             ),
         ),
-    ])
+    ]))
+}
+
+fn has_duplicates<T: PartialEq>(items: &[T]) -> bool {
+    items
+        .iter()
+        .enumerate()
+        .any(|(index, item)| items[..index].contains(item))
 }
 
 fn declaration_to_json(declaration: &ConfigKeyDeclaration) -> JsonValue {
@@ -1073,9 +1250,7 @@ fn decode_pair(value: JsonValue, request_id: Option<&str>) -> Result<ConfigPair,
     let key = decode_config_key(fields.require("key", request_id)?, request_id)?;
     let value = decode_config_value(fields.require("value", request_id)?, request_id)?;
     fields.finish()?;
-    if let Some(spec) = crate::control::lookup_key(key.as_str()) {
-        validate_value(spec, &value).map_err(|_| shape_error(request_id))?;
-    }
+    validate_key_value(&key, &value, request_id)?;
     Ok(ConfigPair { key, value })
 }
 
@@ -1091,9 +1266,7 @@ fn decode_snapshot(value: JsonValue, request_id: Option<&str>) -> Result<Snapsho
     for (name, value) in object {
         let key = ConfigKey::new(&name).map_err(|_| shape_error(request_id))?;
         let value = decode_config_value(value, request_id)?;
-        if let Some(spec) = crate::control::lookup_key(key.as_str()) {
-            validate_value(spec, &value).map_err(|_| shape_error(request_id))?;
-        }
+        validate_key_value(&key, &value, request_id)?;
         snapshot.insert(key, value);
     }
     Ok(snapshot)
@@ -1150,12 +1323,7 @@ fn decode_hello(fields: &mut Fields) -> Result<ControlMessage, WireError> {
     let mut payload = payload;
     let role = decode_role(payload.require("role", Some(&request_id))?)?;
     let version = payload.require_string("version", Some(&request_id))?;
-    if version.is_empty()
-        || version.chars().count() > 64
-        || !version
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'))
-    {
+    if !is_valid_version(&version) {
         return Err(shape_error(Some(&request_id)));
     }
     let protocol_version = payload.require_string("protocol_version", Some(&request_id))?;
@@ -1390,9 +1558,7 @@ fn decode_config_set(fields: &mut Fields) -> Result<ControlMessage, WireError> {
         Some(&request_id),
     )?;
     payload.finish()?;
-    if let Some(spec) = crate::control::lookup_key(key.as_str()) {
-        validate_value(spec, &value).map_err(|_| shape_error(Some(&request_id)))?;
-    }
+    validate_key_value(&key, &value, Some(&request_id))?;
     Ok(ControlMessage::ConfigSet(ConfigSetMsg {
         request_id,
         expected_revision,
@@ -1505,10 +1671,8 @@ fn decode_event(fields: &mut Fields) -> Result<ControlMessage, WireError> {
             let requested = decode_config_value(data.require("requested", None)?, None)?;
             let effective = decode_config_value(data.require("effective", None)?, None)?;
             data.finish()?;
-            if let Some(spec) = crate::control::lookup_key(key.as_str()) {
-                validate_value(spec, &requested).map_err(|_| WireError::shape(None))?;
-                validate_value(spec, &effective).map_err(|_| WireError::shape(None))?;
-            }
+            validate_key_value(&key, &requested, None)?;
+            validate_key_value(&key, &effective, None)?;
             EventBody::ConfigChanged {
                 key,
                 requested,
