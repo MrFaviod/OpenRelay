@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:arl:contract:capabilities-v1",
+  "title": "arl capabilities v1",
+  "description": "Capacidades y limites declarados por un extremo arl v1. No autoriza operaciones por si mismo: la ACL del daemon decide. remote_actions solo admite config.read/config.write; iniciar el microfono o pedir permisos son acciones locales del dispositivo y no existen como mensaje remoto.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "device_id",
+    "role",
+    "features",
+    "remote_actions",
+    "limits",
+    "config_keys"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "arl.capabilities/v1"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "description": "Identificador opaco del dispositivo; no es una clave ni un secreto."
+    },
+    "role": {
+      "enum": ["android", "linux-cli", "linux-daemon"]
+    },
+    "features": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["control.v1", "audio.pcm16-48k-mono", "enrollment.v1", "session.v1"]
+      }
+    },
+    "remote_actions": {
+      "type": "array",
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["config.read", "config.write"]
+      },
+      "description": "Acciones que este extremo acepta por canal remoto. No incluye mic.start, mic.stop ni permission.request."
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_control_payload_bytes",
+        "max_audio_datagram_bytes",
+        "max_reorder_ms",
+        "max_config_keys",
+        "max_request_id_len"
+      ],
+      "properties": {
+        "max_control_payload_bytes": {
+          "const": 16384
+        },
+        "max_audio_datagram_bytes": {
+          "const": 1200
+        },
+        "max_reorder_ms": {
+          "const": 20
+        },
+        "max_config_keys": {
+          "const": 32
+        },
+        "max_request_id_len": {
+          "const": 64
+        }
+      }
+    },
+    "config_keys": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/config_key"
+      }
+    }
+  },
+  "x-local-only-actions": {
+    "const": ["mic.start", "mic.stop", "permission.request"],
+    "description": "Acciones que solo puede ejecutar el usuario en el dispositivo local. No tienen mensaje de control en v1."
+  },
+  "$defs": {
+    "config_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "scope", "type"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+){0,3}$"
+        },
+        "scope": {
+          "enum": ["shared", "local", "readonly"]
+        },
+        "type": {
+          "enum": ["boolean", "integer", "number", "string"]
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

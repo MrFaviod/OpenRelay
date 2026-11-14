@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:arl:contract:audio-frame-v1",
+  "title": "arl audio datagram descriptor v1",
+  "description": "Descriptor logico de un datagrama de audio arl v1, con layout binario exacto. El datagrama real es binario: 28 bytes de cabecera big-endian + 480 bytes PCM16LE. Este esquema valida el descriptor que produce el parser; no codifica el datagrama en JSON. Semantica en docs/protocol.md seccion 8.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "type",
+    "version",
+    "flags",
+    "header_len",
+    "epoch",
+    "seq",
+    "sample_count",
+    "duration_us",
+    "sample_rate_hz",
+    "channels",
+    "payload_len",
+    "format",
+    "byte_order",
+    "bytes_per_sample",
+    "frames_per_datagram",
+    "datagram_bytes",
+    "max_datagram_bytes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "arl.audio-frame/v1"
+    },
+    "type": {
+      "const": 1,
+      "description": "Tipo de datagrama: audio."
+    },
+    "version": {
+      "const": 1
+    },
+    "flags": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "bit 0 = silence; bit 1 = discontinuity; bits 2-7 deben ser 0."
+    },
+    "header_len": {
+      "const": 28
+    },
+    "epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "Generacion del flujo; 0 invalido."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Secuencia por frame dentro de la epoca; +1, wrap permitido."
+    },
+    "sample_count": {
+      "const": 240,
+      "description": "Muestras por canal en un frame fijo de 5 ms a 48 kHz."
+    },
+    "duration_us": {
+      "const": 5000
+    },
+    "sample_rate_hz": {
+      "const": 48000
+    },
+    "channels": {
+      "const": 1
+    },
+    "payload_len": {
+      "const": 480
+    },
+    "format": {
+      "const": "pcm16le"
+    },
+    "byte_order": {
+      "const": "little"
+    },
+    "bytes_per_sample": {
+      "const": 2
+    },
+    "frames_per_datagram": {
+      "const": 1
+    },
+    "datagram_bytes": {
+      "const": 508
+    },
+    "max_datagram_bytes": {
+      "const": 1200
+    }
+  },
+  "x-binary-layout": [
+    {
+      "field": "type",
+      "offset": 0,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 1
+    },
+    {
+      "field": "version",
+      "offset": 1,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 1
+    },
+    {
+      "field": "flags",
+      "offset": 2,
+      "bytes": 1,
+      "encoding": "u8",
+      "minimum": 0,
+      "maximum": 3
+    },
+    {
+      "field": "header_len",
+      "offset": 3,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 28
+    },
+    {
+      "field": "epoch",
+      "offset": 4,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    {
+      "field": "seq",
+      "offset": 8,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    {
+      "field": "sample_count",
+      "offset": 12,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 240
+    },
+    {
+      "field": "duration_us",
+      "offset": 14,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 5000
+    },
+    {
+      "field": "sample_rate_hz",
+      "offset": 16,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "const": 48000
+    },
+    {
+      "field": "channels",
+      "offset": 20,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 1
+    },
+    {
+      "field": "reserved",
+      "offset": 22,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 0
+    },
+    {
+      "field": "payload_len",
+      "offset": 24,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "const": 480
+    },
+    {
+      "field": "payload",
+      "offset": 28,
+      "bytes": 480,
+      "encoding": "pcm16le mono",
+      "note": "240 muestras x 1 canal x 2 bytes; total del datagrama 508 bytes."
+    }
+  ]
+}

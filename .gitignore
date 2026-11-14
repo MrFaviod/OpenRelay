@@ -1,0 +1,38 @@
+# Rust (desde F1; hoy no existe Cargo.toml)
+/target/
+**/target/
+*.rs.bk
+
+# Android (desde T12; hoy no existe Gradle)
+/android/.gradle/
+/android/.idea/
+/android/local.properties
+/android/**/build/
+/android/app/src/main/cpp/.cxx/
+*.apk
+*.aab
+
+# Artefactos y temporales
+*.log
+*.tmp
+.scratch/
+/tmp/
+/artifacts/tmp/
+
+# Editores y sistema
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secretos y material de identidad (nunca versionar)
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Estado local del daemon / configuración de usuario
+/.arl/
+config.toml
