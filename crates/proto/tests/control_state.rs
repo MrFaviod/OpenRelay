@@ -123,7 +123,8 @@ fn oversized_frame_closes_and_reports_too_large() {
     raw.extend_from_slice(&payload);
     let outcome = session.handle_frame(&raw, NOW);
     assert!(outcome.close);
-    assert_eq!(error_code(&outcome), ErrorCode::TooLarge);
+    // Sin `request_id` recuperable no se emite `error` con id inventado.
+    assert!(outcome.response.is_none());
 }
 
 // -------------------------------------------------------------------- JSON --
@@ -1764,5 +1765,106 @@ fn every_encoded_variant_decodes_back_to_the_same_message() {
     for message in messages {
         let encoded = wire::encode_message(&message).expect("encode");
         assert_eq!(wire::decode_message(&encoded).expect("decode"), message);
+    }
+}
+
+// --------------------------------------------- errores con request_id exacto --
+
+fn decoded_error(json: &str) -> wire::WireError {
+    wire::decode_message(&frame_len(json.as_bytes())).unwrap_err()
+}
+
+#[test]
+fn semantic_errors_keep_request_id_and_do_not_close_or_apply() {
+    let cases = vec![
+        (set_json("s-max", u64::MAX, "audio.mute", "true"), "s-max"),
+        (
+            set_json("s-over", MAX_REVISION + 1, "audio.mute", "true"),
+            "s-over",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-frac","expected_revision":1.5,"payload":{"key":"audio.mute","value":true}}"#.to_string(),
+            "s-frac",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-str","expected_revision":"5","payload":{"key":"audio.mute","value":true}}"#.to_string(),
+            "s-str",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-nopayload","expected_revision":0}"#.to_string(),
+            "s-nopayload",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g-extra","payload":{"key":null},"extra":1}"#.to_string(),
+            "g-extra",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g-pextra","payload":{"key":null,"extra":1}}"#.to_string(),
+            "g-pextra",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p-extra","expected_revision":0,"payload":{}}"#.to_string(),
+            "p-extra",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p-pextra","payload":{"extra":1}}"#.to_string(),
+            "p-pextra",
+        ),
+        (
+            format!(
+                r#"{{"schema_version":"arl.control/v1","type":"ack","request_id":"a-over","revision":{},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#,
+                MAX_REVISION + 1
+            ),
+            "a-over",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"ack","request_id":"a-frac","revision":1.5,"payload":{"applied":false,"requested":null,"effective":{}}}"#.to_string(),
+            "a-frac",
+        ),
+        (
+            r#"{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-badfeat","revision":0,"payload":{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":["mic.start"],"remote_actions":["config.read"],"limits":{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64},"config_keys":[]}}"#.to_string(),
+            "c-badfeat",
+        ),
+    ];
+    let mut session = session();
+    let before = session.snapshot();
+    for (index, (json, expected_id)) in cases.iter().enumerate() {
+        let error = decoded_error(json);
+        assert_eq!(error.code(), ErrorCode::Invalid, "{json}");
+        assert_eq!(error.request_id(), Some(*expected_id), "{json}");
+        assert!(!error.closes_connection(), "{json}");
+        let outcome = send(&mut session, json, NOW + index as u64);
+        let message = expect_error(&outcome);
+        assert_eq!(message.request_id, *expected_id, "{json}");
+        assert_eq!(message.code, ErrorCode::Invalid, "{json}");
+        assert!(!outcome.close, "{json}");
+        assert!(outcome.events.is_empty(), "{json}");
+    }
+    assert_eq!(session.revision(), 0);
+    assert_eq!(session.snapshot(), before);
+    assert_eq!(session.cached_responses(), 0);
+}
+
+#[test]
+fn framing_without_recoverable_id_closes_without_response() {
+    let raw_frames = vec![
+        frame_len(br#"{"schema_version":"arl.control/v1","type":"ping""#),
+        frame_len(br#"not json"#),
+        frame_len(
+            br#"{"schema_version":"arl.control/v1","type":"ping","request_id":"bad id","payload":{}}"#,
+        ),
+    ];
+    for raw in raw_frames {
+        assert!(wire::decode_message(&raw)
+            .unwrap_err()
+            .to_error_message()
+            .is_none());
+        let mut session = session();
+        let outcome = session.handle_frame(&raw, NOW);
+        assert!(outcome.close);
+        assert!(outcome.response.is_none());
+        assert!(outcome.events.is_empty());
+        assert_eq!(session.revision(), 0);
+        assert_eq!(session.cached_responses(), 0);
     }
 }
