@@ -49,16 +49,38 @@ recalcula sumas y coherencia, no mide latencia.
 `arl_audio_core::budget` separa dos acumuladores que nunca se mezclan:
 
 - **Idle**: proceso vivo sin audio en curso. Cuenta sólo lo que el consumidor
-  observe; los contadores de jitter y drift suelen quedar en cero.
+  observe mientras el modo está en idle.
 - **Streaming**: audio en curso. Acumula por delta las métricas reales de
-  `JitterBuffer` (frames emitidos, huecos, PLC, descartes) y de
+  `JitterBuffer` (frames emitidos de red, muestras, huecos, PLC, descartes) y de
   `DriftController` (resyncs). No reimplementa el pipeline ni crea un segundo
   contador de verdad.
 
-`frames`, `samples`, `gaps`, `plc_frames`, `dropped`, `resyncs`, `underruns` y
-`overruns` saturan en `u64::MAX`: un flujo hostil no desborda ni paniquea. Las
-pruebas `budget_idle_stream` comprueban la separación de modos y que una segunda
-lectura sin cambios no duplica cuentas.
+La línea base del pipeline es **una sola y compartida**: cada `observe`
+acumula el delta en el modo vigente y avanza la línea base del otro modo sin
+sumarle nada (`rebase`). Así cada delta se cuenta exactamente una vez y
+alternar `streaming → idle → streaming` no reatribuye emisiones ya contadas: si
+el buffer emitió 1, 2 y 3 frames y se observó en streaming, idle y streaming
+los acumuladores dan 2 en streaming y 1 en idle (suma 3), no 5.
+
+Casos límite declarados:
+
+- **Observación repetida**: la misma instantánea sin cambios da delta cero en
+  todos los campos; no duplica el pipeline.
+- **Cambio de modo entre observaciones**: el intervalo no observado se atribuye
+  al modo vigente en la siguiente observación, porque no hay muestra intermedia
+  que lo divida. Para atribuir el límite con precisión, observa antes de cambiar
+  de modo.
+- **Saturación**: `frames`, `samples`, `gaps`, `plc_frames`, `dropped`
+  `resyncs`, `underruns` y `overruns` saturan en `u64::MAX`; un flujo hostil no
+  desborda ni paniquea.
+- **Reinicio del pipeline**: si los contadores leídos retroceden (buffer o
+  controlador nuevos), el delta se cuenta desde cero en vez de recortarse a
+  cero; el reinicio no pierde lo nuevo ni resta lo acumulado. Un reinicio que
+  vuelve a un valor igual o mayor que la línea base no es distinguible sólo con
+  contadores y se declara como límite del método.
+
+Las pruebas `budget_idle_stream` cubren separación de modos, alternancia
+streaming→idle→streaming, observación repetida, reinicio y saturación.
 
 ## Techos de recursos (propuestos)
 
@@ -78,12 +100,33 @@ PASS.
 
 ## Memoria
 
-- **Audio preasignado**: 16 slots del jitter buffer (cota superior de 508 B por
-  frame) más el frame de PLC. Se reserva una vez y no crece con el flujo.
+Las cifras de memoria son `size_of` en compilación del estado inline, no el
+tamaño wire del frame (508 B) ni RSS. Un `AudioFrame` en memoria Rust mide 492 B
+y cada slot añade el tag de `Option` (512 B por slot), así que multiplicar 508 B
+por slot no describe la memoria real.
+
+| Estado inline | Bytes (host de compilación) | Qué cuenta |
+|---|---:|---|
+| `JitterBuffer` | 8872 | 16 slots con frame, último frame para PLC y contabilidad; es `AUDIO_PREALLOCATED_BYTES` |
+| `LinearResampler` | 1048 | anillo de 488 muestras y fase entre frames |
+| `DriftController` | 144 | configuración, ratio, integral y contadores |
+| **Camino de audio** | **10064** | `AUDIO_PATH_STATE_BYTES` = suma de los tres |
+
+- **Audio preasignado**: `AUDIO_PREALLOCATED_BYTES = size_of::<JitterBuffer>`
+  (8872 B). Se reserva una vez y no crece con el flujo.
+- **Estado del resampler y del controlador**: se declaran aparte
+  (`RESAMPLER_STATE_BYTES`, `DRIFT_STATE_BYTES`) y sólo entran en el total
+  `AUDIO_PATH_STATE_BYTES`; no se cuentan dentro del jitter buffer.
 - **Asignación transitoria en el camino de audio**: cero
   (`TRANSIENT_AUDIO_ALLOC_BYTES = 0`).
 - **Heap del worker de control**: presupuesto separado y acotado a 64 KiB. No
   comparte cuenta con el audio preasignado.
+- **No contado**: heap y metadatos del allocador, pilas de hilos, buffers de
+  sistema/Android y RSS. Esas cifras se miden aparte con `VmRSS` y no forman
+  parte de estas constantes.
+
+Los valores de la tabla son los del host de compilación de este proyecto; las
+constantes se derivan con `size_of` y el test falla si dejan de coincidir.
 
 ## Hilos Android
 

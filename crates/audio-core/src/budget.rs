@@ -11,11 +11,13 @@
 //!
 //! ## Memoria
 //!
-//! El audio usa memoria preasignada y acotada ([`AUDIO_PREALLOCATED_BYTES`]);
-//! el camino de consumo no asigna memoria transitoria
-//! ([`TRANSIENT_AUDIO_ALLOC_BYTES`]). El heap del worker de control es un
+//! El audio usa memoria preasignada y acotada ([`AUDIO_PREALLOCATED_BYTES`],
+//! derivada de `size_of::<JitterBuffer>()`); el camino de consumo no asigna
+//! memoria transitoria ([`TRANSIENT_AUDIO_ALLOC_BYTES`]). El estado inline del
+//! resampler y del controlador de drift se declara aparte
+//! ([`AUDIO_PATH_STATE_BYTES`]). El heap del worker de control es un
 //! presupuesto separado ([`CONTROL_HEAP_LIMIT_BYTES`]) y no comparte la cuenta
-//! con el audio.
+//! con el audio. Ninguna de estas cifras es RSS ni tamaño wire.
 //!
 //! ## Hilos Android
 //!
@@ -24,9 +26,10 @@
 //! no los suma ni los presenta como propios.
 
 use crate::drift::DriftController;
-use crate::frame::DATAGRAM_LEN;
-use crate::jitter::CAPACITY_FRAMES;
+use crate::frame::{AudioFrame, DATAGRAM_LEN};
+use crate::jitter::{JitterBuffer, CAPACITY_FRAMES};
 use crate::metrics::{add, JitterCounters};
+use crate::resample::LinearResampler;
 
 /// Etapa del camino de audio de extremo a extremo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,6 +142,17 @@ pub struct StreamCounters {
     last_resyncs: u64,
 }
 
+/// Delta de un contador que sólo crece. Si el valor actual es menor que el
+/// anterior, el pipeline se reinició (buffer o controlador nuevos) y se cuenta
+/// desde cero: el reinicio no pierde lo nuevo ni resta lo ya acumulado.
+fn delta(current: u64, last: u64) -> u64 {
+    if current >= last {
+        current - last
+    } else {
+        current
+    }
+}
+
 impl StreamCounters {
     pub fn record_frames(&mut self, value: u64) {
         add(&mut self.frames, value);
@@ -174,23 +188,24 @@ impl StreamCounters {
 
     /// Consume una instantánea de los contadores del jitter buffer y acumula
     /// sólo el delta respecto de la lectura anterior. No reimplementa el
-    /// pipeline: lee las métricas que el buffer ya produce.
+    /// pipeline: lee las métricas que el buffer ya produce. Cada delta se
+    /// contabiliza una sola vez; una lectura repetida sin cambios suma cero.
     pub fn observe_jitter(&mut self, counters: &JitterCounters) {
         let last = self.baseline;
-        let emitted = counters.emitted.saturating_sub(last.emitted);
+        let emitted = delta(counters.emitted, last.emitted);
         self.record_frames(emitted);
         self.record_samples(emitted.saturating_mul(crate::frame::SAMPLE_COUNT as u64));
-        add(&mut self.gaps, counters.gaps.saturating_sub(last.gaps));
+        add(&mut self.gaps, delta(counters.gaps, last.gaps));
         add(
             &mut self.plc_frames,
-            counters.plc_frames.saturating_sub(last.plc_frames),
+            delta(counters.plc_frames, last.plc_frames),
         );
-        add(
-            &mut self.dropped,
-            counters
-                .dropped_total()
-                .saturating_sub(last.dropped_total()),
-        );
+        let dropped = delta(counters.dropped_late, last.dropped_late)
+            .saturating_add(delta(counters.dropped_duplicate, last.dropped_duplicate))
+            .saturating_add(delta(counters.dropped_old_epoch, last.dropped_old_epoch))
+            .saturating_add(delta(counters.dropped_overflow, last.dropped_overflow))
+            .saturating_add(delta(counters.dropped_invalid, last.dropped_invalid));
+        add(&mut self.dropped, dropped);
         self.baseline = *counters;
     }
 
@@ -198,8 +213,16 @@ impl StreamCounters {
     /// delta sobre la lectura anterior.
     pub fn observe_drift(&mut self, drift: &DriftController) {
         let resyncs = drift.resyncs();
-        add(&mut self.resyncs, resyncs.saturating_sub(self.last_resyncs));
+        add(&mut self.resyncs, delta(resyncs, self.last_resyncs));
         self.last_resyncs = resyncs;
+    }
+
+    /// Avanza la línea base sin acumular. Lo usa el modo inactivo en cada
+    /// observación para que un cambio de modo no reatribuya métricas que ya
+    /// contó el otro modo.
+    fn rebase(&mut self, counters: &JitterCounters, drift: &DriftController) {
+        self.baseline = *counters;
+        self.last_resyncs = drift.resyncs();
     }
 }
 
@@ -228,19 +251,33 @@ impl IdleStreamBudget {
         self.mode
     }
 
-    /// Cambia el modo; los contadores del otro modo se conservan.
+    /// Cambia el modo; los contadores del otro modo se conservan. La línea base
+    /// del pipeline es compartida: cada observación la avanza para ambos modos,
+    /// así que volver a un modo no reatribuye lo ya contado. El intervalo que
+    /// quede entre la última observación y el cambio se atribuye al modo
+    /// vigente en la siguiente observación; observa antes de cambiar si el
+    /// límite importa.
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
     }
 
-    /// Acumula las métricas reales de jitter y drift en el modo vigente.
+    /// Acumula las métricas reales de jitter y drift en el modo vigente y
+    /// sincroniza la línea base del otro modo sin sumarle nada. Así cada delta
+    /// del pipeline se cuenta exactamente una vez, en el modo activo cuando se
+    /// observó, y alternar streaming→idle→streaming no duplica emisiones.
     pub fn observe(&mut self, jitter: &JitterCounters, drift: &DriftController) {
-        let target = match self.mode {
-            Mode::Idle => &mut self.idle,
-            Mode::Streaming => &mut self.streaming,
-        };
-        target.observe_jitter(jitter);
-        target.observe_drift(drift);
+        match self.mode {
+            Mode::Idle => {
+                self.idle.observe_jitter(jitter);
+                self.idle.observe_drift(drift);
+                self.streaming.rebase(jitter, drift);
+            }
+            Mode::Streaming => {
+                self.streaming.observe_jitter(jitter);
+                self.streaming.observe_drift(drift);
+                self.idle.rebase(jitter, drift);
+            }
+        }
     }
 }
 
@@ -360,13 +397,44 @@ pub fn check(resource: Resource, observed: u64) -> Verdict {
     }
 }
 
-/// Slots del jitter buffer que forman la memoria de audio preasignada.
+/// Slots del jitter buffer (capacidad de la cola, no bytes).
 pub const JITTER_SLOTS: usize = CAPACITY_FRAMES;
 
-/// Memoria de audio preasignada: peor caso de los slots del jitter buffer
-/// (508 B por frame, cota superior) más el último frame para PLC.
-pub const AUDIO_PREALLOCATED_BYTES: u64 =
-    (JITTER_SLOTS * DATAGRAM_LEN) as u64 + core::mem::size_of::<crate::pcm16::Samples>() as u64;
+/// Bytes wire de un frame v1: cabecera de contrato más payload PCM16.
+///
+/// No es el tamaño en memoria de [`AudioFrame`]: el tipo Rust guarda una
+/// cabecera propia y cada slot añade el tag de `Option`, así que la memoria
+/// real se declara con `size_of`, no multiplicando 508 B por slot.
+pub const FRAME_WIRE_BYTES: u64 = DATAGRAM_LEN as u64;
+
+/// Tamaño real en memoria Rust de un frame, cabecera validada incluida.
+pub const AUDIO_FRAME_BYTES: u64 = core::mem::size_of::<AudioFrame>() as u64;
+
+/// Tamaño real en memoria Rust del jitter buffer completo: slots, último frame
+/// para PLC y contabilidad. Derivado de `size_of`, no del tamaño wire.
+pub const JITTER_BUFFER_BYTES: u64 = core::mem::size_of::<JitterBuffer>() as u64;
+
+/// Tamaño real del estado inline del resampler (anillo y fase entre frames).
+pub const RESAMPLER_STATE_BYTES: u64 = core::mem::size_of::<LinearResampler>() as u64;
+
+/// Tamaño real del estado inline del controlador de drift.
+pub const DRIFT_STATE_BYTES: u64 = core::mem::size_of::<DriftController>() as u64;
+
+/// Memoria de audio preasignada: el jitter buffer completo tal como lo reserva
+/// `size_of::<JitterBuffer>()` (slots, PLC y contabilidad), no 16 x 508 B.
+///
+/// No incluye el estado del resampler ([`RESAMPLER_STATE_BYTES`]) ni el del
+/// controlador de drift ([`DRIFT_STATE_BYTES`]): son estados inline separados
+/// del camino de audio y se declaran aparte en [`AUDIO_PATH_STATE_BYTES`]. No
+/// incluye heap, metadatos del allocador, pilas de hilos ni RSS.
+pub const AUDIO_PREALLOCATED_BYTES: u64 = JITTER_BUFFER_BYTES;
+
+/// Estado inline completo del camino de audio: jitter buffer más resampler y
+/// controlador de drift. Sigue siendo una suma de `size_of` en compilación, no
+/// una medición de RSS ni un presupuesto mágico.
+pub const AUDIO_PATH_STATE_BYTES: u64 = JITTER_BUFFER_BYTES
+    .saturating_add(RESAMPLER_STATE_BYTES)
+    .saturating_add(DRIFT_STATE_BYTES);
 
 /// Asignación transitoria permitida en el camino de audio: ninguna.
 pub const TRANSIENT_AUDIO_ALLOC_BYTES: u64 = 0;

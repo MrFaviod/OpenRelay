@@ -11,6 +11,7 @@ use arl_audio_core::drift::{DriftConfig, DriftController};
 use arl_audio_core::frame::{AudioFrame, Flags, DATAGRAM_LEN};
 use arl_audio_core::jitter::{JitterBuffer, JitterConfig, PopOutcome, PushOutcome};
 use arl_audio_core::pcm16;
+use arl_audio_core::resample::LinearResampler;
 
 fn frame(seq: u32) -> AudioFrame {
     AudioFrame::new(1, seq, Flags::NONE, pcm16::SILENCE).expect("frame válido")
@@ -120,17 +121,146 @@ fn contadores_consumen_metricas_reales_de_jitter_y_drift() {
     counters.observe(&jitter, &drift);
     assert_eq!(counters.streaming.frames, snapshot.frames);
     assert_eq!(counters.streaming.resyncs, snapshot.resyncs);
+
+    // Volver a idle con la misma instantánea tampoco reatribuye ni duplica:
+    // la línea base del pipeline ya está sincronizada por la observación previa.
+    counters.set_mode(Mode::Idle);
+    counters.observe(&jitter, &drift);
+    assert_eq!(
+        counters.idle.frames, 0,
+        "idle no hereda emisiones de streaming"
+    );
+    assert_eq!(counters.idle.resyncs, 0, "idle no hereda resyncs");
+    assert_eq!(counters.streaming, snapshot, "streaming queda intacto");
 }
 
 #[test]
-fn memoria_preasignada_audio_separada_de_heap_control() {
+fn alternar_streaming_idle_streaming_no_duplica_emisiones() {
+    let mut buffer = JitterBuffer::new(JitterConfig::new(5));
+    let drift = DriftController::new(DriftConfig::default()).expect("config válida");
+    let mut counters = IdleStreamBudget::new();
+
+    // Emisión 1 en streaming.
+    assert_eq!(buffer.push(frame(0), 0), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(5_000), PopOutcome::Emitted(_)));
+    counters.set_mode(Mode::Streaming);
+    counters.observe(&buffer.counters(), &drift);
+    assert_eq!(counters.streaming.frames, 1);
+    assert_eq!(counters.idle.frames, 0, "idle arranca en cero");
+
+    // Emisión 2 en idle: se cuenta en idle y no se reatribuye al volver.
+    assert_eq!(buffer.push(frame(1), 6_000), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(10_000), PopOutcome::Emitted(_)));
+    counters.set_mode(Mode::Idle);
+    counters.observe(&buffer.counters(), &drift);
+    assert_eq!(counters.idle.frames, 1);
+    assert_eq!(counters.streaming.frames, 1, "idle no contamina streaming");
+
+    // Emisión 3 de vuelta en streaming: sólo suma la nueva, no las dos previas.
+    assert_eq!(buffer.push(frame(2), 11_000), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(15_000), PopOutcome::Emitted(_)));
+    counters.set_mode(Mode::Streaming);
+    counters.observe(&buffer.counters(), &drift);
+    assert_eq!(buffer.counters().emitted, 3);
+    assert_eq!(
+        counters.streaming.frames, 2,
+        "streaming cuenta las emisiones 1 y 3, no 1, 2 y 3"
+    );
+    assert_eq!(counters.idle.frames, 1);
+    assert_eq!(counters.streaming.frames + counters.idle.frames, 3);
+    assert_eq!(
+        counters.streaming.samples + counters.idle.samples,
+        3 * 240,
+        "cada emisión aporta sus 240 muestras una sola vez"
+    );
+
+    // Hueco rellenado con PLC en streaming: se cuenta una vez y no pasa a idle.
+    assert!(matches!(buffer.pop(20_000), PopOutcome::Emitted(_)));
+    let with_gap = buffer.counters();
+    assert_eq!(with_gap.gaps, 1);
+    assert_eq!(with_gap.plc_frames, 1);
+    counters.observe(&with_gap, &drift);
+    assert_eq!(
+        counters.streaming.gaps, 1,
+        "el hueco se cuenta en streaming"
+    );
+    assert_eq!(counters.streaming.plc_frames, 1);
+    counters.set_mode(Mode::Idle);
+    counters.observe(&with_gap, &drift);
+    assert_eq!(counters.idle.gaps, 0, "idle no duplica el hueco");
+    assert_eq!(counters.idle.plc_frames, 0);
+    assert_eq!(counters.streaming.frames, 2, "sin emisiones nuevas no suma");
+}
+
+#[test]
+fn observaciones_repetidas_suman_cero_y_el_reinicio_cuenta_desde_cero() {
+    let mut buffer = JitterBuffer::new(JitterConfig::new(5));
+    assert_eq!(buffer.push(frame(0), 0), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(5_000), PopOutcome::Emitted(_)));
+    assert_eq!(buffer.push(frame(1), 6_000), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(10_000), PopOutcome::Emitted(_)));
+    assert_eq!(buffer.push(frame(2), 11_000), PushOutcome::Accepted);
+    assert!(matches!(buffer.pop(15_000), PopOutcome::Emitted(_)));
+    let drift = DriftController::new(DriftConfig::default()).expect("config válida");
+    let mut counters = IdleStreamBudget::new();
+    counters.set_mode(Mode::Streaming);
+    counters.observe(&buffer.counters(), &drift);
+    let once = counters.streaming;
+    assert_eq!(once.frames, 3);
+
+    // Repetir la misma instantánea no cambia ningún campo.
+    counters.observe(&buffer.counters(), &drift);
+    assert_eq!(counters.streaming, once, "delta cero no duplica");
+
+    // Pipeline nuevo con contadores por debajo de la línea base: se cuenta lo
+    // nuevo desde cero en vez de saturar el delta a cero y perderlo.
+    let mut fresh = JitterBuffer::new(JitterConfig::new(5));
+    assert_eq!(fresh.push(frame(0), 0), PushOutcome::Accepted);
+    assert!(matches!(fresh.pop(5_000), PopOutcome::Emitted(_)));
+    counters.observe(&fresh.counters(), &drift);
+    assert_eq!(
+        counters.streaming.frames,
+        once.frames + 1,
+        "un reinicio del pipeline se cuenta desde cero"
+    );
+    assert_eq!(counters.streaming.samples, once.samples + 240);
+}
+
+#[test]
+fn memoria_preasignada_usa_size_of_real_y_no_el_wire() {
+    use core::mem::size_of;
+
+    assert_eq!(budget::FRAME_WIRE_BYTES, DATAGRAM_LEN as u64);
+    assert_eq!(budget::AUDIO_FRAME_BYTES, size_of::<AudioFrame>() as u64);
+    assert_ne!(
+        budget::AUDIO_FRAME_BYTES,
+        budget::FRAME_WIRE_BYTES,
+        "el frame Rust no mide lo mismo que el datagrama wire de 508 B"
+    );
+    assert_eq!(
+        budget::AUDIO_PREALLOCATED_BYTES,
+        size_of::<JitterBuffer>() as u64,
+        "la memoria preasignada es size_of::<JitterBuffer>(), no slots x 508 B"
+    );
+    assert_eq!(
+        budget::AUDIO_PATH_STATE_BYTES,
+        (size_of::<JitterBuffer>() + size_of::<LinearResampler>() + size_of::<DriftController>())
+            as u64,
+        "el total del camino de audio suma los tres estados inline reales"
+    );
+    assert_eq!(
+        budget::AUDIO_PATH_STATE_BYTES - budget::AUDIO_PREALLOCATED_BYTES,
+        budget::RESAMPLER_STATE_BYTES + budget::DRIFT_STATE_BYTES,
+        "resampler y drift se declaran aparte, no dentro del jitter buffer"
+    );
     assert_eq!(budget::TRANSIENT_AUDIO_ALLOC_BYTES, 0);
-    assert!(budget::AUDIO_PREALLOCATED_BYTES >= (budget::JITTER_SLOTS * DATAGRAM_LEN) as u64);
+    assert_eq!(budget::JITTER_SLOTS, 16, "capacidad de la cola, no bytes");
+
     let control_heap = budget::CONTROL_HEAP_LIMIT_BYTES;
-    assert!(control_heap > 0, "el heap de control debe ser positivo");
-    assert!(
-        control_heap <= 1 << 20,
-        "el heap de control no debe superar 1 MiB"
+    assert_eq!(
+        control_heap,
+        64 * 1024,
+        "el heap de control se declara en 64 KiB, por debajo de 1 MiB"
     );
     assert_ne!(
         budget::AUDIO_PREALLOCATED_BYTES,
