@@ -1,0 +1,16 @@
+[package]
+name = "arl-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Control y wire de control de arl v1 (sin red, sin codec, sin criptografia)"
+
+[dependencies]
+serde = { version = "=1.0.210", default-features = false, features = ["std"] }
+serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true
