@@ -114,7 +114,7 @@ Reglas:
 3. El valor se valida contra tipo y rango de [`config-schema.md`](config-schema.md). Un valor inválido se rechaza con `invalid` y no se aplica.
 4. Si el valor efectivo coincide con el actual, se devuelve `ack` con `applied: false` y la revisión no cambia.
 5. Si se aplica, la revisión avanza exactamente **+1** y el `ack` devuelve `requested` y `effective`. `effective` puede diferir de `requested` por límites del dispositivo o del SO; el cliente debe mostrar ambos.
-6. El daemon emite un `event` `config.changed` con la revisión nueva y el par `key`/`effective` a los clientes suscritos.
+6. El daemon emite un `event` `config.changed` con la revisión nueva y `data` `{key, requested, effective}` (valores, no pares) a los clientes suscritos.
 
 ### 5.4 `ack`
 
@@ -139,7 +139,28 @@ Reglas:
 
 ### 5.6 `event`
 
-`payload.name` ∈ `config.changed`, `session.state`. `data` es un objeto acotado (≤64 claves) definido por el nombre del evento; no contiene audio ni secretos. Un evento no requiere ACK. La reconexión usa snapshot + eventos; no hay replay indefinido.
+Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.state`; cada nombre fija una forma **cerrada** de `data`, sin claves adicionales y sin objetos ni arrays anidados. `data` no contiene audio ni secretos. Un evento no requiere ACK ni `request_id`. La reconexión usa snapshot + eventos; no hay replay indefinido.
+
+`config.changed` se emite tras un `config.set` aplicado, con la revisión nueva. `data.key` es la clave; `requested` y `effective` son los valores solicitado y efectivo, con las mismas restricciones por clave que `config.set` (pueden diferir por límites del dispositivo o del SO).
+
+```json
+{ "schema_version": "arl.control/v1", "type": "event", "revision": 8
+  "payload": { "name": "config.changed"
+               "data": { "key": "audio.gain_db", "requested": 3.0, "effective": 3.0 } } }
+```
+
+`session.state` informa el cambio de estado de la sesión: `active` al autorizar y `closed` al cerrar. `detail` es opcional, texto corto (≤200) sin secretos ni rutas internas.
+
+```json
+{ "schema_version": "arl.control/v1", "type": "event", "revision": 8
+  "payload": { "name": "session.state"
+               "data": { "state": "closed", "detail": "client closed" } } }
+```
+
+| Evento | Campos obligatorios | Campos opcionales | Límites |
+|---|---|---|---|
+| `config.changed` | `key`, `requested`, `effective` | — | `key` 1..=64 con el patrón de §4; `requested`/`effective` según [`config-schema.md`](config-schema.md) |
+| `session.state` | `state` | `detail` | `state` ∈ `active`, `closed`; `detail` ≤ 200 caracteres |
 
 ## 6. Revisiones e idempotencia
 
@@ -232,6 +253,7 @@ Total del datagrama: **508 bytes**. Tamaño máximo aceptado: **1200 bytes** (pr
 | Profundidad JSON | 8 |
 | Claves por objeto / elementos por array | 64 / 64 |
 | String JSON | 1024 caracteres |
+| Eventos | `config.changed`/`session.state`; `data` cerrada y plana (sin anidar objetos ni arrays) |
 | `request_id` | 1..=64 caracteres `[A-Za-z0-9_-]` |
 | Caché de idempotencia | 64 entradas, TTL 60 s, FIFO, por sesión |
 | Cabecera de audio | 28 bytes |

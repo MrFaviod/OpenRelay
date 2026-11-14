@@ -613,18 +613,261 @@
       }
     },
     "event_payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/event_config_changed"
+        },
+        {
+          "$ref": "#/$defs/event_session_state"
+        }
+      ]
+    },
+    "event_config_changed": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "data"],
       "properties": {
         "name": {
-          "enum": ["config.changed", "session.state"]
+          "const": "config.changed"
         },
         "data": {
-          "type": "object",
-          "maxProperties": 64
+          "$ref": "#/$defs/config_changed_data"
         }
       }
+    },
+    "event_session_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "data"],
+      "properties": {
+        "name": {
+          "const": "session.state"
+        },
+        "data": {
+          "$ref": "#/$defs/session_state_data"
+        }
+      }
+    },
+    "config_changed_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "requested", "effective"],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/config_key"
+        },
+        "requested": {
+          "$ref": "#/$defs/config_value"
+        },
+        "effective": {
+          "$ref": "#/$defs/config_value"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/event_config_key_rules"
+        }
+      ]
+    },
+    "event_config_key_rules": {
+      "description": "Restricciones por clave para requested/effective del evento config.changed, equivalentes a config_key_value_rules.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.sample_rate_hz"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_sample_rate_hz"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_sample_rate_hz"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.frame_duration_ms"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_frame_duration_ms"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_frame_duration_ms"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.gain_db"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_gain_db"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_gain_db"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.mute"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_mute"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_mute"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.jitter_target_ms"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_jitter_target_ms"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_jitter_target_ms"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "ui.theme"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_ui_theme"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_ui_theme"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "ui.text_scale"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_ui_text_scale"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_ui_text_scale"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "device.local_volume"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_device_local_volume"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_device_local_volume"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "device.model"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_device_model"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_device_model"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "session_state_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": ["active", "closed"]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "description": "Estado de sesión: active al autorizar, closed al cerrar; detail es texto corto sin secretos."
     },
     "capabilities_payload": {
       "type": "object",
