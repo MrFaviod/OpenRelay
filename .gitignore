@@ -19,6 +19,15 @@
 /tmp/
 /artifacts/tmp/
 
+# Herramientas de verificación (Python; no hay producto Python)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Entorno aislado para la dependencia de test (jsonschema; nunca global)
+/.venv/
+/tools/.venv/
+
 # Editores y sistema
 .DS_Store
 .idea/

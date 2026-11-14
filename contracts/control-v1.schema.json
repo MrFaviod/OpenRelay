@@ -224,9 +224,21 @@
       "description": "Clave de configuracion; la existencia y el alcance los valida el daemon."
     },
     "config_value": {
-      "type": ["boolean", "number"],
-      "minimum": -1000000,
-      "maximum": 1000000
+      "description": "Valor tipado de configuracion: boolean, numero finito o string UTF-8 acotado. Las restricciones por clave se aplican en config_pair, config_snapshot y config_set_payload.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number",
+          "minimum": -1000000,
+          "maximum": 1000000
+        },
+        {
+          "type": "string",
+          "maxLength": 1024
+        }
+      ]
     },
     "config_pair": {
       "type": "object",
@@ -239,7 +251,12 @@
         "value": {
           "$ref": "#/$defs/config_value"
         }
-      }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/config_key_value_rules"
+        }
+      ]
     },
     "config_snapshot": {
       "type": "object",
@@ -247,9 +264,234 @@
       "propertyNames": {
         "$ref": "#/$defs/config_key"
       },
+      "patternProperties": {
+        "^audio\\.sample_rate_hz$": {
+          "$ref": "#/$defs/value_audio_sample_rate_hz"
+        },
+        "^audio\\.frame_duration_ms$": {
+          "$ref": "#/$defs/value_audio_frame_duration_ms"
+        },
+        "^audio\\.gain_db$": {
+          "$ref": "#/$defs/value_audio_gain_db"
+        },
+        "^audio\\.mute$": {
+          "$ref": "#/$defs/value_audio_mute"
+        },
+        "^audio\\.jitter_target_ms$": {
+          "$ref": "#/$defs/value_audio_jitter_target_ms"
+        },
+        "^ui\\.theme$": {
+          "$ref": "#/$defs/value_ui_theme"
+        },
+        "^ui\\.text_scale$": {
+          "$ref": "#/$defs/value_ui_text_scale"
+        },
+        "^device\\.local_volume$": {
+          "$ref": "#/$defs/value_device_local_volume"
+        },
+        "^device\\.model$": {
+          "$ref": "#/$defs/value_device_model"
+        }
+      },
       "additionalProperties": {
         "$ref": "#/$defs/config_value"
       }
+    },
+    "config_key_value_rules": {
+      "description": "Restricciones de valor por clave, compartidas por config.set, los pares del ack y el snapshot.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.sample_rate_hz"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_sample_rate_hz"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.frame_duration_ms"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_frame_duration_ms"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.gain_db"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_gain_db"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.mute"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_mute"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "audio.jitter_target_ms"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_jitter_target_ms"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "ui.theme"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_ui_theme"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "ui.text_scale"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_ui_text_scale"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "device.local_volume"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_device_local_volume"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "device.model"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_device_model"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "value_audio_sample_rate_hz": {
+      "const": 48000
+    },
+    "value_audio_frame_duration_ms": {
+      "const": 5
+    },
+    "value_audio_gain_db": {
+      "type": "number",
+      "minimum": -24,
+      "maximum": 24,
+      "multipleOf": 0.5
+    },
+    "value_audio_mute": {
+      "type": "boolean"
+    },
+    "value_audio_jitter_target_ms": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 40
+    },
+    "value_ui_theme": {
+      "type": "string",
+      "enum": ["system", "light", "dark"]
+    },
+    "value_ui_text_scale": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 2.0
+    },
+    "value_device_local_volume": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "value_device_model": {
+      "type": "string",
+      "maxLength": 64
     },
     "hello_payload": {
       "type": "object",
@@ -301,159 +543,7 @@
       },
       "allOf": [
         {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "audio.sample_rate_hz"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "const": 48000
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "audio.frame_duration_ms"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "const": 5
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "audio.gain_db"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "number",
-                "minimum": -24,
-                "maximum": 24,
-                "multipleOf": 0.5
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "audio.mute"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "boolean"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "audio.jitter_target_ms"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "integer",
-                "minimum": 5,
-                "maximum": 40
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "ui.theme"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "string",
-                "enum": ["system", "light", "dark"]
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "ui.text_scale"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "number",
-                "minimum": 1.0,
-                "maximum": 2.0
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "device.local_volume"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "number",
-                "minimum": 0.0,
-                "maximum": 1.0
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "key": {
-                "const": "device.model"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "value": {
-                "type": "string",
-                "maxLength": 64
-              }
-            }
-          }
+          "$ref": "#/$defs/config_key_value_rules"
         }
       ]
     },
