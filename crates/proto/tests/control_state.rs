@@ -1271,6 +1271,36 @@ fn capabilities_reject_unknown_features_actions_ids_and_extra_keys() {
     );
 }
 
+#[test]
+fn capabilities_reject_duplicate_features_and_actions_but_keep_valid_arrays() {
+    let base = |features: &str, actions: &str, config_keys: &str| {
+        format!(
+            r#"{{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":{actions},"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":{config_keys}}}}}"#
+        )
+    };
+    // Arrays válidos y clave desconocida sintácticamente válida: el decoder no
+    // conoce el catálogo, así que debe dejarla pasar (el daemon decide).
+    let valid = base(
+        r#"["control.v1","session.v1"]"#,
+        r#"["config.read","config.write"]"#,
+        r#"[{"key":"zz.custom","scope":"shared","type":"integer","minimum":-5,"maximum":5}]"#,
+    );
+    assert!(wire::decode_message(&frame_len(valid.as_bytes())).is_ok());
+    // uniqueItems del schema: features y remote_actions no admiten repetidos.
+    for (features, actions) in [
+        (r#"["control.v1","control.v1"]"#, r#"["config.read"]"#),
+        (r#"["control.v1"]"#, r#"["config.read","config.read"]"#),
+    ] {
+        let duplicated = base(features, actions, "[]");
+        assert_eq!(
+            wire::decode_message(&frame_len(duplicated.as_bytes()))
+                .unwrap_err()
+                .code(),
+            ErrorCode::Invalid
+        );
+    }
+}
+
 // ------------------------------------------------------------------ errors --
 
 #[test]

@@ -1455,7 +1455,7 @@ fn capabilities_from_fields(
     })
 }
 
-fn decode_array<T>(
+fn decode_array<T: PartialEq>(
     value: JsonValue,
     max_items: usize,
     decode: fn(JsonValue) -> Result<T, WireError>,
@@ -1465,7 +1465,15 @@ fn decode_array<T>(
             if items.len() > max_items {
                 return Err(WireError::shape(None));
             }
-            items.into_iter().map(decode).collect()
+            let decoded: Vec<T> = items
+                .into_iter()
+                .map(decode)
+                .collect::<Result<_, WireError>>()?;
+            // Mismo criterio que el encoder: `uniqueItems` del schema.
+            if has_duplicates(&decoded) {
+                return Err(WireError::shape(None));
+            }
+            Ok(decoded)
         }
         _ => Err(WireError::shape(None)),
     }
