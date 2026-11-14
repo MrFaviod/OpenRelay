@@ -118,7 +118,7 @@ Por eso el estado es pendiente, y ninguna prueba de este corte puede presentarse
 | I6 | Ancla de enrolamiento no autoriza sesión | `enrollment_anchor_does_not_authorize_session` | Verde |
 | I7 | Firmador externo invocado en el `CertificateVerify` | `assert!(signer.signatures > 0)` en cliente y servidor | Verde (firmador de test) |
 | I8 | Pin SPKI coincide con oráculo OpenSSL independiente | `pin_coincide_con_sha256_de_spki_openssl` | Verde |
-| I9 | DER malformado, truncado y con bytes extra rechazado; cobertura de no-canonicidad pendiente | 11 pruebas de `identity_pin`; el vector rotulado no-canónico cambia también la longitud del cuerpo | Verde parcial; no acredita negativo no-canónico aislado |
+| I9 | DER malformado, truncado, bytes extra y longitud no mínima rechazados | `identity_pin`: vector `30 83 00 01 80`, cuerpo original 384B byteidéntico y longitud consistente; original aceptado | Padre 11 PASS, exit0; negativo no-canónico aislado corregido durante consolidación |
 | I10 | `keys_match` impide firmar con clave distinta de la certificada | lectura de `identity::certified_key` | Presente en código |
 | I11 | Enrolamiento acepta token válido **sin** certificado de cliente | `enrollment_accepts_valid_token_without_client_certificate` | Verde |
 | I12 | Pin erróneo aborta **antes** de enviar el token | `wrong_pin_aborts_before_sending_token` | Verde |
@@ -152,7 +152,7 @@ de `identity_pin`, 8 de `enrollment_boundary` y 7 de `tls_identity_gate`
   probada.
 - **La ACL es un mapa en memoria** indexado por pin. No hay persistencia
   revocación ni cuotas por identidad en este corte; ambas son.
-- **Cobertura pendiente:** faltan regresiones de capabilities parciales e intento adversarial 0-RTT. La configuración deshabilitada y los tests actuales no acreditan esos negativos.
+- **Cobertura host acotada:** capabilities parciales y entrada ACL sin grants tienen cinco pruebas públicas; cuatro runners adicionales comprueban cola vacía para audio/control válidos denegados y controles positivos. Padre GREEN y review dirigida sin findings, cierre36d6cd1. Intento adversarial con early data dispuesto observa ausencia de tickets y tipo0RTT en la primera flight de reconexión, con handshake completo; store siempre descarta y contador take acumulado no prueba consulta nueva. No acredita rechazo de datagrama0RTT entrante ni imposibilidad global de reanudación.
 - **`Capabilities` se evalúa en el servidor por operación** (`mic`
   `control_read`, `control_write`, `return_audio`), no en el cliente. Un cliente
   malicioso que abra un stream antes de autorizar recibe cierre `0x103`.

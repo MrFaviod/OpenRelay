@@ -100,9 +100,11 @@ recorta en silencio.
   comportamiento de socket. Eso es y sigue abierto.
 - La API pública (`SessionServer`, `SessionClient`, `SessionLimits`
   `Capabilities`, `Acl`, `RejectReason`, `ServerEvent`, `ClientEvent`
-  `TransportError`) queda **entregada pero no liberada a consumidores**: y
-   no deben empezar contra ella hasta que se cierren las regresiones R7/R8 de
-  §4.
+  `TransportError`) queda **liberada para desarrollar consumidores host **
+  tras el cierre de regresiones y residuo ACL en `36d6cd1`; véase
+  [contrato consumidor](../transport-api.md) y cierre vigente del acta.
+   puede empezar; sigue requiriendo D03/Keystore y productores verificados.
+  Esta liberación no congela D02 ni acredita Android/LAN/producción.
 
 ## 4. Requisitos observables
 
@@ -116,16 +118,17 @@ check no ejecutado no es PASS.
 | R2 | Audio por DATAGRAM tras autorizar y roundtrip de `encode` | `authorized_session_delivers_real_audio_and_control` | Verde |
 | R3 | Control por stream fiable en ambos sentidos | misma prueba, `Ping` y `Event`/`session.state` | Verde |
 | R4 | ALPN separados: sesión no entra en enroll y viceversa | `enrollment_boundary`, pruebas `session_client_cannot_use_enrollment_endpoint` y `enrollment_client_cannot_use_session_endpoint` | Verde (8 pruebas en la suite) |
-| R5 | 0-RTT desactivado; handshake normal no lo ofrece ni acepta | `assert!(!client.has_0rtt)`, `assert!(!client.accepted_0rtt)` | Verde sólo para handshake normal; falta intento adversarial |
+| R5 | Configuración sin early data; observación adversarial acotada | `quinn_security_regressions` | Padre 2 PASS iniciales y suite6PASS tras fix; cliente dispuesto/store siempreNone, sin tickets observados ni tipo0RTT en primera flight de reconexión. No rechazo entrante ni imposibilidad global de reanudación |
 | R6 | Límites rechazados fuera de rango | lectura de `SessionLimits::validate` | Presente en código; sin prueba dedicada de cada rama |
-| R7 | Stream de control tolera `Blocked` y rechaza `Reset`/malformed | prueba de regresión dedicada | **Pendiente — pendiente** |
-| R8 | Stream recién aceptado entrega bytes ya disponibles sin esperar otro evento Readable | prueba de regresión dedicada | **Pendiente — pendiente** |
+| R7 | Stream de control tolera `Blocked` y trata `Reset`/malformed según contrato | regresiones A/B/D y lifecycle de `quinn_regressions`, cierres del acta | A/B/D/cleanup/envío público aceptados a sus alcances; padre repitió 22 regresiones, exit0 |
+| R8 | Stream recién aceptado entrega bytes ya disponibles sin esperar otro evento Readable | `stream_regressions` | Padre: 2 PASS, sesión y enrolamiento, exit0 |
 | R9 | Empaquetado Android: ABI, páginas de 16 KB, tamaño, licencias | build real de APK.so | **Pendiente — ** |
 | R10 | RTT/jitter/pérdida/CPU en LAN con `tc-netem` | medición en red real | **Pendiente — ** |
 
-R7 y R8 son la razón por la que este ADR **no** declara la API liberada: el
-acta registra dos rondas de corrección agotadas sin tercera automática
-([acta /](../plan/execution-f2-f3.md)).
+R7/R8 ya no bloquean el uso de la API host: los cierres posteriores y su
+verificación están en el [acta /](../plan/execution-f2-f3.md).
+Los pendiente y rondas históricas no son el estado vigente; D03/– y gate
+sí permanecen abiertos. No se reabre el motor aceptado por gaps de otra superficie.
 
 ## 5. Alternativas rechazadas
 
@@ -141,10 +144,13 @@ acta registra dos rondas de corrección agotadas sin tercera automática
 
 ## 6. Riesgos conocidos
 
-- **Framing corrupto sin cierre (pendiente):** la revisión host y la lectura del padre confirman que `read_control` limpia el buffer y retorna sin cerrar ante longitud ilegal; los llamadores no reciben error. Incumple el cierre exigido por `docs/protocol.md` §3. No hay repro E2E; no se atribuye bypass de identidad. Los errores de contenido requieren `invalid` según contrato, no cierre indiscriminado. El cliente también descarta audio malformado sin cerrar; política y regresión pendientes.
-- **Lectura del stream de control:** el camino de `ReadError::Blocked` conserva
-  el prefijo y reintenta, pero no tiene regresión dedicada (R7). Un fallo aquí
-  se manifestaría como control que deja de entregarse, no como error visible.
+- **Regresiones host cerradas al alcance:** framing, contenido, fragmentación
+  aislamiento, backpressure, lifecycle y envío público cuentan con cierres y
+  evidencia dirigida en el acta. El anterior pendiente de framing/Blocked es histórico.
+  No se afirma combinatoria exhaustiva ni se modifica la política de cancelación.
+- **Límites conservados:** cliente con ventana pequeña y cuotas runtime de
+  bytes/streams no tienen el mismo oráculo dedicado que el servidor. La revisión
+  del residuo ACL no volvió a auditar esos mecanismos; no es un gate global.
 - **Motivo de rechazo impreciso en audio malformado:** en
   [`quinn.rs`](..../crates/transport/src/quinn.rs), un `AudioFrame::decode`
   fallido emite `ServerEvent::Rejected` con `RejectReason::Tls`, un motivo que
