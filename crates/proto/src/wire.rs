@@ -89,6 +89,14 @@ impl WireError {
         self.request_id.as_deref()
     }
 
+    /// Propaga un `request_id` recuperable a errores de campos anidados.
+    fn with_request_id(mut self, request_id: Option<&str>) -> Self {
+        if self.request_id.is_none() {
+            self.request_id = request_id.map(str::to_owned);
+        }
+        self
+    }
+
     /// Código del catálogo [`crate::control::ErrorCode`] que corresponde.
     pub fn code(&self) -> ErrorCode {
         match self.kind {
@@ -107,11 +115,10 @@ impl WireError {
     }
 
     /// `error` listo para el wire, si se pudo recuperar `request_id`.
+    ///
+    /// Sin `request_id` no hay `error` posible: el contrato prohíbe inventarlo.
     pub fn to_error_message(&self) -> Option<ControlMessage> {
-        let request_id = self
-            .request_id
-            .clone()
-            .unwrap_or_else(|| "unknown".to_owned());
+        let request_id = self.request_id.as_deref()?;
         let message = match self.kind {
             WireErrorKind::TooLarge => "control payload too large",
             WireErrorKind::UnsupportedVersion => "version unsupported",
@@ -119,7 +126,7 @@ impl WireError {
             WireErrorKind::MalformedJson => "malformed control json",
             WireErrorKind::InvalidShape => "invalid control message",
         };
-        ErrorMsg::new(&request_id, self.code(), message)
+        ErrorMsg::new(request_id, self.code(), message)
             .ok()
             .map(ControlMessage::Error)
     }
@@ -1116,14 +1123,26 @@ fn declaration_to_json(declaration: &ConfigKeyDeclaration) -> JsonValue {
 
 struct Fields {
     entries: Vec<(String, JsonValue)>,
+    request_id: Option<String>,
 }
 
 impl Fields {
     fn parse(value: JsonValue) -> Result<Self, WireError> {
+        Self::parse_with(value, None)
+    }
+
+    fn parse_with(value: JsonValue, request_id: Option<&str>) -> Result<Self, WireError> {
         match value {
-            JsonValue::Object(entries) => Ok(Self { entries }),
-            _ => Err(WireError::shape(None)),
+            JsonValue::Object(entries) => Ok(Self {
+                entries,
+                request_id: request_id.map(str::to_owned),
+            }),
+            _ => Err(shape_error(request_id)),
         }
+    }
+
+    fn error(&self) -> WireError {
+        WireError::shape(self.request_id.clone())
     }
 
     fn peek(&self, name: &str) -> Option<&JsonValue> {
@@ -1146,8 +1165,9 @@ impl Fields {
     }
 
     fn require(&mut self, name: &str, request_id: Option<&str>) -> Result<JsonValue, WireError> {
+        let fallback = self.request_id.clone();
         self.take(name)
-            .ok_or_else(|| WireError::shape(request_id.map(str::to_owned)))
+            .ok_or_else(|| WireError::shape(request_id.or(fallback.as_deref()).map(str::to_owned)))
     }
 
     fn require_string(
@@ -1157,13 +1177,17 @@ impl Fields {
     ) -> Result<String, WireError> {
         match self.require(name, request_id)? {
             JsonValue::String(value) => Ok(value),
-            _ => Err(WireError::shape(request_id.map(str::to_owned))),
+            _ => Err(WireError::shape(
+                request_id.or(self.request_id.as_deref()).map(str::to_owned),
+            )),
         }
     }
 
     fn require_request_id(&mut self) -> Result<String, WireError> {
         let value = self.require_string("request_id", None)?;
-        require_request_id(value)
+        let value = require_request_id(value)?;
+        self.request_id = Some(value.clone());
+        Ok(value)
     }
 
     fn require_revision(&mut self, name: &str) -> Result<u64, WireError> {
@@ -1171,18 +1195,20 @@ impl Fields {
             JsonValue::Number(number) => number
                 .as_u64()
                 .filter(|value| *value <= MAX_REVISION)
-                .ok_or_else(|| WireError::shape(None)),
-            _ => Err(WireError::shape(None)),
+                .ok_or_else(|| self.error()),
+            _ => Err(self.error()),
         }
     }
 
     fn require_object(&mut self, name: &str) -> Result<Fields, WireError> {
-        Fields::parse(self.require(name, None)?)
+        let request_id = self.request_id.clone();
+        let value = self.require(name, request_id.as_deref())?;
+        Fields::parse_with(value, request_id.as_deref())
     }
 
     fn reject(&mut self, name: &str) -> Result<(), WireError> {
         if self.take(name).is_some() {
-            return Err(WireError::shape(None));
+            return Err(self.error());
         }
         Ok(())
     }
@@ -1191,7 +1217,7 @@ impl Fields {
         if self.entries.is_empty() {
             Ok(())
         } else {
-            Err(WireError::shape(None))
+            Err(self.error())
         }
     }
 }
@@ -1207,13 +1233,13 @@ fn decode_config_key(value: JsonValue, request_id: Option<&str>) -> Result<Confi
     }
 }
 
-fn decode_revision_value(value: &JsonValue) -> Result<u64, WireError> {
+fn decode_revision_value(value: &JsonValue, request_id: Option<&str>) -> Result<u64, WireError> {
     match value {
         JsonValue::Number(number) => number
             .as_u64()
             .filter(|revision| *revision <= MAX_REVISION)
-            .ok_or_else(|| WireError::shape(None)),
-        _ => Err(WireError::shape(None)),
+            .ok_or_else(|| shape_error(request_id)),
+        _ => Err(shape_error(request_id)),
     }
 }
 
@@ -1246,7 +1272,7 @@ fn decode_config_value(
 }
 
 fn decode_pair(value: JsonValue, request_id: Option<&str>) -> Result<ConfigPair, WireError> {
-    let mut fields = Fields::parse(value)?;
+    let mut fields = Fields::parse_with(value, request_id)?;
     let key = decode_config_key(fields.require("key", request_id)?, request_id)?;
     let value = decode_config_value(fields.require("value", request_id)?, request_id)?;
     fields.finish()?;
@@ -1321,7 +1347,8 @@ fn decode_hello(fields: &mut Fields) -> Result<ControlMessage, WireError> {
     let payload = fields.require_object("payload")?;
     fields.finish()?;
     let mut payload = payload;
-    let role = decode_role(payload.require("role", Some(&request_id))?)?;
+    let role = decode_role(payload.require("role", Some(&request_id))?)
+        .map_err(|error| error.with_request_id(Some(&request_id)))?;
     let version = payload.require_string("version", Some(&request_id))?;
     if !is_valid_version(&version) {
         return Err(shape_error(Some(&request_id)));
@@ -1410,11 +1437,12 @@ fn capabilities_from_fields(
     {
         return Err(shape_error(request_id));
     }
-    let role = decode_role(payload.require("role", request_id)?)?;
+    let role = decode_role(payload.require("role", request_id)?)
+        .map_err(|error| error.with_request_id(request_id))?;
     let features_value = payload.require("features", request_id)?;
-    let features = decode_array(features_value, 8, decode_feature)?;
+    let features = decode_array(features_value, 8, decode_feature, request_id)?;
     let actions_value = payload.require("remote_actions", request_id)?;
-    let remote_actions = decode_array(actions_value, 2, decode_remote_action)?;
+    let remote_actions = decode_array(actions_value, 2, decode_remote_action, request_id)?;
     let mut limits = payload.require_object("limits")?;
     let max_control_payload_bytes =
         require_const_unsigned(&mut limits, "max_control_payload_bytes", 16_384)?;
@@ -1432,7 +1460,10 @@ fn capabilities_from_fields(
             }
             let mut out = Vec::with_capacity(items.len());
             for item in items {
-                out.push(declaration_from_fields(Fields::parse(item)?, request_id)?);
+                out.push(declaration_from_fields(
+                    Fields::parse_with(item, request_id)?,
+                    request_id,
+                )?);
             }
             out
         }
@@ -1459,23 +1490,24 @@ fn decode_array<T: PartialEq>(
     value: JsonValue,
     max_items: usize,
     decode: fn(JsonValue) -> Result<T, WireError>,
+    request_id: Option<&str>,
 ) -> Result<Vec<T>, WireError> {
     match value {
         JsonValue::Array(items) => {
             if items.len() > max_items {
-                return Err(WireError::shape(None));
+                return Err(shape_error(request_id));
             }
             let decoded: Vec<T> = items
                 .into_iter()
-                .map(decode)
+                .map(|item| decode(item).map_err(|error| error.with_request_id(request_id)))
                 .collect::<Result<_, WireError>>()?;
             // Mismo criterio que el encoder: `uniqueItems` del schema.
             if has_duplicates(&decoded) {
-                return Err(WireError::shape(None));
+                return Err(shape_error(request_id));
             }
             Ok(decoded)
         }
-        _ => Err(WireError::shape(None)),
+        _ => Err(shape_error(request_id)),
     }
 }
 
@@ -1487,9 +1519,9 @@ fn require_const_unsigned(
     match fields.require(name, None)? {
         JsonValue::Number(number) => match number.as_u64() {
             Some(value) if value == expected => Ok(value),
-            _ => Err(WireError::shape(None)),
+            _ => Err(fields.error()),
         },
-        _ => Err(WireError::shape(None)),
+        _ => Err(fields.error()),
     }
 }
 
@@ -1640,7 +1672,7 @@ fn decode_error(fields: &mut Fields) -> Result<ControlMessage, WireError> {
         return Err(shape_error(Some(&request_id)));
     }
     let current_revision = match payload.take("current_revision") {
-        Some(value) => Some(decode_revision_value(&value)?),
+        Some(value) => Some(decode_revision_value(&value, Some(&request_id))?),
         None => None,
     };
     payload.finish()?;
