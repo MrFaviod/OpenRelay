@@ -826,10 +826,17 @@ impl SessionServer {
                         }
                         match AudioFrame::decode(&datagram) {
                             Ok(frame) => {
-                                if slot.audio.len() >= MAX_QUEUED_AUDIO {
-                                    slot.audio.pop_front();
+                                // El DATAGRAM ya se recibió y se decodificó; el
+                                // ingreso en la cola de aplicación exige `mic`,
+                                // el mismo permiso que `recv_audio` para
+                                // entregar. Sin él el audio se descarta en vez
+                                // de retenerse.
+                                if slot.capabilities.mic {
+                                    if slot.audio.len() >= MAX_QUEUED_AUDIO {
+                                        slot.audio.pop_front();
+                                    }
+                                    slot.audio.push_back(frame);
                                 }
-                                slot.audio.push_back(frame);
                             }
                             Err(error) => {
                                 self.events.push_back(ServerEvent::Rejected {
@@ -962,6 +969,10 @@ impl Slot {
 /// `Writable`/pump, sin cerrar ni duplicar bytes.
 fn pump_control_streams(slot: &mut Slot, max_frame: usize) -> Option<&'static str> {
     let streams: Vec<StreamId> = slot.recv_streams.iter().copied().collect();
+    // El permiso de encolar es el que exige `recv_control` para entregar. Sin él
+    // el frame válido se drena y se descarta: no se retiene y el resto del
+    // stream (framing, `Reject`, límites) se atiende igual.
+    let accept = slot.authorized && slot.capabilities.control_write;
     for stream in streams {
         match read_control(
             &mut slot.conn,
@@ -969,6 +980,7 @@ fn pump_control_streams(slot: &mut Slot, max_frame: usize) -> Option<&'static st
             &mut slot.control_rx,
             &mut slot.control,
             max_frame,
+            accept,
         ) {
             ControlRead::Idle => {}
             ControlRead::Eof => {
@@ -1230,12 +1242,21 @@ fn control_prefix_fits(payload_len: usize, max_frame: usize) -> bool {
 /// - Contenido inválido con framing íntegro sólo se responde con `error` si el
 ///   `request_id` es recuperable; si no lo es, el contrato no permite inventarlo
 ///   y también se cierra. Un frame `error` inválido nunca genera otro `error`.
+///
+/// `accept` decide únicamente el **ingreso en la cola de aplicación**; los bytes
+/// se drenan, se acumulan en el buffer del stream y se decodifican siempre, y
+/// todos los caminos de framing/`Reject`/límites quedan iguales. Con `accept` en
+/// `false` el frame válido se consume y se descarta, así que un receptor sin el
+/// permiso correspondiente no retiene payload ajeno. Sin ese drenaje, dejar el
+/// stream sin leer movería el residuo al buffer de QUIC y rompería el control de
+/// flujo del que dependen los frames siguientes del mismo stream.
 fn read_control(
     conn: &mut Connection,
     stream: StreamId,
     buffers: &mut ControlBuffers,
     queue: &mut VecDeque<ControlMessage>,
     max_frame: usize,
+    accept: bool,
 ) -> ControlRead {
     loop {
         let (data, finished, failure) = {
@@ -1307,10 +1328,16 @@ fn read_control(
             buffer.drain(..end);
             match wire::decode_message(&frame) {
                 Ok(message) => {
-                    if queue.len() >= MAX_QUEUED_CONTROL {
-                        queue.pop_front();
+                    // El frame ya se consumió del stream y se decodificó: el
+                    // framing sigue exacto. Sólo el ingreso a la cola de
+                    // aplicación depende de `accept`, para no retener payload
+                    // de un peer sin el permiso de escritura.
+                    if accept {
+                        if queue.len() >= MAX_QUEUED_CONTROL {
+                            queue.pop_front();
+                        }
+                        queue.push_back(message);
                     }
-                    queue.push_back(message);
                 }
                 Err(error) => {
                     // El framing quedó íntegro (se consumió exactamente `end`
@@ -1837,6 +1864,10 @@ impl SessionClient {
                 &mut self.control_rx,
                 &mut self.control,
                 max_frame,
+                // El cliente no dispone de la ACL remota: mantiene el
+                // comportamiento autorizado actual, sin aplicar el permiso del
+                // servidor.
+                true,
             ) {
                 ControlRead::Idle => {}
                 ControlRead::Eof => {

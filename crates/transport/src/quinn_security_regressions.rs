@@ -21,6 +21,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use arl_proto::wire::ControlMessage;
 use bytes::BytesMut;
 use quinn_proto::crypto::rustls::QuicClientConfig;
 use quinn_proto::{
@@ -37,7 +39,10 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, Serve
 use rustls::sign::CertifiedKey;
 use rustls::{ClientConfig as TlsClientConfig, NamedGroup, RootCertStore};
 
-use super::{Acl, Capabilities, ServerEvent, SessionLimits, SessionServer, TransportError};
+use super::{
+    Acl, Capabilities, ServerEvent, SessionClient, SessionId, SessionLimits, SessionServer,
+    TransportError,
+};
 use crate::identity::{self, PinnedServerVerifier, SpkiPin, StaticClientCertResolver};
 use crate::ALPN_SESSION;
 
@@ -571,4 +576,338 @@ fn early_data_client_cannot_offer_0rtt_on_reconnect() {
         "la reconexión completa un handshake nuevo, no una reanudación"
     );
     assert!(!peer.conn.accepted_0rtt(), "no se aceptó early data");
+}
+
+// ---------------------------------------------------------------------------
+// Residuo de capacidades: el ingreso en la cola de aplicación no depende de
+// `mic` ni de `control_write`.
+// ---------------------------------------------------------------------------
+//
+// EXCEPCIÓN DELIBERADA Y ACOTADA — lectura privada de `Slot`.
+//
+// Los getters públicos (`recv_audio`/`recv_control`) filtran por capacidad y
+// devuelven `None`, así que por sí solos **no** distinguen «no se encoló nada»
+// de «se encoló y la lectura pública lo oculta». Ese es exactamente el residuo
+// que estos casos deben medir, y no hay superficie pública que lo exponga. Por
+// eso el helper `queued_*` lee `slot.audio` / `slot.control` directamente,
+// desde el mismo módulo de test (`#[path]` dentro de `quinn`), sin tocar
+// producción.
+//
+// Límites de la excepción, para que no se lea como más de lo que es:
+// - NO es un bypass de entrega: el peer sigue sin recibir el DATAGRAM/stream
+//   denegado por la ruta pública, y los `recv_*` se siguen afirmando en `None`.
+// - NO es memoria ilimitada: `MAX_QUEUED_AUDIO` y `MAX_QUEUED_CONTROL` son 8 y
+//   la política de descarte del más viejo no se relaja.
+// - La capacidad es inmutable hoy (no hay ruta pública que la conceda o revoque
+//   tras autorizar), así que el residuo no se «simula»: se produce con tráfico
+//   QUIC real sobre mTLS y una ACL real, sólo que con una entrada que **no**
+//   concede el permiso en cuestión.
+// - El requisito probado es «no retener payload de aplicación denegado», no
+//   «cero bytes en el wire» ni «cero buffering interno de QUIC o de framing»:
+//   un DATAGRAM o frame denegado puede cruzar el wire y llegar a la cola de
+//   quinn; lo que se exige es que no quede encolado para la aplicación.
+
+/// Nº de frames de audio encolados en el slot, sin pasar por el filtro de
+/// capacidad de `recv_audio`. Ver la excepción documentada arriba.
+fn queued_audio(server: &SessionServer, session: SessionId) -> Option<usize> {
+    server.slots.get(&session).map(|slot| slot.audio.len())
+}
+
+/// Nº de mensajes de control encolados en el slot, sin el filtro de capacidad
+/// de `recv_control`. Ver la excepción documentada arriba.
+fn queued_control(server: &SessionServer, session: SessionId) -> Option<usize> {
+    server.slots.get(&session).map(|slot| slot.control.len())
+}
+
+/// Sesión autorizada visible desde ambos extremos, o `None` si el handshake no
+/// la concedió: el control positivo se afirma antes de atribuir nada al residuo.
+fn authorized_pair(client: &mut SessionClient, server: &mut SessionServer) -> Option<SessionId> {
+    let session = authorized_session(server);
+    assert!(
+        session.is_some(),
+        "control positivo: la ACL autoriza la sesión mTLS"
+    );
+    assert!(
+        client.is_authorized(),
+        "control positivo: el cliente verificó el pin del servidor"
+    );
+    session
+}
+
+fn frame(seq: u32) -> AudioFrame {
+    let mut samples = [0i16; SAMPLE_COUNT];
+    for (index, sample) in samples.iter_mut().enumerate() {
+        *sample = (index as i16) - 120 + seq as i16;
+    }
+    AudioFrame::new(1, seq, Flags::NONE, samples).expect("frame v1")
+}
+
+fn ping(request_id: &str) -> ControlMessage {
+    ControlMessage::Ping {
+        request_id: request_id.to_string(),
+    }
+}
+
+/// Bombea un vuelo `SessionClient → SessionServer` hasta agotar transmisiones.
+fn session_drain(
+    from: &mut SessionClient,
+    from_addr: SocketAddr,
+    to: &mut SessionServer,
+    now: Instant,
+) -> Result<(), TransportError> {
+    for _ in 0..256 {
+        let Some((_destination, payload)) = from.poll_transmit(now) else {
+            return Ok(());
+        };
+        to.handle_datagram(now, from_addr, &payload)?;
+    }
+    Err(TransportError::Connect("bombeo no termina".to_string()))
+}
+
+/// Bombea un vuelo `SessionServer → SessionClient` hasta agotar transmisiones.
+fn session_drain_back(
+    from: &mut SessionServer,
+    from_addr: SocketAddr,
+    to: &mut SessionClient,
+    now: Instant,
+) -> Result<(), TransportError> {
+    for _ in 0..256 {
+        let Some((_destination, payload)) = from.poll_transmit(now) else {
+            return Ok(());
+        };
+        to.handle_datagram(now, from_addr, &payload)?;
+    }
+    Err(TransportError::Connect("bombeo no termina".to_string()))
+}
+
+/// Intercambia vuelos hasta que ninguno de los dos tenga algo que enviar.
+fn session_exchange(
+    client: &mut SessionClient,
+    client_addr: SocketAddr,
+    server: &mut SessionServer,
+    server_addr: SocketAddr,
+    rounds: usize,
+) -> Result<(), TransportError> {
+    let now = Instant::now();
+    for _ in 0..rounds {
+        session_drain(client, client_addr, server, now)?;
+        session_drain_back(server, server_addr, client, now)?;
+    }
+    Ok(())
+}
+
+/// Servidor con una entrada ACL que concede exactamente `caps`, más el cliente
+/// real (`SessionClient`, no el peer crudo de early data).
+fn session_pair(
+    server_leaf: &TestLeaf,
+    client_leaf: &TestLeaf,
+    ca: &TestCa,
+    caps: Capabilities,
+) -> (SessionClient, SessionServer) {
+    let mut acl = Acl::new();
+    acl.allow(client_leaf.pin, caps);
+    let server = SessionServer::new(
+        server_leaf.certified(ca),
+        roots(ca),
+        acl,
+        SessionLimits::default(),
+    )
+    .expect("servidor de sesión");
+    let client = SessionClient::connect(
+        client_leaf.certified(ca),
+        roots(ca),
+        server_leaf.pin,
+        SessionLimits::default(),
+        Instant::now(),
+        SERVER_ADDR,
+        "localhost",
+    )
+    .expect("cliente de sesión");
+    (client, server)
+}
+
+/// Audio de cliente **válido** (frame v1 decodificable) sobre una sesión que
+/// sólo concede `return_audio`: el DATAGRAM se recibe, pero sin `mic` no debe
+/// quedar retenido en la cola de aplicación del servidor.
+///
+/// Control positivo en el mismo caso: con `mic` concedido, el **mismo** tráfico
+/// sí puebla la cola, así que un cero en el caso denegado no es un `None`
+/// trivial (payload roto, sesión no autorizada o bombeo insuficiente).
+#[test]
+fn valid_audio_without_mic_is_not_queued_for_the_application() {
+    // Caso denegado: `return_audio` pero no `mic`.
+    let ca = TestCa::new();
+    let server_leaf = ca.leaf("arl-daemon-res-audio", true);
+    let client_leaf = ca.leaf("arl-client-res-audio", false);
+    let (mut client, mut server) = session_pair(
+        &server_leaf,
+        &client_leaf,
+        &ca,
+        Capabilities::none().with_return_audio(),
+    );
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24)
+        .expect("handshake mTLS");
+    let session = authorized_pair(&mut client, &mut server).expect("sesión autorizada");
+    assert_eq!(
+        server.capabilities(session),
+        Some(Capabilities::none().with_return_audio()),
+        "las capacidades del caso denegado son las declaradas, no un fallo de ACL"
+    );
+
+    let denied = frame(11);
+    let before = client.conn.stats().frame_tx.datagram;
+    client.send_audio(&denied).expect("cliente envía DATAGRAM");
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8)
+        .expect("audio en vuelo");
+    assert!(
+        client.conn.stats().frame_tx.datagram > before,
+        "control positivo de entrega: el DATAGRAM de audio salió del cliente"
+    );
+    assert!(
+        !client.conn.is_handshaking() && !client.conn.is_closed(),
+        "no se cerró la sesión por el audio denegado"
+    );
+    assert!(
+        queued_audio(&server, session) == Some(0),
+        "residuo: audio válido sin `mic` no debe quedar en la cola de aplicación"
+    );
+    assert_eq!(
+        server.recv_audio(session),
+        None,
+        "la lectura pública sigue denegando"
+    );
+    assert_eq!(
+        server.identity(session),
+        Some(client_leaf.pin),
+        "la identidad no se revoca por el audio denegado"
+    );
+    assert_eq!(
+        server.capabilities(session),
+        Some(Capabilities::none().with_return_audio()),
+        "las capacidades no mutan por el audio denegado"
+    );
+
+    // Control positivo del mismo tráfico: `mic` concedido sí puebla la cola.
+    // Va en su propio runner para observarlo aunque el caso denegado sea RED.
+}
+
+/// Control positivo del caso de audio: con `mic` concedido, el **mismo** tráfico
+/// que el caso denegado sí puebla la cola de aplicación y `recv_audio` lo
+/// entrega. Sin esto, un `Some(0)`/`None` en el caso denegado no distinguiría
+/// «no se encoló» de «el bombeo o el payload nunca funcionaron».
+#[test]
+fn audio_with_mic_is_queued_for_the_application() {
+    let ca = TestCa::new();
+    let server_leaf = ca.leaf("arl-daemon-res-audio-pos", true);
+    let client_leaf = ca.leaf("arl-client-res-audio-pos", false);
+    let (mut client, mut server) = session_pair(
+        &server_leaf,
+        &client_leaf,
+        &ca,
+        Capabilities::none().with_mic(),
+    );
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24)
+        .expect("handshake mTLS");
+    let session = authorized_pair(&mut client, &mut server).expect("sesión autorizada");
+    let granted = frame(12);
+    client.send_audio(&granted).expect("cliente envía DATAGRAM");
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8)
+        .expect("audio en vuelo");
+    assert!(
+        queued_audio(&server, session) == Some(1),
+        "control positivo: con `mic` el mismo tráfico sí queda encolado una vez"
+    );
+    assert_eq!(
+        server.recv_audio(session),
+        Some(granted),
+        "control positivo: la lectura pública entrega el frame encolado"
+    );
+}
+
+/// Control de cliente **válido** sobre una sesión que sólo concede
+/// `control_read`: el stream se recibe y se decodifica, pero sin
+/// `control_write` no debe quedar retenido en la cola de aplicación.
+///
+/// Control positivo en el mismo caso: con `control_write` concedido, el mismo
+/// mensaje sí puebla la cola y `recv_control` lo entrega.
+#[test]
+fn valid_control_without_control_write_is_not_queued_for_the_application() {
+    // Caso denegado: `control_read` (servidor→cliente) pero no `control_write`.
+    let ca = TestCa::new();
+    let server_leaf = ca.leaf("arl-daemon-res-control", true);
+    let client_leaf = ca.leaf("arl-client-res-control", false);
+    let (mut client, mut server) = session_pair(
+        &server_leaf,
+        &client_leaf,
+        &ca,
+        Capabilities::none().with_control_read(),
+    );
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24)
+        .expect("handshake mTLS");
+    let session = authorized_pair(&mut client, &mut server).expect("sesión autorizada");
+    assert_eq!(
+        server.capabilities(session),
+        Some(Capabilities::none().with_control_read()),
+        "las capacidades del caso denegado son las declaradas, no un fallo de ACL"
+    );
+
+    let denied = ping("res-control-denegado");
+    client.send_control(&denied).expect("cliente envía control");
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 16)
+        .expect("control en vuelo");
+    assert!(
+        !client.conn.is_handshaking() && !client.conn.is_closed(),
+        "no se cerró la sesión por el control denegado"
+    );
+    assert!(
+        queued_control(&server, session) == Some(0),
+        "residuo: control válido sin `control_write` no debe quedar en la cola de aplicación"
+    );
+    assert_eq!(
+        server.recv_control(session),
+        None,
+        "la lectura pública sigue denegando"
+    );
+    assert_eq!(
+        server.identity(session),
+        Some(client_leaf.pin),
+        "la identidad no se revoca por el control denegado"
+    );
+
+    // Control positivo del mismo tráfico: `control_write` concedido sí puebla.
+    // Va en su propio runner para observarlo aunque el caso denegado sea RED.
+}
+
+/// Control positivo del caso de control: con `control_write` concedido, el
+/// **mismo** mensaje que el caso denegado sí puebla la cola y `recv_control` lo
+/// entrega.
+#[test]
+fn control_with_control_write_is_queued_for_the_application() {
+    let ca = TestCa::new();
+    let server_leaf = ca.leaf("arl-daemon-res-control-pos", true);
+    let client_leaf = ca.leaf("arl-client-res-control-pos", false);
+    let (mut client, mut server) = session_pair(
+        &server_leaf,
+        &client_leaf,
+        &ca,
+        Capabilities::none().with_control_write(),
+    );
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24)
+        .expect("handshake mTLS");
+    let session = authorized_pair(&mut client, &mut server).expect("sesión autorizada");
+    let granted = ping("res-control-concedido");
+    client
+        .send_control(&granted)
+        .expect("cliente envía control");
+    session_exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 16)
+        .expect("control en vuelo");
+    assert!(
+        queued_control(&server, session) == Some(1),
+        "control positivo: con `control_write` el mismo tráfico sí queda encolado una vez"
+    );
+    assert_eq!(
+        server.recv_control(session),
+        Some(granted),
+        "control positivo: la lectura pública entrega el mensaje encolado"
+    );
 }

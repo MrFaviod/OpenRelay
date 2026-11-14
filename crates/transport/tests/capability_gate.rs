@@ -6,15 +6,18 @@
 //! Contrato observado en `crates/transport/src/quinn.rs`:
 //! - `SessionServer::recv_audio` exige `mic` (audio cliente→servidor).
 //! - `SessionServer::send_audio` exige `return_audio` (audio servidor→cliente).
-//! - `SessionServer::send_control` exige `control_read` (mensajes que el
-//!   servidor **lee** del cliente según `docs/protocol.md`).
-//! - `SessionServer::recv_control` exige `control_write`.
+//! - `SessionServer::send_control` exige `control_read` (control servidor→cliente:
+//!   mensajes que el cliente recibe y el servidor escribe).
+//! - `SessionServer::recv_control` exige `control_write` (control cliente→servidor:
+//!   mensajes que el cliente escribe y el servidor lee).
 //!
 //! El cliente no recibe la ACL remota (`ClientEvent::Authorized` sólo trae el
 //! pin del servidor), así que una operación prohibida en sentido
-//! cliente→servidor se afirma en el lado servidor (`recv_*` = `None`, sin
-//! cierre ni estado residual) y en sentido servidor→cliente en el `Err`
-//! `Capability(..)` que devuelve la propia API del servidor.
+//! cliente→servidor se afirma en el lado servidor (`recv_*` = `None`) y en
+//! sentido servidor→cliente en el `Err` `Capability(..)` que devuelve la propia
+//! API del servidor. Estos casos sólo observan la denegación de la ruta pública:
+//! no afirman nada sobre el estado interno de las colas ni sobre el cierre, que
+//! se prueban aparte (`quinn_security_regressions`).
 
 mod common;
 
