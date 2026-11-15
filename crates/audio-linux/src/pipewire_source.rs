@@ -400,6 +400,14 @@ impl PipeWireSource {
         self.active
     }
 
+    /// Identificador del nodo en el servidor (`u32::MAX` si aún no registrado).
+    ///
+    /// Sirve al propietario para inspeccionar o enlazar el nodo por id sin
+    /// adivinar nombres de puerto.
+    pub fn node_id(&self) -> u32 {
+        self.stream.node_id()
+    }
+
     /// Contadores observados por el callback: (buffers, frames, underrun).
     ///
     /// Tres lecturas `Relaxed` independientes: es un snapshot **no
@@ -433,6 +441,19 @@ impl PipeWireSource {
     /// Bloquea el hilo llamante; en T11a no se invoca desde ningún binario.
     pub fn run(&self) {
         self._mainloop.run();
+    }
+
+    /// Avanza el bucle principal como mucho `timeout` y devuelve cuántas fuentes
+    /// despachó.
+    ///
+    /// Variante **acotada** de [`Self::run`] para un propietario que conduce el
+    /// ciclo de vida desde el mismo hilo (no bloquea indefinidamente). No cambia
+    /// el estado del stream ni el camino RT: sólo es el `iterate` del bucle.
+    #[must_use]
+    pub fn iterate(&self, timeout: std::time::Duration) -> i32 {
+        self._mainloop
+            .loop_()
+            .iterate(pw::loop_::Timeout::Finite(timeout))
     }
 
     /// Pide al bucle principal que termine.
