@@ -12,11 +12,11 @@ arl-audio-core = { path = "../audio-core" }
 arl-audio-linux = { path = "../audio-linux" }
 arl-transport = { path = "../transport" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
+ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
 
 [dev-dependencies]
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 time = "=0.3.36"
-ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 
 [lints]

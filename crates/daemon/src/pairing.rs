@@ -82,6 +82,17 @@ impl Pairing {
     }
 }
 
+/// Borra una identidad del archivo de identidades (escritura atómica).
+/// Un pin ausente no es error: el resultado es el mismo (sin entrada).
+pub(crate) fn remove_identity(path: &Path, pin: &SpkiPin) -> io::Result<()> {
+    let mut doc = read_doc(path)?;
+    let entries = doc["identities"]
+        .as_array_mut()
+        .ok_or_else(|| invalid("identities no es array"))?;
+    entries.retain(|entry| entry["spki"].as_str() != Some(&pin.to_hex()));
+    write_atomic(path, &doc)
+}
+
 /// Carga la ACL persistida. Un archivo inexistente es ACL vacía (default deny).
 pub fn load(path: &Path) -> io::Result<Acl> {
     let doc = read_doc(path)?;

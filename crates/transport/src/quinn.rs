@@ -58,6 +58,8 @@ const CLOSE_AUDIO_OVERSIZED: u32 = 0x101;
 /// Motivo (nunca payload) de cierre cuando una respuesta pendiente no puede
 /// escribirse por un fallo permanente del stream, no por contrapresión.
 const REPLY_FAILED: &str = "no se pudo responder el error de control";
+/// Cierre por revocación de la identidad mientras la sesión está viva.
+const CLOSE_REVOKED: u32 = 0x105;
 /// Motivo (nunca payload) de cierre cuando un envío público de `send_control`
 /// no puede completarse por un fallo permanente del stream de control.
 const SEND_FAILED: &str = "no se pudo enviar el mensaje de control";
@@ -193,6 +195,11 @@ impl Acl {
     /// Capacidades de una identidad, si existe.
     pub fn capabilities(&self, pin: &SpkiPin) -> Option<Capabilities> {
         self.entries.get(pin).copied()
+    }
+
+    /// Quita una identidad: sus handshakes futuros quedan denegados.
+    fn remove(&mut self, pin: &SpkiPin) {
+        self.entries.remove(pin);
     }
 
     /// Identidades registradas.
@@ -554,6 +561,40 @@ impl SessionServer {
             .get(&session)
             .filter(|slot| slot.authorized)
             .map(|slot| slot.capabilities)
+    }
+
+    /// Concede capacidades a una identidad en caliente.
+    pub fn allow(&mut self, pin: SpkiPin, capabilities: Capabilities) {
+        self.acl.allow(pin, capabilities);
+    }
+
+    /// Revoca una identidad: la quita de la ACL y cierra con `CLOSE_REVOKED`
+    /// sus sesiones vivas, emitiendo `ServerEvent::Closed` una vez por sesión.
+    pub fn revoke(&mut self, pin: &SpkiPin, now: Instant) {
+        self.acl.remove(pin);
+        let ids: Vec<SessionId> = self
+            .slots
+            .iter()
+            .filter(|(_, slot)| slot.identity == Some(*pin))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            let Some(slot) = self.slots.get_mut(&id) else {
+                continue;
+            };
+            if !slot.closed {
+                slot.conn.close(
+                    now,
+                    VarInt::from_u32(CLOSE_REVOKED),
+                    Bytes::from_static(b"revoked"),
+                );
+            }
+            slot.closed = true;
+            slot.revoke();
+            if slot.announce_close() {
+                self.events.push_back(ServerEvent::Closed { session: id });
+            }
+        }
     }
 
     /// Envía un frame de audio a un cliente con capacidad `return_audio`.

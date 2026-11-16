@@ -8,6 +8,7 @@
 //! Sólo se escriben frames `EmitKind::Network`; PLC y silencio del jitter no se
 //! inyectan en el micrófono virtual en esta fase.
 
+pub mod acl;
 pub mod pairing;
 
 use std::fmt;
