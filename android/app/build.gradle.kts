@@ -23,6 +23,13 @@ android {
         // Runner listo para T14; las dependencias de test están fijadas abajo.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // STL compartida: Oboe 1.11 exige c++_shared en el AAR Prefab.
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+
         // Sólo estas dos ABIs, también para el futuro código nativo de T13.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -47,6 +54,15 @@ android {
 
     buildFeatures {
         compose = true
+        // Oboe llega como AAR Prefab; find_package(oboe CONFIG) lo consume.
+        prefab = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("../capture/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     packaging {
@@ -66,6 +82,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.oboe)
 
     testImplementation(libs.junit)
 

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Base T12: sin permisos (ni RECORD_AUDIO), sin tráfico claro y sin backup
+<!-- Base T12 + F2-13: RECORD_AUDIO para la captura; sin tráfico claro y sin backup
      de datos de la app. La captura y el transporte llegan en T13/T14. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+        <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="false"
