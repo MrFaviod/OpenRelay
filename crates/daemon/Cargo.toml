@@ -1,0 +1,22 @@
+[package]
+name = "arl-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Daemon mínimo de arl: sesión QUIC autorizada -> frame -> jitter -> fuente PipeWire (sin unsafe)"
+
+[dependencies]
+arl-audio-core = { path = "../audio-core" }
+arl-audio-linux = { path = "../audio-linux" }
+arl-transport = { path = "../transport" }
+
+[dev-dependencies]
+rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
+time = "=0.3.36"
+ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
+rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
+
+[lints]
+workspace = true

@@ -41,6 +41,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "arl-daemon"
+version = "0.1.0"
+dependencies = [
+ "arl-audio-core",
+ "arl-audio-linux",
+ "arl-transport",
+ "rcgen",
+ "ring",
+ "rustls",
+ "time",
+]
+
+[[package]]
 name = "arl-proto"
 version = "0.1.0"
 dependencies = [
