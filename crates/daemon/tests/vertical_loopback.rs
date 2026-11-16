@@ -39,16 +39,14 @@ fn pattern(seq: u32) -> Samples {
 }
 
 fn expected_checksum() -> u64 {
-    (0..FRAMES).fold(FNV_OFFSET, |hash, seq| fnv1a_extend(hash, &pattern(seq)[..]))
+    (0..FRAMES).fold(FNV_OFFSET, |hash, seq| {
+        fnv1a_extend(hash, &pattern(seq)[..])
+    })
 }
 
 /// Cliente en su hilo: tras `Authorized` envía `FRAMES` frames a ritmo fijo
 /// hasta `until`. Devuelve (frames aceptados por `send_audio`, autorizado).
-fn run_client(
-    mut client: SessionClient,
-    socket: UdpSocket,
-    until: Instant,
-) -> (u32, bool) {
+fn run_client(mut client: SessionClient, socket: UdpSocket, until: Instant) -> (u32, bool) {
     socket
         .set_read_timeout(Some(Duration::from_millis(1)))
         .expect("timeout de lectura");
@@ -143,7 +141,10 @@ fn vertical_loopback() {
     // 1) Cliente autorizado por ACL: todos los frames llegan al producer.
     let (stats, sent, authorized) =
         scenario(&ca, &server_leaf, &allowed_leaf, true, source.producer());
-    assert!(authorized, "el cliente autorizado debe completar el handshake");
+    assert!(
+        authorized,
+        "el cliente autorizado debe completar el handshake"
+    );
     assert_eq!(sent, FRAMES, "el cliente envía todos los frames");
     assert_eq!(stats.sessions_authorized, 1, "una sesión autorizada");
     assert_eq!(stats.frames_received, u64::from(FRAMES), "frames recibidos");
