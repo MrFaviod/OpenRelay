@@ -11,7 +11,7 @@
 //! framing de control, pero con un contrato propio y mínimo:
 //!
 //! ```json
-//! {"type":"enroll.request","version":1,"token":"<64 hex>"}
+//! {"type":"enroll.request","version":1,"token":"<64 hex>","spki":"<hex DER>"}
 //! {"type":"enroll.result","version":1,"status":"accepted"}
 //! {"type":"enroll.result","version":1,"status":"rejected","reason":"expired"}
 //! ```
@@ -32,6 +32,9 @@ use quinn_proto::{
 use rustls::sign::CertifiedKey;
 use rustls::{ClientConfig as TlsClientConfig, RootCertStore, ServerConfig as TlsServerConfig};
 use serde_json::{json, Value};
+
+use x509_cert::der::Decode;
+use x509_cert::spki::SubjectPublicKeyInfoOwned;
 
 use crate::identity::{IdentityError, PinnedServerVerifier, SpkiPin, StaticServerCertResolver};
 use crate::ALPN_ENROLL;
@@ -127,8 +130,9 @@ impl fmt::Display for EnrollReject {
 pub enum EnrollmentEvent {
     /// Handshake de enrolamiento completo.
     Ready,
-    /// Token aceptado (el servidor no crea identidad persistente aquí).
-    Accepted,
+    /// Token aceptado. Lleva el pin SPKI de la identidad que el cliente
+    /// declaró usar; todavía no es una identidad aprobada.
+    Accepted(SpkiPin),
     /// Token rechazado con motivo.
     Rejected(EnrollReject),
     /// Mensaje de una superficie prohibida (audio/control/ticket).
@@ -233,6 +237,33 @@ fn decode_hex32(text: &str) -> Option<[u8; ENROLL_TOKEN_LEN]> {
         *slot = ((high << 4) | low) as u8;
     }
     Some(out)
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        fmt::Write::write_fmt(&mut out, format_args!("{byte:02x}")).expect("String no falla");
+    }
+    out
+}
+
+/// Pin del `SubjectPublicKeyInfo` DER enviado en hex. `None` si no es hex
+/// válido o si el DER no parsea como SPKI.
+fn decode_spki_pin(text: &str) -> Option<SpkiPin> {
+    if text.is_empty() || text.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = text
+        .as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some(((high << 4) | low) as u8)
+        })
+        .collect::<Option<Vec<u8>>>()?;
+    SubjectPublicKeyInfoOwned::from_der(&bytes).ok()?;
+    Some(SpkiPin::from_spki_der(&bytes))
 }
 
 fn ct_eq(left: &[u8; ENROLL_TOKEN_LEN], right: &[u8; ENROLL_TOKEN_LEN]) -> bool {
@@ -633,6 +664,14 @@ impl EnrollServer {
                     self.reject(conn, now, EnrollReject::Malformed);
                     return;
                 };
+                let Some(spki_text) = value.get("spki").and_then(Value::as_str) else {
+                    self.reject(conn, now, EnrollReject::Malformed);
+                    return;
+                };
+                let Some(identity) = decode_spki_pin(spki_text) else {
+                    self.reject(conn, now, EnrollReject::Malformed);
+                    return;
+                };
                 let now_reject = match self.window.as_ref() {
                     None => Some(EnrollReject::NoWindow),
                     Some(window) if window.used => Some(EnrollReject::Reused),
@@ -653,7 +692,7 @@ impl EnrollServer {
                     conn,
                     json!({"type":"enroll.result","version":ENROLL_VERSION,"status":"accepted"}),
                 );
-                self.events.push_back(EnrollmentEvent::Accepted);
+                self.events.push_back(EnrollmentEvent::Accepted(identity));
                 self.window = None;
             }
             _ => self.fail(conn, now, EnrollReject::Malformed, 0x208),
@@ -727,6 +766,8 @@ pub struct EnrollClient {
     scratch: Vec<u8>,
     /// Cierre fail-closed consumado: ni `Ready` ni `Accepted` pueden reaparecer.
     terminal: bool,
+    /// Pin enviado en el último `enroll.request`; el `Accepted` lo devuelve.
+    sent_identity: Option<SpkiPin>,
 }
 
 impl EnrollClient {
@@ -765,6 +806,7 @@ impl EnrollClient {
             rx: Vec::new(),
             scratch: Vec::new(),
             terminal: false,
+            sent_identity: None,
         })
     }
 
@@ -819,16 +861,23 @@ impl EnrollClient {
         self.ready && !self.terminal
     }
 
-    /// Envía el token de la ventana. Sólo debe llamarse tras [`Self::is_ready`].
-    pub fn send_token(&mut self, token: &EnrollmentToken) -> Result<(), EnrollError> {
+    /// Envía el token de la ventana junto con el SPKI DER de la clave que el
+    /// cliente usará en mTLS. Sólo debe llamarse tras [`Self::is_ready`].
+    pub fn send_token(
+        &mut self,
+        token: &EnrollmentToken,
+        client_spki_der: &[u8],
+    ) -> Result<(), EnrollError> {
         if !self.ready {
             return Err(EnrollError::NotReady);
         }
         let value = json!({
             "type":"enroll.request",
             "version":ENROLL_VERSION,
-            "token": token.to_hex()
+            "token": token.to_hex(),
+            "spki": to_hex(client_spki_der)
         });
+        self.sent_identity = Some(SpkiPin::from_spki_der(client_spki_der));
         self.write_frame(&value)
     }
 
@@ -1019,7 +1068,12 @@ impl EnrollClient {
             return;
         }
         match value.get("status").and_then(Value::as_str) {
-            Some("accepted") => self.events.push_back(EnrollmentEvent::Accepted),
+            Some("accepted") => match self.sent_identity {
+                Some(identity) => self.events.push_back(EnrollmentEvent::Accepted(identity)),
+                None => self
+                    .events
+                    .push_back(EnrollmentEvent::Rejected(EnrollReject::Malformed)),
+            },
             Some("rejected") => {
                 let reason = match value.get("reason").and_then(Value::as_str) {
                     Some("expired") => EnrollReject::Expired,

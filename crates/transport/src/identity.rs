@@ -97,6 +97,21 @@ impl SpkiPin {
         &self.0
     }
 
+    /// Inversa de [`Self::to_hex`]: 64 dígitos hexadecimales, o `None`.
+    pub fn from_hex(text: &str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        if bytes.len() != 64 {
+            return None;
+        }
+        let mut out = [0u8; 32];
+        for (index, slot) in out.iter_mut().enumerate() {
+            let high = (bytes[index * 2] as char).to_digit(16)?;
+            let low = (bytes[index * 2 + 1] as char).to_digit(16)?;
+            *slot = ((high << 4) | low) as u8;
+        }
+        Some(Self(out))
+    }
+
     /// Representación hexadecimal minúscula de 64 caracteres.
     pub fn to_hex(self) -> String {
         let mut out = String::with_capacity(64);

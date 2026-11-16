@@ -11,6 +11,7 @@ description = "Daemon mínimo de arl: sesión QUIC autorizada -> frame -> jitter
 arl-audio-core = { path = "../audio-core" }
 arl-audio-linux = { path = "../audio-linux" }
 arl-transport = { path = "../transport" }
+serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }

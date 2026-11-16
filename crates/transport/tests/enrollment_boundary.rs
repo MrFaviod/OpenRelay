@@ -12,7 +12,9 @@ use arl_transport::enrollment::{
 use arl_transport::quinn::{Acl, Capabilities, SessionClient, SessionLimits, SessionServer};
 use serde_json::json;
 
-use common::{enrollment_setup, exchange, roots, token, TestCa, CLIENT_ADDR, SERVER_ADDR};
+use common::{
+    client_spki_der, enrollment_setup, exchange, roots, token, TestCa, CLIENT_ADDR, SERVER_ADDR,
+};
 
 fn collect_server_events(server: &mut EnrollServer) -> Vec<EnrollmentEvent> {
     let mut events = Vec::new();
@@ -48,7 +50,7 @@ fn enrollment_accepts_valid_token_without_client_certificate() {
     assert!(server.is_ready(), "servidor listo sin cert de cliente");
 
     client
-        .send_token(&window_token)
+        .send_token(&window_token, &client_spki_der())
         .expect("token tras validar pin");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 
@@ -56,10 +58,10 @@ fn enrollment_accepts_valid_token_without_client_certificate() {
     let client_events = collect_client_events(&mut client);
     assert!(server_events
         .iter()
-        .any(|event| matches!(event, EnrollmentEvent::Accepted)));
+        .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
     assert!(client_events
         .iter()
-        .any(|event| matches!(event, EnrollmentEvent::Accepted)));
+        .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
     assert_eq!(server.attempts(), 1, "un único intento de token");
 }
 
@@ -92,7 +94,7 @@ fn wrong_pin_aborts_before_sending_token() {
     assert!(
         !events
             .iter()
-            .any(|event| matches!(event, EnrollmentEvent::Accepted)),
+            .any(|event| matches!(event, EnrollmentEvent::Accepted(_))),
         "sin aceptación con pin equivocado"
     );
 }
@@ -142,7 +144,9 @@ fn expired_window_is_rejected() {
     )
     .expect("cliente");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");
-    client.send_token(&window_token).expect("token");
+    client
+        .send_token(&window_token, &client_spki_der())
+        .expect("token");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 
     let events = collect_server_events(&mut server);
@@ -151,7 +155,7 @@ fn expired_window_is_rejected() {
         .any(|event| matches!(event, EnrollmentEvent::Rejected(EnrollReject::Expired))));
     assert!(!events
         .iter()
-        .any(|event| matches!(event, EnrollmentEvent::Accepted)));
+        .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
 }
 
 #[test]
@@ -163,7 +167,9 @@ fn wrong_token_is_rejected() {
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");
 
     let wrong = EnrollmentToken::generate().expect("token distinto");
-    client.send_token(&wrong).expect("token");
+    client
+        .send_token(&wrong, &client_spki_der())
+        .expect("token");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 
     let events = collect_server_events(&mut server);
@@ -172,7 +178,7 @@ fn wrong_token_is_rejected() {
         .any(|event| matches!(event, EnrollmentEvent::Rejected(EnrollReject::Mismatch))));
     assert!(!events
         .iter()
-        .any(|event| matches!(event, EnrollmentEvent::Accepted)));
+        .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
 }
 
 #[test]
@@ -197,7 +203,7 @@ fn audio_control_and_ticket_are_rejected_on_enroll() {
         assert!(
             !events
                 .iter()
-                .any(|event| matches!(event, EnrollmentEvent::Accepted)),
+                .any(|event| matches!(event, EnrollmentEvent::Accepted(_))),
             "{surface} no puede aceptar enrolamiento"
         );
     }

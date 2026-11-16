@@ -8,6 +8,8 @@
 //! Sólo se escriben frames `EmitKind::Network`; PLC y silencio del jitter no se
 //! inyectan en el micrófono virtual en esta fase.
 
+pub mod pairing;
+
 use std::fmt;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};

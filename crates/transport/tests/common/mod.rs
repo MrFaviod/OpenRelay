@@ -183,6 +183,11 @@ pub fn roots(ca: &TestCa) -> Arc<rustls::RootCertStore> {
     identity::root_store([ca.cert_der()]).expect("root store de test")
 }
 
+/// SPKI DER de una clave de cliente de prueba (la que iría en `enroll.request`).
+pub fn client_spki_der() -> Vec<u8> {
+    KeyPair::generate().expect("clave cliente").public_key_der()
+}
+
 pub fn token() -> EnrollmentToken {
     EnrollmentToken::generate().expect("token del sistema")
 }

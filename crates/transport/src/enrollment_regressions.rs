@@ -287,15 +287,22 @@ fn has_reject(events: &[EnrollmentEvent], expected: EnrollReject) -> bool {
 fn has_accepted(events: &[EnrollmentEvent]) -> bool {
     events
         .iter()
-        .any(|event| matches!(event, EnrollmentEvent::Accepted))
+        .any(|event| matches!(event, EnrollmentEvent::Accepted(_)))
 }
 
 /// Frame `enroll.request` idéntico al que escribe `send_token`.
+fn client_spki_der() -> Vec<u8> {
+    rcgen::KeyPair::generate()
+        .expect("clave cliente")
+        .public_key_der()
+}
+
 fn request_frame(token: &EnrollmentToken) -> Vec<u8> {
     let payload = serde_json::to_vec(&json!({
         "type": "enroll.request",
         "version": ENROLL_VERSION,
         "token": token.to_hex(),
+        "spki": super::to_hex(&client_spki_der()),
     }))
     .expect("JSON del contrato");
     let mut frame = Vec::with_capacity(4 + payload.len());
@@ -604,7 +611,7 @@ fn client_is_terminal_after_truncated_result_and_fin() {
     assert!(!client.is_ready(), "un cliente terminal no está listo");
     assert!(
         matches!(
-            client.send_token(&window),
+            client.send_token(&window, &client_spki_der()),
             Err(super::EnrollError::NotReady)
         ),
         "un cliente terminal debe rechazar send_token con NotReady"
@@ -645,6 +652,9 @@ fn client_is_terminal_after_truncated_result_and_fin() {
 fn client_accepts_complete_result_with_fin_control() {
     let ca = TestCa::new();
     let (mut client, mut server, window) = ready_pair(&ca);
+    // Frame parcial escrito a mano: no pasa por `send_token`, así que fijamos el
+    // pin que ese frame declararía. Sólo importa el framing de la respuesta.
+    client.sent_identity = Some(SpkiPin::from_spki_der(&client_spki_der()));
     let frame = request_frame(&window);
     client_write_raw(&mut client, &frame[..3], Ending::Open);
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("stream abierto");
