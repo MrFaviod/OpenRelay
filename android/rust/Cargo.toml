@@ -1,0 +1,22 @@
+[package]
+name = "arl-bridge"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+publish = false
+description = "Puente JNI de test: identidad mTLS de cliente desde AndroidKeyStore "
+
+# Crate FUERA del workspace raíz: lleva su propio Cargo.lock.
+[workspace]
+
+[lib]
+name = "arl_bridge"
+crate-type = ["cdylib"]
+
+[dependencies]
+arl-transport = { path = "../../crates/transport" }
+jni = { version = "=0.21.1", default-features = false }
+rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
+rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
+rustls-pki-types = "=1.16.0"

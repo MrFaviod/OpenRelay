@@ -65,6 +65,9 @@ android {
         }
     }
 
+    // Puente Rust de F2-10c: android/rust/build.sh deja las .so aquí.
+    sourceSets["main"].jniLibs.srcDir(file("../rust/target/jniLibs"))
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

@@ -26,3 +26,14 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+
+# ring 0.17.8 no declara SPDX: código nuevo ISC y partes heredadas de
+# OpenSSL/BoringSSL (licencia OpenSSL, libre y permisiva). Excepción sólo para ring.
+[[licenses.clarify]]
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[[licenses.exceptions]]
+crate = "ring"
+allow = ["OpenSSL"]
