@@ -1,0 +1,20 @@
+[package]
+name = "arl-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "CLI local de administración del daemon de arl (binario `arl`)"
+
+[[bin]]
+name = "arl"
+path = "src/main.rs"
+
+[dependencies]
+arl-proto = { path = "../proto" }
+serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "net", "process"] }
+
+[lints]
+workspace = true

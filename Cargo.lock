@@ -41,6 +41,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arl-cli"
+version = "0.1.0"
+dependencies = [
+ "arl-proto",
+ "rustix",
+ "serde_json",
+]
+
+[[package]]
 name = "arl-daemon"
 version = "0.1.0"
 dependencies = [
@@ -50,6 +59,7 @@ dependencies = [
  "rcgen",
  "ring",
  "rustls",
+ "serde_json",
  "time",
 ]
 
