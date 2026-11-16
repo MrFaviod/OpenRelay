@@ -1,11 +1,14 @@
 //! `arl` — CLI local de administración del daemon de arl.
 //!
 //! Uso:
-//!   arl daemon [--socket PATH]            arranca el servidor de control en primer plano
-//!   arl status [--socket PATH]            pide el estado al daemon y lo imprime (JSON)
-//!   arl config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
-//!   arl config set KEY VALUE --rev N      escribe una clave con revisión esperada
-//!   arl capabilities [--socket PATH]      pide las capacidades y la revisión actual
+//!
+//! ```text
+//! arl daemon [--socket PATH]            arranca el servidor de control en primer plano
+//! arl status [--socket PATH]            pide el estado al daemon y lo imprime (JSON)
+//! arl config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
+//! arl config set KEY VALUE --rev N      escribe una clave con revisión esperada
+//! arl capabilities [--socket PATH]      pide las capacidades y la revisión actual
+//! ```
 //!
 //! Códigos de salida: 0 correcto; 1 el daemon no responde o devuelve error;
 //! 2 uso incorrecto.
