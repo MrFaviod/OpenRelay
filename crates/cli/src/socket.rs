@@ -1,5 +1,5 @@
 //! Socket Unix de control: servidor (un hilo, una línea JSON por petición) y
-//! cliente mínimo para `arl status`.
+//! cliente mínimo para las órdenes de `arl`.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -16,8 +16,9 @@ const MAX_LINE: usize = 64 * 1024;
 /// Tiempo máximo de espera de E/S por conexión.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Resultado de una operación: `Ok(result)` o `(código, mensaje)`.
-pub type OpResult = Result<Value, (ErrorCode, String)>;
+/// Resultado de una operación: `Ok(result)` o `Err(error)`. Para las ops de
+/// control, ambos son el mensaje v1 completo (`ack`, `capabilities`, `error`).
+pub type OpResult = Result<Value, Value>;
 
 /// Sirve peticiones en `path` hasta que el proceso termina.
 ///
@@ -25,7 +26,7 @@ pub type OpResult = Result<Value, (ErrorCode, String)>;
 /// en `path`, devuelve error; un socket huérfano se elimina.
 pub fn serve<H>(path: &Path, mut handler: H) -> io::Result<()>
 where
-    H: FnMut(&str, &Value) -> OpResult,
+    H: FnMut(&str, &str, &Value) -> OpResult,
 {
     let dir = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "ruta de socket sin directorio")
@@ -62,7 +63,7 @@ where
 /// Atiende una conexión: comprueba el UID del par y procesa líneas hasta EOF.
 fn handle_conn<H>(stream: UnixStream, handler: &mut H) -> io::Result<()>
 where
-    H: FnMut(&str, &Value) -> OpResult,
+    H: FnMut(&str, &str, &Value) -> OpResult,
 {
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
@@ -98,7 +99,7 @@ where
 /// Procesa una línea y devuelve la respuesta ya formada.
 fn process_line<H>(line: &str, handler: &mut H) -> Value
 where
-    H: FnMut(&str, &Value) -> OpResult,
+    H: FnMut(&str, &str, &Value) -> OpResult,
 {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -113,9 +114,10 @@ where
         None => return error_reply(id, ErrorCode::Invalid, "falta op"),
     };
     let args = req.get("args").cloned().unwrap_or(Value::Null);
-    match handler(op, &args) {
+    let id_text = id.as_str().unwrap_or_default();
+    match handler(op, id_text, &args) {
         Ok(result) => json!({"request_id": id, "ok": true, "result": result}),
-        Err((code, message)) => error_reply(id, code, &message),
+        Err(error) => json!({"request_id": id, "ok": false, "error": error}),
     }
 }
 
@@ -139,8 +141,9 @@ fn peer_is_self(stream: &UnixStream) -> io::Result<bool> {
     Ok(cred.uid.as_raw() == rustix::process::getuid().as_raw())
 }
 
-/// Envía una petición `op` al daemon en `path` y devuelve la respuesta completa.
-pub fn request(path: &Path, op: &str) -> Result<Value, String> {
+/// Envía una petición `op` con `args` al daemon en `path` y devuelve la
+/// respuesta completa.
+pub fn request(path: &Path, op: &str, args: &Value) -> Result<Value, String> {
     let mut stream = UnixStream::connect(path)
         .map_err(|e| format!("no hay daemon en {}: {e}", path.display()))?;
     stream
@@ -155,7 +158,7 @@ pub fn request(path: &Path, op: &str) -> Result<Value, String> {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let id = format!("cli-{}-{}", std::process::id(), nanos);
-    let mut req = json!({"request_id": id, "op": op}).to_string();
+    let mut req = json!({"request_id": id, "op": op, "args": args}).to_string();
     req.push('\n');
     stream
         .write_all(req.as_bytes())
