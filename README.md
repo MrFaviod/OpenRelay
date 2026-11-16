@@ -2,6 +2,7 @@
 
 **Nombre de trabajo `arl` (provisional).** No es una marca, un nombre de producto aprobado ni un canal de distribución. La decisión de nombre y distribución (D-11) sigue pendiente.
 
+**Estado vigente: / validadas localmente; en implementación parcial, no iniciada. Transporte host, base Android, fuente/reporte Linux y núcleo C SPSC/lifecycle cuentan con verificaciones acotadas. No hay vertical Android→Linux validado ni APK nativo de captura, Keystore real o medición física completa. El lifecycle host tiene revisión independiente y pruebas normal+ASan/UBSan; sus objetos compilan con NDK para arm64/x86_64, no acreditan ejecución Android.** Ver [estado /](docs/plan/execution-f2-f3.md).
 
 ## Qué es
 
