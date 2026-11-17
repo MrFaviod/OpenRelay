@@ -211,69 +211,53 @@ fn capabilities_reports_revision_and_declared_keys() {
 }
 
 #[test]
-fn config_set_with_current_revision_acks_and_get_reads_back() {
+fn config_set_without_applicator_is_unsupported_without_mutation() {
     let tmp = TempDir::new("set");
     let sock = tmp.0.join("arl").join("control.sock");
     let _d = start_daemon(&sock);
 
-    let ack = raw_request(&sock, &set_line("set-1", 0, "3.5"));
-    assert_eq!(ack["ok"], true, "{ack}");
-    assert_eq!(ack["result"]["type"], "ack");
-    assert_eq!(ack["result"]["revision"], 1);
-    assert_eq!(ack["result"]["payload"]["applied"], true);
-    assert_eq!(ack["result"]["payload"]["requested"]["value"], 3.5);
-    assert_eq!(ack["result"]["payload"]["effective"]["key"], KEY);
-    assert_eq!(ack["result"]["payload"]["effective"]["value"], 3.5);
+    // Sin aplicador de hardware el set no se aplica: error honesto, sin ACK.
+    let refused = raw_request(&sock, &set_line("set-1", 0, "3.5"));
+    assert_eq!(refused["request_id"], "set-1");
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert_eq!(refused["error"]["code"], "unsupported", "{refused}");
 
     let got = raw_request(&sock, &get_line("get-1", Some(KEY)));
     assert_eq!(got["ok"], true, "{got}");
-    assert_eq!(got["result"]["payload"]["effective"]["value"], 3.5);
-    assert_eq!(got["result"]["revision"], 1);
+    assert_eq!(got["result"]["revision"], 0);
+    assert_eq!(got["result"]["payload"]["effective"]["value"], 0.0);
 
-    // Mismo flujo por la CLI real: get devuelve el efectivo.
     let out = Command::new(ARL)
         .args(["config", "get", KEY, "--socket"])
         .arg(&sock)
         .output()
         .expect("ejecutar arl config get");
     assert_eq!(out.status.code(), Some(0));
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["result"]["payload"]["effective"]["value"], 3.5);
 }
-
 #[test]
-fn config_set_with_stale_revision_conflicts_without_mutation() {
-    let tmp = TempDir::new("conflict");
+fn config_set_cli_refusal_exits_one_without_mutation() {
+    let tmp = TempDir::new("refuse");
     let sock = tmp.0.join("arl").join("control.sock");
     let _d = start_daemon(&sock);
 
-    assert_eq!(raw_request(&sock, &set_line("c-1", 0, "3.5"))["ok"], true);
-
-    let stale = raw_request(&sock, &set_line("c-2", 0, "-6"));
-    assert_eq!(stale["request_id"], "c-2");
-    assert_eq!(stale["ok"], false);
-    assert_eq!(stale["error"]["code"], "conflict");
-    assert_eq!(stale["error"]["current_revision"], 1);
-
-    // Sin mutación: el valor sigue siendo el de la revisión 1.
-    let got = raw_request(&sock, &get_line("g-2", Some(KEY)));
-    assert_eq!(got["result"]["payload"]["effective"]["value"], 3.5);
-    assert_eq!(got["result"]["revision"], 1);
-
-    // Por la CLI: exit 1 y current_revision en stdout.
     let out = Command::new(ARL)
         .args(["config", "set", KEY, "-6", "--rev", "0", "--socket"])
         .arg(&sock)
         .output()
         .expect("ejecutar arl config set");
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "rechazo visible en el exit code"
+    );
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["error"]["code"], "conflict");
-    assert_eq!(v["error"]["current_revision"], 1);
-}
+    assert_eq!(v["error"]["code"], "unsupported", "{v}");
 
+    let caps = raw_request(&sock, r#"{"request_id":"cap-r","op":"capabilities"}"#);
+    assert_eq!(caps["result"]["revision"], 0, "{caps}");
+}
 #[test]
-fn repeated_request_id_replays_response_without_applying_twice() {
+fn repeated_request_id_replays_refusal_without_applying() {
     let tmp = TempDir::new("idem");
     let sock = tmp.0.join("arl").join("control.sock");
     let _d = start_daemon(&sock);
@@ -281,19 +265,10 @@ fn repeated_request_id_replays_response_without_applying_twice() {
     let first = raw_request(&sock, &set_line("idem-1", 0, "3.5"));
     let again = raw_request(&sock, &set_line("idem-1", 0, "3.5"));
     assert_eq!(first, again);
-    assert_eq!(again["result"]["revision"], 1);
-
-    // La revisión no subió dos veces: un set nuevo con rev 1 es válido.
-    let next = raw_request(&sock, &set_line("idem-2", 1, "4.0"));
-    assert_eq!(next["ok"], true, "{next}");
-    assert_eq!(next["result"]["revision"], 2);
-
-    // Mismo request_id con payload distinto: request_id_reuse.
-    let reuse = raw_request(&sock, &set_line("idem-1", 0, "-1.0"));
-    assert_eq!(reuse["ok"], false);
-    assert_eq!(reuse["error"]["code"], "request_id_reuse");
+    assert_eq!(first["error"]["code"], "unsupported", "{first}");
+    let caps = raw_request(&sock, r#"{"request_id":"cap-i","op":"capabilities"}"#);
+    assert_eq!(caps["result"]["revision"], 0, "{caps}");
 }
-
 #[test]
 fn unknown_key_and_invalid_value_return_correlated_errors() {
     let tmp = TempDir::new("badkey");
@@ -343,4 +318,44 @@ fn config_usage_errors_exit_two() {
         .output()
         .expect("ejecutar arl config frob");
     assert_eq!(out.status.code(), Some(2));
+}
+
+/// Un cliente lento que envía fragmentos con pausas mayores que el tramo de
+/// lectura y nunca termina la línea debe recibir `too_large` en vez de hacer
+/// crecer la línea sin límite.
+#[test]
+fn slow_unterminated_line_is_rejected_as_too_large() {
+    let tmp = TempDir::new("slowline");
+    let sock = tmp.0.join("arl").join("control.sock");
+    let _d = start_daemon(&sock);
+
+    let mut writer = UnixStream::connect(&sock).expect("conectar");
+    writer
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let reader_stream = writer.try_clone().expect("clonar socket");
+    // Lector concurrente: la respuesta llega mientras seguimos escribiendo.
+    let reader = std::thread::spawn(move || {
+        let mut s = reader_stream;
+        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        let mut resp = String::new();
+        BufReader::new(&mut s)
+            .read_line(&mut resp)
+            .expect("leer respuesta");
+        resp
+    });
+
+    // Hasta 1 MiB sin salto de línea; el tope de 64 KiB debe cortar antes.
+    let chunk = vec![b'a'; 8 * 1024];
+    for _ in 0..128 {
+        if writer.write_all(&chunk).is_err() {
+            break;
+        }
+        sleep(Duration::from_millis(30));
+    }
+
+    let resp = reader.join().expect("hilo lector");
+    let v: serde_json::Value = serde_json::from_str(resp.trim_end()).expect("respuesta JSON");
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["error"]["code"], "too_large");
 }

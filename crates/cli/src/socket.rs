@@ -15,18 +15,39 @@ use serde_json::{json, Value};
 const MAX_LINE: usize = 64 * 1024;
 /// Tiempo máximo de espera de E/S por conexión.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Cuánto puede bloquear una lectura del socket Unix antes de devolver el
+/// turno. El bucle intercalado bombea QUIC en `Idle`; un `read_line` de los
+/// 5 s completos dejaría el UDP sin atender durante todo ese tiempo.
+const READ_SLICE: Duration = Duration::from_millis(20);
 
 /// Resultado de una operación: `Ok(result)` o `Err(error)`. Para las ops de
 /// control, ambos son el mensaje v1 completo (`ack`, `capabilities`, `error`).
 pub type OpResult = Result<Value, Value>;
 
-/// Sirve peticiones en `path` hasta que el proceso termina.
-///
+/// Qué pide el bucle intercalado al proceso dueño del estado.
+pub enum Interleave<'a> {
+    /// No hay cliente local: bombear el otro transporte.
+    Idle,
+    /// Una línea ya autenticada por UID.
+    Request {
+        /// Operación.
+        op: &'a str,
+        /// `request_id` del cliente.
+        request_id: &'a str,
+        /// Argumentos de la operación.
+        args: &'a Value,
+    },
+}
+
 /// Crea el directorio padre 0700 y el socket 0600. Si ya hay un daemon vivo
 /// en `path`, devuelve error; un socket huérfano se elimina.
-pub fn serve<H>(path: &Path, mut handler: H) -> io::Result<()>
+///
+/// `handler` recibe [`Interleave::Idle`] en el mismo hilo cuando no hay un
+/// cliente local. Sirve para bombear el QUIC del proceso sin abrir otro
+/// socket ni otro protocolo. El listener no es bloqueante.
+pub fn serve_interleaved<H>(path: &Path, mut handler: H) -> io::Result<()>
 where
-    H: FnMut(&str, &str, &Value) -> OpResult,
+    H: FnMut(Interleave) -> OpResult,
 {
     let dir = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "ruta de socket sin directorio")
@@ -46,26 +67,42 @@ where
 
     let listener = UnixListener::bind(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    listener.set_nonblocking(true)?;
+    serve_listener(&listener, &mut handler)
+}
 
-    for conn in listener.incoming() {
-        match conn {
-            Ok(stream) => {
-                if let Err(e) = handle_conn(stream, &mut handler) {
-                    eprintln!("arl: conexión: {e}");
+fn serve_listener<H>(listener: &UnixListener, handler: &mut H) -> io::Result<()>
+where
+    H: FnMut(Interleave) -> OpResult,
+{
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if let Err(error) = handle_conn(stream, handler) {
+                    eprintln!("arl: conexión: {error}");
                 }
             }
-            Err(e) => eprintln!("arl: accept: {e}"),
+            Err(error) if is_wait(&error) => {
+                let _ = handler(Interleave::Idle);
+            }
+            Err(error) => eprintln!("arl: accept: {error}"),
         }
     }
-    Ok(())
+}
+
+fn is_wait(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+    )
 }
 
 /// Atiende una conexión: comprueba el UID del par y procesa líneas hasta EOF.
 fn handle_conn<H>(stream: UnixStream, handler: &mut H) -> io::Result<()>
 where
-    H: FnMut(&str, &str, &Value) -> OpResult,
+    H: FnMut(Interleave) -> OpResult,
 {
-    stream.set_read_timeout(Some(IO_TIMEOUT))?;
+    stream.set_read_timeout(Some(READ_SLICE))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
     if !peer_is_self(&stream)? {
         // Cierre inmediato: el par no es nuestro UID.
@@ -73,16 +110,17 @@ where
     }
 
     let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    let mut waited = Duration::ZERO;
     loop {
-        let mut line = String::new();
-        let n = reader
+        let outcome = reader
             .by_ref()
             .take(MAX_LINE as u64 + 1)
-            .read_line(&mut line)?;
-        if n == 0 {
-            return Ok(());
-        }
-        if n > MAX_LINE && !line.ends_with('\n') {
+            .read_line(&mut line);
+        // El tope se mide sobre la línea acumulada, no sobre cada lectura:
+        // un timeout devuelve `Err` con el prefijo ya en `line`, así que un
+        // cliente lento podría acumular sin límite si sólo se mirara `n`.
+        if line.trim_end_matches('\n').len() > MAX_LINE {
             let reply = error_reply(
                 Value::Null,
                 ErrorCode::TooLarge,
@@ -91,15 +129,36 @@ where
             write_reply(reader.get_mut(), &reply)?;
             return Ok(());
         }
-        let reply = process_line(line.trim_end(), handler);
-        write_reply(reader.get_mut(), &reply)?;
+        match outcome {
+            Ok(0) => return Ok(()),
+            Ok(_) => {
+                waited = Duration::ZERO;
+                if !line.ends_with('\n') {
+                    // El tope de lectura cortó a mitad de línea: se sigue
+                    // acumulando, sin tratar el prefijo como una petición.
+                    continue;
+                }
+                let reply = process_line(line.trim_end(), handler);
+                line.clear();
+                write_reply(reader.get_mut(), &reply)?;
+            }
+            Err(error) if is_wait(&error) => {
+                waited = waited.saturating_add(READ_SLICE);
+                if waited >= IO_TIMEOUT {
+                    return Err(error);
+                }
+                // Nadie completó la línea: el otro transporte recupera el turno.
+                let _ = handler(Interleave::Idle);
+            }
+            Err(error) => return Err(error),
+        }
     }
 }
 
 /// Procesa una línea y devuelve la respuesta ya formada.
 fn process_line<H>(line: &str, handler: &mut H) -> Value
 where
-    H: FnMut(&str, &str, &Value) -> OpResult,
+    H: FnMut(Interleave) -> OpResult,
 {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -115,7 +174,11 @@ where
     };
     let args = req.get("args").cloned().unwrap_or(Value::Null);
     let id_text = id.as_str().unwrap_or_default();
-    match handler(op, id_text, &args) {
+    match handler(Interleave::Request {
+        op,
+        request_id: id_text,
+        args: &args,
+    }) {
         Ok(result) => json!({"request_id": id, "ok": true, "result": result}),
         Err(error) => json!({"request_id": id, "ok": false, "error": error}),
     }

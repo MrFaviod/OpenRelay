@@ -13,8 +13,14 @@ path = "src/main.rs"
 
 [dependencies]
 arl-proto = { path = "../proto" }
+arl-daemon = { path = "../daemon" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
 rustix = { version = "=1.1.6", default-features = false, features = ["std", "net", "process"] }
+
+[dev-dependencies]
+arl-transport = { path = "../transport" }
+rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
+rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 
 [lints]
 workspace = true
