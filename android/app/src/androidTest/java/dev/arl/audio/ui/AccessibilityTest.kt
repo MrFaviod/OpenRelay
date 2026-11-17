@@ -5,8 +5,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,8 +37,8 @@ class AccessibilityTest {
                 HomeScreen(state = HomeUiState(), actions = HomeActions())
             }
         }
-        rule.onNodeWithText("Captura parada").assertIsDisplayed()
-        rule.onNodeWithText("Iniciar captura local").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Captura parada").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Iniciar captura local").assertIsDisplayed()
         rule.onNodeWithText("La conexión al PC aún no está configurada.").assertIsDisplayed()
         rule.onNodeWithTag("mic").assertIsDisplayed()
         rule.onNodeWithTag("level").assertDoesNotExist()
@@ -55,7 +59,7 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithText("Captura local").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Captura local").assertIsDisplayed()
         rule.onNodeWithTag("level").assertDoesNotExist()
         rule.onNodeWithTag("mute").assertIsDisplayed()
     }
@@ -126,6 +130,24 @@ class AccessibilityTest {
     }
 
     @Test
+    fun each_control_has_one_talkback_stop() {
+        rule.setContent {
+            ArlTheme {
+                HomeScreen(
+                    state = HomeUiState(capture = Capture.Local),
+                    actions = HomeActions(),
+                )
+            }
+        }
+        rule.onAllNodesWithContentDescription("Detener captura").assertCountEquals(1)
+        rule.onAllNodesWithText("Detener captura").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Captura local").assertCountEquals(1)
+        rule.onAllNodesWithText("Captura local").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Silenciar").assertCountEquals(1)
+        rule.onAllNodesWithText("Silenciar").assertCountEquals(0)
+    }
+
+    @Test
     fun large_font_keeps_status_text_inside_one_scroll() {
         rule.setContent {
             val base = LocalDensity.current
@@ -137,8 +159,8 @@ class AccessibilityTest {
                 }
             }
         }
-        rule.onNodeWithText("Captura parada").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("Iniciar captura local").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithContentDescription("Captura parada").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithContentDescription("Iniciar captura local").performScrollTo().assertIsDisplayed()
         rule.onNodeWithText("La conexión al PC aún no está configurada.")
             .performScrollTo()
             .assertIsDisplayed()

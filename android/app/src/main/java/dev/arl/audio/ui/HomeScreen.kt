@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -116,7 +117,8 @@ private fun MicActionLabel(state: HomeUiState) {
             else R.string.action_start_capture,
         ),
         style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.testTag("mic-label"),
+        // The mic button already announces this text; hide the duplicate stop.
+        modifier = Modifier.testTag("mic-label").clearAndSetSemantics {},
     )
 }
 
@@ -129,7 +131,7 @@ private fun AudioStatus(state: HomeUiState) {
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier
-            .semantics {
+            .clearAndSetSemantics {
                 contentDescription = label
                 liveRegion = LiveRegionMode.Polite
             }
@@ -226,7 +228,12 @@ private fun MuteRow(state: HomeUiState, actions: HomeActions) {
                 contentDescription = null,
             )
         }
-        Text(text = label, style = MaterialTheme.typography.labelMedium)
+        // The toggle already announces this label and its checked state.
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
         Text(
             text = stringResource(
                 when {
