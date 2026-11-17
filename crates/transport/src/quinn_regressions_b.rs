@@ -627,3 +627,61 @@ fn b4_invalid_error_frame_is_discarded_without_error_loop() {
 
 #[path = "quinn_regressions_b_lifecycle.rs"]
 mod lifecycle;
+
+/// B4: contrapresión real. El peer anuncia una ventana de 64 bytes y no lee
+/// nunca: QUIC bloquea, la cola de respuestas se llena y `send_control`
+/// devuelve `QueueFull` decidido antes de escribir el frame que lo provoca.
+#[test]
+fn b4_queue_full_is_reached_under_real_backpressure() {
+    let ca = TestCa::new();
+    let server_leaf = ca.leaf("arl-server-t10b-4q", true);
+    let client_leaf = ca.leaf("arl-client-t10b-4q", false);
+    let mut server = server_for(&server_leaf, &client_leaf, &ca);
+    let mut peer = raw_peer_with_stream_window(
+        &client_leaf,
+        &server_leaf,
+        &ca,
+        Instant::now(),
+        SMALL_STREAM_WINDOW,
+    );
+
+    exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
+    let session = authorized_session(&mut server).expect("sesión autorizada por la ACL");
+
+    // Un frame inválido con id recuperable abre el stream en el servidor; el
+    // `error` de respuesta nunca se lee en el peer.
+    let stream = peer
+        .conn
+        .streams()
+        .open(Dir::Bi)
+        .expect("stream bidireccional");
+    let frame = raw_frame(
+        r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"b4-tipo"}"#,
+    );
+    write_frame(&mut peer.conn, stream, &frame);
+    exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");
+
+    let reply = ControlMessage::Error(
+        ErrorMsg::new("srv-b4", ErrorCode::Invalid, "relleno de prueba").expect("error válido"),
+    );
+    let mut accepted = 0usize;
+    let mut full = false;
+    for _ in 0..512 {
+        match server.send_control(session, &reply) {
+            Ok(()) => accepted += 1,
+            Err(crate::quinn::TransportError::QueueFull) => {
+                full = true;
+                break;
+            }
+            Err(error) => panic!("error inesperado antes de QueueFull: {error:?}"),
+        }
+    }
+    assert!(
+        full,
+        "sin lectura del peer, la cola debe llenarse: {accepted} aceptados"
+    );
+    assert!(
+        (1..=9).contains(&accepted),
+        "QueueFull llega tras pocos frames acotados: {accepted}"
+    );
+}

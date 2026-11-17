@@ -53,6 +53,8 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Cierre por framing de control corrupto (prefijo fuera de `1..=16384`,
 /// frame que excede el límite o stream de control interrumpido a mitad de frame).
 const CLOSE_CONTROL_FRAMING: u32 = 0x104;
+/// Razón interna de un cierre pedido por el control (no viaja en el wire).
+const CONTROL_CLOSE: &str = "control close";
 /// Cierre por DATAGRAM de audio fuera de límite.
 const CLOSE_AUDIO_OVERSIZED: u32 = 0x101;
 /// Motivo (nunca payload) de cierre cuando una respuesta pendiente no puede
@@ -400,6 +402,36 @@ struct Slot {
     /// `ServerEvent::Closed` ya emitido para esta sesión: ni el cierre por
     /// `ConnectionLost` ni la retirada al drenar pueden emitirlo dos veces.
     close_announced: bool,
+    /// Cierre acotado en curso (ver [`Closing`]). `None` fuera de él.
+    closing: Option<Closing>,
+}
+
+/// Cierre acotado por decisión del control: deja de autorizar y de leer, drena
+/// la cola de respuestas aceptadas, manda FIN del stream y espera su
+/// confirmación. `CONNECTION_CLOSE` sale sólo entonces, o al vencer
+/// `deadline`. Así el `error` que el contrato exige llega antes del cierre y un
+/// peer que no drena no retiene a los demás.
+#[derive(Debug, Clone, Copy)]
+struct Closing {
+    stream: Option<StreamId>,
+    deadline: Instant,
+    fin_sent: bool,
+    finished: bool,
+    reason: &'static str,
+}
+
+/// Tiempo máximo que una sesión en cierre espera a que su cola se drene.
+const CLOSE_FLUSH_GRACE: Duration = Duration::from_millis(500);
+
+/// Qué hace el lector de control cuando debe dejar de leer un stream.
+enum ControlStop {
+    /// Fallo de framing o de envío: cierre inmediato.
+    Fail(&'static str),
+    /// Hay un `error` encolado en `stream`: cierre acotado tras drenarlo.
+    CloseAfter {
+        stream: StreamId,
+        reason: &'static str,
+    },
 }
 
 /// Servidor de sesión sans-IO.
@@ -566,6 +598,29 @@ impl SessionServer {
     /// Concede capacidades a una identidad en caliente.
     pub fn allow(&mut self, pin: SpkiPin, capabilities: Capabilities) {
         self.acl.allow(pin, capabilities);
+    }
+
+    /// Cierra una sesión viva por decisión del control, no del transporte.
+    ///
+    /// Usa el mismo cierre que una violación de protocolo: `conn.close` con
+    /// `CLOSE_CONTROL_FRAMING` y `Slot::revoke`, así que la identidad y las
+    /// colas dejan de ser legibles y el peer no puede seguir mandando
+    /// `config.set` sobre esta sesión. `ServerEvent::Closed` se emite una sola
+    /// vez. Una sesión ya cerrada, o un `SessionId` que no existe, no cambia
+    /// nada y devuelve `false`.
+    ///
+    /// El `CONNECTION_CLOSE` queda en la cola de salida cifrada; el llamador
+    /// tiene que drenarla con `poll_transmit`. No es una revocación de ACL: el
+    /// pin puede volver a autorizarse en otra sesión.
+    pub fn close_session(&mut self, session: SessionId, now: Instant) -> bool {
+        let Some(slot) = self.slots.get_mut(&session) else {
+            return false;
+        };
+        if slot.closed || slot.closing.is_some() {
+            return false;
+        }
+        slot.begin_close(now, None, CONTROL_CLOSE);
+        true
     }
 
     /// Revoca una identidad: la quita de la ACL y cierra con `CLOSE_REVOKED`
@@ -767,6 +822,7 @@ impl SessionServer {
                             tx_failed: false,
                             closed: false,
                             close_announced: false,
+                            closing: None,
                         },
                     );
                 }
@@ -785,6 +841,9 @@ impl SessionServer {
                 continue;
             };
             self.pump_slot(id, &mut slot, now);
+            if slot.closing.is_some() && slot.advance_closing(now) {
+                slot.finish_close(now);
+            }
             if slot.closed && slot.conn.is_drained() {
                 self.by_handle.retain(|_, value| *value != id);
                 if slot.announce_close() {
@@ -896,6 +955,9 @@ impl SessionServer {
                     }
                 }
                 Event::Stream(StreamEvent::Opened { dir: Dir::Bi }) => {
+                    if slot.closing.is_some() {
+                        continue;
+                    }
                     if !slot.authorized {
                         slot.conn.close(
                             now,
@@ -923,8 +985,16 @@ impl SessionServer {
                         return;
                     }
                 }
-                Event::Stream(StreamEvent::Finished { .. })
-                | Event::Stream(StreamEvent::Stopped { .. }) => {
+                Event::Stream(StreamEvent::Finished { id }) => {
+                    // FIN confirmado por el peer: el cierre acotado ya puede
+                    // mandar `CONNECTION_CLOSE` sin perder la respuesta.
+                    if let Some(closing) = slot.closing.as_mut() {
+                        if closing.stream == Some(id) {
+                            closing.finished = true;
+                        }
+                    }
+                }
+                Event::Stream(StreamEvent::Stopped { .. }) => {
                     // Eventos del medio de envío; el cierre del lado de lectura
                     // del peer se observa como `Ok(None)` en `read_control`.
                 }
@@ -933,8 +1003,8 @@ impl SessionServer {
             // Tras cada evento se atienden todos los streams de control
             // conocidos: un `Opened` puede traer bytes ya disponibles y Quinn
             // no reemite `Readable` para ellos.
-            if let Some(reason) = pump_control_streams(slot, self.limits.max_control_frame) {
-                slot.fail_close(now, CLOSE_CONTROL_FRAMING, reason);
+            if let Some(stop) = pump_control_streams(slot, self.limits.max_control_frame) {
+                slot.apply_stop(now, stop);
                 return;
             }
             if slot.closed {
@@ -949,11 +1019,73 @@ impl SessionServer {
             }
         }
 
-        let _ = pump_control_streams(slot, self.limits.max_control_frame);
+        if let Some(stop) = pump_control_streams(slot, self.limits.max_control_frame) {
+            slot.apply_stop(now, stop);
+        }
     }
 }
 
 impl Slot {
+    /// Empieza el cierre acotado: deja de autorizar y de leer ya, pero conserva
+    /// la cola para drenar lo aceptado. Idempotente.
+    fn begin_close(&mut self, now: Instant, stream: Option<StreamId>, reason: &'static str) {
+        if self.closed || self.closing.is_some() {
+            return;
+        }
+        self.authorized = false;
+        self.closing = Some(Closing {
+            stream: stream.or(self.send_stream),
+            deadline: now + CLOSE_FLUSH_GRACE,
+            fin_sent: false,
+            finished: false,
+            reason,
+        });
+    }
+
+    /// Avanza el cierre acotado. `true` cuando ya se puede cerrar la conexión:
+    /// cola vacía con FIN confirmado, plazo vencido o fallo del stream.
+    fn advance_closing(&mut self, now: Instant) -> bool {
+        let Some(mut closing) = self.closing else {
+            return false;
+        };
+        if now >= closing.deadline || flush_replies(self).is_err() {
+            return true;
+        }
+        if !self.control_tx.is_empty() {
+            return false;
+        }
+        let Some(stream) = closing.stream else {
+            return true;
+        };
+        if !closing.fin_sent {
+            if self.conn.send_stream(stream).finish().is_err() {
+                return true;
+            }
+            closing.fin_sent = true;
+            self.closing = Some(closing);
+            return false;
+        }
+        closing.finished
+    }
+
+    /// Cierra la conexión con el `CONNECTION_CLOSE` del cierre acotado.
+    fn finish_close(&mut self, now: Instant) {
+        let reason = self
+            .closing
+            .take()
+            .map_or(CONTROL_CLOSE, |closing| closing.reason);
+        self.fail_close(now, CLOSE_CONTROL_FRAMING, reason);
+    }
+
+    fn apply_stop(&mut self, now: Instant, stop: ControlStop) {
+        match stop {
+            ControlStop::Fail(reason) => self.fail_close(now, CLOSE_CONTROL_FRAMING, reason),
+            ControlStop::CloseAfter { stream, reason } => {
+                self.begin_close(now, Some(stream), reason);
+            }
+        }
+    }
+
     /// Revoca la autorización y vacía todo lo entregable o reintentable.
     ///
     /// Cierre por violación de protocolo y pérdida remota comparten esta purga:
@@ -1008,7 +1140,11 @@ impl Slot {
 /// stream y no cierra la conexión: si QUIC no concede crédito (`Blocked`), la
 /// respuesta queda encolada con su offset y se reintenta en el siguiente
 /// `Writable`/pump, sin cerrar ni duplicar bytes.
-fn pump_control_streams(slot: &mut Slot, max_frame: usize) -> Option<&'static str> {
+fn pump_control_streams(slot: &mut Slot, max_frame: usize) -> Option<ControlStop> {
+    // Un cierre acotado ya no lee: sólo drena lo que aceptó.
+    if slot.closing.is_some() {
+        return None;
+    }
     let streams: Vec<StreamId> = slot.recv_streams.iter().copied().collect();
     // El permiso de encolar es el que exige `recv_control` para entregar. Sin él
     // el frame válido se drena y se descarta: no se retiene y el resto del
@@ -1030,26 +1166,45 @@ fn pump_control_streams(slot: &mut Slot, max_frame: usize) -> Option<&'static st
                 slot.recv_streams.remove(&stream);
                 slot.control_rx.remove(stream);
             }
-            ControlRead::Framing(reason) => return Some(reason),
+            ControlRead::Framing(reason) => return Some(ControlStop::Fail(reason)),
             ControlRead::Reject(reply) => {
-                let Ok(frame) = wire::encode_message(&reply) else {
-                    return Some("respuesta de error no codificable");
-                };
-                if frame.len() > max_frame {
-                    return Some("respuesta de error excede el límite");
+                if let Err(reason) = enqueue_reply(slot, stream, &reply, max_frame) {
+                    return Some(ControlStop::Fail(reason));
                 }
-                if !slot.control_tx.enqueue(stream, frame) {
-                    return Some("demasiadas respuestas de error pendientes");
-                }
+            }
+            ControlRead::CloseAfter(reply, reason) => {
+                return Some(match enqueue_reply(slot, stream, &reply, max_frame) {
+                    Ok(()) => ControlStop::CloseAfter { stream, reason },
+                    Err(fail) => ControlStop::Fail(fail),
+                });
             }
         }
     }
     // `Writable` no siempre llega por evento si el crédito se liberó en el mismo
     // datagrama; reintentar aquí cubre ambos caminos y sólo escribe lo que quepa.
     if flush_replies(slot).is_err() {
-        return Some(REPLY_FAILED);
+        return Some(ControlStop::Fail(REPLY_FAILED));
     }
     None
+}
+
+/// Encola un `error` de contrato en `stream`, con sus mismos topes.
+fn enqueue_reply(
+    slot: &mut Slot,
+    stream: StreamId,
+    reply: &ControlMessage,
+    max_frame: usize,
+) -> Result<(), &'static str> {
+    let Ok(frame) = wire::encode_message(reply) else {
+        return Err("respuesta de error no codificable");
+    };
+    if frame.len() > max_frame {
+        return Err("respuesta de error excede el límite");
+    }
+    if !slot.control_tx.enqueue(stream, frame) {
+        return Err("demasiadas respuestas de error pendientes");
+    }
+    Ok(())
 }
 
 /// Reintenta las respuestas pendientes de `slot`.
@@ -1170,6 +1325,10 @@ impl PendingReplies {
     fn clear(&mut self) {
         self.per_stream.clear();
     }
+
+    fn is_empty(&self) -> bool {
+        self.per_stream.is_empty()
+    }
 }
 
 /// Acepta `frame` para entrega asíncrona por `stream`, compartiendo la cola
@@ -1255,6 +1414,8 @@ enum ControlRead {
     /// Frame con framing íntegro pero contenido inválido y `request_id`
     /// recuperable: el contrato pide `error` en el mismo stream.
     Reject(ControlMessage),
+    /// Violación que el contrato cierra tras enviar `error` (versión o tamaño).
+    CloseAfter(ControlMessage, &'static str),
 }
 
 /// ¿Cabe un payload de `payload_len` en un frame de `max_frame` bytes?
@@ -1350,6 +1511,7 @@ fn read_control(
 
         let mut framing: Option<&'static str> = None;
         let mut reject: Option<ControlMessage> = None;
+        let mut close_with: Option<ControlMessage> = None;
         let Some(buffer) = buffers.open(stream) else {
             return ControlRead::Framing("demasiados streams de control");
         };
@@ -1388,6 +1550,16 @@ fn read_control(
                         // Un `error` inválido no se responde con otro `error`
                         // ni justifica cerrar: se descarta y se sigue leyendo.
                     } else if error.closes_connection() {
+                        // `version_unsupported` y `too_large` llevan `error` antes
+                        // de cerrar (contracts/errors.md): se encola y el cierre
+                        // sale acotado, tras drenarlo.
+                        if matches!(
+                            error.code(),
+                            arl_proto::control::ErrorCode::VersionUnsupported
+                                | arl_proto::control::ErrorCode::TooLarge
+                        ) {
+                            close_with = error.to_error_message();
+                        }
                         framing = Some("mensaje de control inválido");
                     } else {
                         reject = error.to_error_message();
@@ -1403,7 +1575,10 @@ fn read_control(
         }
         if let Some(reason) = framing {
             buffers.remove(stream);
-            return ControlRead::Framing(reason);
+            return match close_with {
+                Some(reply) => ControlRead::CloseAfter(reply, reason),
+                None => ControlRead::Framing(reason),
+            };
         }
         if let Some(reply) = reject {
             return ControlRead::Reject(reply);
@@ -1717,6 +1892,33 @@ impl SessionClient {
         }
     }
 
+    /// Envía bytes de framing ya armados por el llamador, sin validar el
+    /// contenido. Sólo para pruebas que necesitan un frame que el encoder
+    /// rechazaría (p. ej. `hello` con otra versión de protocolo).
+    #[doc(hidden)]
+    pub fn send_control_raw(&mut self, frame: Vec<u8>) -> Result<(), TransportError> {
+        if !self.authorized {
+            return Err(TransportError::Unauthorized);
+        }
+        // Sin validar contenido, pero nunca más allá del tope de framing.
+        if frame.len() > self.limits.max_control_frame {
+            return Err(TransportError::Control(WireError::invalid(None)));
+        }
+        let stream = match self.send_stream {
+            Some(stream) => stream,
+            None => {
+                let stream = self
+                    .conn
+                    .streams()
+                    .open(Dir::Bi)
+                    .ok_or(TransportError::Stream("sin stream de control"))?;
+                self.send_stream = Some(stream);
+                stream
+            }
+        };
+        send_queued(&mut self.control_tx, &mut self.conn, stream, frame)
+    }
+
     /// Recibe el siguiente mensaje de control del servidor.
     pub fn recv_control(&mut self) -> Option<ControlMessage> {
         self.control.pop_front()
@@ -1897,7 +2099,12 @@ impl SessionClient {
     /// un frame inválido con framing íntegro y `request_id` recuperable recibe
     /// `error` en el mismo stream; el framing corrupto cierra la conexión.
     fn pump_control(&mut self, max_frame: usize) -> Option<&'static str> {
-        let streams: Vec<StreamId> = self.recv_streams.iter().copied().collect();
+        let mut streams: Vec<StreamId> = self.recv_streams.iter().copied().collect();
+        if let Some(stream) = self.send_stream {
+            if !streams.contains(&stream) {
+                streams.push(stream);
+            }
+        }
         for stream in streams {
             match read_control(
                 &mut self.conn,
@@ -1915,7 +2122,9 @@ impl SessionClient {
                     self.recv_streams.remove(&stream);
                     self.control_rx.remove(stream);
                 }
-                ControlRead::Framing(reason) => return Some(reason),
+                ControlRead::Framing(reason) | ControlRead::CloseAfter(_, reason) => {
+                    return Some(reason)
+                }
                 ControlRead::Reject(reply) => {
                     let Ok(frame) = wire::encode_message(&reply) else {
                         return Some("respuesta de error no codificable");

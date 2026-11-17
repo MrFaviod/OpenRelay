@@ -8,7 +8,7 @@ use arl_proto::control::{
     classify_remote_action, config_keys, AuthorizedPeer, Capabilities, ConfigKey,
     ConfigKeyDeclaration, ConfigPair, ConfigScope, ConfigState, ConfigValue, ControlSession,
     EffectivePolicy, ErrorCode, ErrorMsg, Feature, IdentityPolicy, Limits, Outcome, PeerRole,
-    RemoteAction, SessionState, Snapshot, ValueType,
+    RemoteAction, SessionState, Snapshot, UnsupportedPolicy, ValueType,
 };
 use arl_proto::wire::{
     self, AckEffective, AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg, ControlMessage,
@@ -931,21 +931,29 @@ fn constants_cannot_be_renegotiated() {
 struct ClampGain;
 
 impl EffectivePolicy for ClampGain {
-    fn effective(&self, key: &ConfigKey, requested: &ConfigValue) -> ConfigValue {
+    fn effective(
+        &self,
+        key: &ConfigKey,
+        requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
         if key.as_str() == "audio.gain_db" {
             if let ConfigValue::Number(value) = requested {
-                return ConfigValue::Number(value.clamp(-6.0, 6.0));
+                return Ok(ConfigValue::Number(value.clamp(-6.0, 6.0)));
             }
         }
-        requested.clone()
+        Ok(requested.clone())
     }
 }
 
 struct InvalidPolicy;
 
 impl EffectivePolicy for InvalidPolicy {
-    fn effective(&self, _key: &ConfigKey, _requested: &ConfigValue) -> ConfigValue {
-        ConfigValue::Integer(44100)
+    fn effective(
+        &self,
+        _key: &ConfigKey,
+        _requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
+        Ok(ConfigValue::Integer(44100))
     }
 }
 
@@ -1013,11 +1021,15 @@ fn effective_can_differ_from_requested_and_is_revalidated() {
 struct ClampAudioNova;
 
 impl EffectivePolicy for ClampAudioNova {
-    fn effective(&self, key: &ConfigKey, requested: &ConfigValue) -> ConfigValue {
+    fn effective(
+        &self,
+        key: &ConfigKey,
+        requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
         if key.as_str() == "audio.sample_rate_hz" {
-            return ConfigValue::Integer(44100);
+            return Ok(ConfigValue::Integer(44100));
         }
-        requested.clone()
+        Ok(requested.clone())
     }
 }
 
@@ -1867,4 +1879,18 @@ fn framing_without_recoverable_id_closes_without_response() {
         assert_eq!(session.revision(), 0);
         assert_eq!(session.cached_responses(), 0);
     }
+}
+
+#[test]
+fn unsupported_policy_refuses_set_without_mutation_or_cache() {
+    let mut session = ControlSession::new(peer(), ConfigState::new(), Box::new(UnsupportedPolicy));
+    let outcome = send(
+        &mut session,
+        &set_json("c-1", 0, "audio.gain_db", "3.0"),
+        NOW,
+    );
+    assert_eq!(error_code(&outcome), ErrorCode::Unsupported);
+    assert!(outcome.events.is_empty(), "sin evento: nada se aplicó");
+    assert_eq!(session.revision(), 0, "sin mutar la revisión");
+    assert_eq!(session.cached_responses(), 0, "el rechazo no se cachea");
 }

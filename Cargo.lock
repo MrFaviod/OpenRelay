@@ -44,8 +44,12 @@ dependencies = [
 name = "arl-cli"
 version = "0.1.0"
 dependencies = [
+ "arl-daemon",
  "arl-proto",
+ "arl-transport",
+ "rcgen",
  "rustix",
+ "rustls",
  "serde_json",
 ]
 
@@ -60,6 +64,7 @@ dependencies = [
  "rcgen",
  "ring",
  "rustls",
+ "rustls-pki-types",
  "serde_json",
  "time",
 ]

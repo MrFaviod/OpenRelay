@@ -10,6 +10,7 @@
 //! remota de micrófono, permisos ni claves locales.
 
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::wire::{
     AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg, ControlMessage, EventBody, EventMsg,
@@ -522,6 +523,53 @@ pub struct ConfigState {
     values: Vec<(ConfigKey, ConfigValue)>,
 }
 
+/// Dueño único de la revisión y de los valores.
+///
+/// Varias [`ControlSession`] pueden apuntar al mismo dueño: un `config.set`
+/// aplicado avanza una sola revisión que las demás ven en el siguiente
+/// `handle`. El permiso y la caché de `request_id` siguen siendo de cada
+/// sesión. Clonar el dueño clona el puntero, no una copia del estado.
+#[derive(Debug, Clone)]
+pub struct SharedConfig {
+    inner: Arc<Mutex<ConfigState>>,
+}
+
+impl SharedConfig {
+    /// Dueño con los defaults del catálogo y revisión 0.
+    pub fn new() -> Self {
+        Self::from_state(ConfigState::new())
+    }
+
+    /// Envuelve un estado ya construido (restauración o prueba).
+    pub fn from_state(state: ConfigState) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(state)),
+        }
+    }
+
+    /// Revisión vigente. Si el cerrojo está envenenado, la revisión es 0.
+    pub fn revision(&self) -> u64 {
+        self.lock().map(|state| state.revision()).unwrap_or(0)
+    }
+
+    /// Snapshot vigente, o el de defaults si el cerrojo está envenenado.
+    pub fn snapshot(&self) -> Snapshot {
+        self.lock()
+            .map(|state| state.snapshot())
+            .unwrap_or_else(|_| ConfigState::new().snapshot())
+    }
+
+    fn lock(&self) -> Result<MutexGuard<'_, ConfigState>, ()> {
+        self.inner.lock().map_err(|_| ())
+    }
+}
+
+impl Default for SharedConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigState {
     /// Estado con los defaults de `docs/config-schema.md` y revisión 0.
     pub fn new() -> Self {
@@ -694,18 +742,47 @@ impl AuthorizedPeer {
 }
 
 /// Política tipada que puede limitar el valor efectivo (dispositivo u SO).
+///
+/// `Err(code)` significa que el daemon no puede aplicar ese cambio: la
+/// máquina responde ese error, no muta la revisión ni cachea un ACK.
 pub trait EffectivePolicy {
     /// Devuelve el efectivo para `requested`; la máquina lo revalida.
-    fn effective(&self, key: &ConfigKey, requested: &ConfigValue) -> ConfigValue;
+    fn effective(&self, key: &ConfigKey, requested: &ConfigValue)
+        -> Result<ConfigValue, ErrorCode>;
 }
 
 /// Política sin límites: el efectivo es el solicitado ya validado.
+///
+/// Sólo para fixtures y pruebas del núcleo. Un producto sin aplicador no la
+/// usa: ver [`UnsupportedPolicy`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IdentityPolicy;
 
 impl EffectivePolicy for IdentityPolicy {
-    fn effective(&self, _key: &ConfigKey, requested: &ConfigValue) -> ConfigValue {
-        requested.clone()
+    fn effective(
+        &self,
+        _key: &ConfigKey,
+        requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
+        Ok(requested.clone())
+    }
+}
+
+/// Política de producto sin aplicador de hardware: ninguna clave con efecto
+/// se aplica, así que cada `config.set` válido responde `unsupported`.
+///
+/// Fail-closed: no inventa un valor limitado ni confirma un `applied` que
+/// nadie ejecutó.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnsupportedPolicy;
+
+impl EffectivePolicy for UnsupportedPolicy {
+    fn effective(
+        &self,
+        _key: &ConfigKey,
+        _requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
+        Err(ErrorCode::Unsupported)
     }
 }
 
@@ -1018,14 +1095,30 @@ impl IdempotencyCache {
 /// Worker de control de una sesión autorizada.
 pub struct ControlSession {
     peer: AuthorizedPeer,
-    state: ConfigState,
+    state: SharedConfig,
     policy: Box<dyn EffectivePolicy>,
     cache: IdempotencyCache,
 }
 
 impl ControlSession {
     /// Crea la sesión con su estado inicial y política de efectivo.
+    ///
+    /// El estado queda privado de esta sesión: otra sesión construida igual
+    /// no ve sus escrituras. Para compartir revisión, usar [`Self::sharing`].
     pub fn new(peer: AuthorizedPeer, state: ConfigState, policy: Box<dyn EffectivePolicy>) -> Self {
+        Self::sharing(peer, SharedConfig::from_state(state), policy)
+    }
+
+    /// Crea la sesión sobre un estado ya compartido.
+    ///
+    /// `peer` y `policy` son de esta identidad; `state` es el de todas las
+    /// sesiones que reciban el mismo [`SharedConfig`]. La caché de
+    /// `request_id` nace vacía y no se comparte.
+    pub fn sharing(
+        peer: AuthorizedPeer,
+        state: SharedConfig,
+        policy: Box<dyn EffectivePolicy>,
+    ) -> Self {
         Self {
             peer,
             state,
@@ -1086,6 +1179,13 @@ impl ControlSession {
         }
     }
 
+    fn with_state<T>(&self, f: impl FnOnce(&ConfigState) -> T) -> T {
+        match self.state.lock() {
+            Ok(state) => f(&state),
+            Err(()) => f(&ConfigState::new()),
+        }
+    }
+
     fn handle_hello(&mut self, hello: &HelloMsg) -> Outcome {
         if hello.protocol_version != SCHEMA_VERSION {
             let mut outcome = Outcome::reply(error(
@@ -1103,7 +1203,7 @@ impl ControlSession {
         );
         Outcome::reply(ControlMessage::Capabilities(CapabilitiesMsg {
             request_id: hello.request_id.clone(),
-            revision: self.state.revision(),
+            revision: self.with_state(|state| state.revision()),
             capabilities,
         }))
     }
@@ -1131,22 +1231,24 @@ impl ControlSession {
             CacheLookup::Miss => {}
         }
         let response = match &get.key {
-            None => ControlMessage::Ack(AckMsg {
-                request_id: get.request_id.clone(),
-                revision: self.state.revision(),
-                applied: true,
-                requested: None,
-                effective: crate::wire::AckEffective::Snapshot(self.state.snapshot()),
+            None => self.with_state(|state| {
+                ControlMessage::Ack(AckMsg {
+                    request_id: get.request_id.clone(),
+                    revision: state.revision(),
+                    applied: true,
+                    requested: None,
+                    effective: crate::wire::AckEffective::Snapshot(state.snapshot()),
+                })
             }),
             Some(key) => match lookup_key(key.as_str()) {
                 None => error(&get.request_id, ErrorCode::NotFound, "config key not found"),
                 Some(spec) if spec.scope == ConfigScope::Local && self.peer.role().is_remote() => {
                     error(&get.request_id, ErrorCode::LocalKey, "config key is local")
                 }
-                Some(_) => match self.state.get(key).cloned() {
+                Some(_) => self.with_state(|state| match state.get(key).cloned() {
                     Some(value) => ControlMessage::Ack(AckMsg {
                         request_id: get.request_id.clone(),
-                        revision: self.state.revision(),
+                        revision: state.revision(),
                         applied: true,
                         requested: None,
                         effective: crate::wire::AckEffective::Pair(ConfigPair {
@@ -1159,7 +1261,7 @@ impl ControlSession {
                         ErrorCode::Internal,
                         "config state incomplete",
                     ),
-                },
+                }),
             },
         };
         self.cache.store(&get.request_id, &op, &response, now_ms);
@@ -1190,9 +1292,10 @@ impl ControlSession {
             }
             CacheLookup::Miss => {}
         }
-        if set.expected_revision != self.state.revision() {
+        let current_revision = self.with_state(|state| state.revision());
+        if set.expected_revision != current_revision {
             let conflict = ErrorMsg::new(&set.request_id, ErrorCode::Conflict, "revision mismatch")
-                .and_then(|error| error.with_current_revision(self.state.revision()))
+                .and_then(|error| error.with_current_revision(current_revision))
                 .map(ControlMessage::Error)
                 .unwrap_or_else(|_| {
                     error(
@@ -1235,7 +1338,18 @@ impl ControlSession {
             self.cache.store(&set.request_id, &op, &response, now_ms);
             return Outcome::reply(response);
         }
-        let effective = self.policy.effective(&set.key, &set.value);
+        let effective = match self.policy.effective(&set.key, &set.value) {
+            Ok(value) => value,
+            Err(code) => {
+                // Sin aplicador: error honesto, sin mutar revisión ni valor y
+                // sin cachear la respuesta, para que un reintento se reevalúe.
+                return Outcome::reply(error(
+                    &set.request_id,
+                    code,
+                    "no effect applicator for this key",
+                ));
+            }
+        };
         if validate_value(spec, &effective).is_err() {
             let response = error(
                 &set.request_id,
@@ -1245,61 +1359,102 @@ impl ControlSession {
             self.cache.store(&set.request_id, &op, &response, now_ms);
             return Outcome::reply(response);
         }
-        let current = self.state.get(&set.key).cloned();
-        if current.as_ref() == Some(&effective) {
-            let response = ControlMessage::Ack(AckMsg {
-                request_id: set.request_id.clone(),
-                revision: self.state.revision(),
-                applied: false,
-                requested: Some(ConfigPair {
-                    key: set.key.clone(),
-                    value: set.value.clone(),
-                }),
-                effective: crate::wire::AckEffective::Pair(ConfigPair {
-                    key: set.key.clone(),
-                    value: effective,
-                }),
-            });
-            self.cache.store(&set.request_id, &op, &response, now_ms);
-            return Outcome::reply(response);
-        }
-        let next_revision = match self.state.revision().checked_add(1) {
-            Some(revision) if revision <= MAX_REVISION => revision,
-            _ => {
+        let requested = ConfigPair {
+            key: set.key.clone(),
+            value: set.value.clone(),
+        };
+        let decision = match self.state.lock() {
+            Ok(mut state) => {
+                if state.revision() != set.expected_revision {
+                    SetDecision::Conflict {
+                        revision: state.revision(),
+                    }
+                } else if state.get(&set.key) == Some(&effective) {
+                    SetDecision::Unchanged {
+                        revision: state.revision(),
+                    }
+                } else {
+                    match state.revision().checked_add(1) {
+                        Some(revision) if revision <= MAX_REVISION => {
+                            state.apply(&set.key, effective.clone(), revision);
+                            SetDecision::Applied { revision }
+                        }
+                        _ => SetDecision::Exhausted,
+                    }
+                }
+            }
+            Err(()) => SetDecision::Exhausted,
+        };
+        match decision {
+            SetDecision::Conflict { revision } => {
+                let conflict =
+                    ErrorMsg::new(&set.request_id, ErrorCode::Conflict, "revision mismatch")
+                        .and_then(|error| error.with_current_revision(revision))
+                        .map(ControlMessage::Error)
+                        .unwrap_or_else(|_| {
+                            error(
+                                &set.request_id,
+                                ErrorCode::Internal,
+                                "conflict response failed",
+                            )
+                        });
+                self.cache.store(&set.request_id, &op, &conflict, now_ms);
+                Outcome::reply(conflict)
+            }
+            SetDecision::Unchanged { revision } => {
+                let response = ControlMessage::Ack(AckMsg {
+                    request_id: set.request_id.clone(),
+                    revision,
+                    applied: false,
+                    requested: Some(requested),
+                    effective: crate::wire::AckEffective::Pair(ConfigPair {
+                        key: set.key.clone(),
+                        value: effective,
+                    }),
+                });
+                self.cache.store(&set.request_id, &op, &response, now_ms);
+                Outcome::reply(response)
+            }
+            SetDecision::Exhausted => {
                 let response = error(&set.request_id, ErrorCode::Internal, "revision exhausted");
                 self.cache.store(&set.request_id, &op, &response, now_ms);
-                return Outcome::reply(response);
+                Outcome::reply(response)
             }
-        };
-        self.state.apply(&set.key, effective.clone(), next_revision);
-        let response = ControlMessage::Ack(AckMsg {
-            request_id: set.request_id.clone(),
-            revision: next_revision,
-            applied: true,
-            requested: Some(ConfigPair {
-                key: set.key.clone(),
-                value: set.value.clone(),
-            }),
-            effective: crate::wire::AckEffective::Pair(ConfigPair {
-                key: set.key.clone(),
-                value: effective.clone(),
-            }),
-        });
-        self.cache.store(&set.request_id, &op, &response, now_ms);
-        let event = ControlMessage::Event(EventMsg {
-            revision: next_revision,
-            event: EventBody::ConfigChanged {
-                key: set.key.clone(),
-                requested: set.value.clone(),
-                effective,
-            },
-        });
-        Outcome {
-            response: Some(response),
-            events: vec![event],
-            close: false,
+            SetDecision::Applied { revision } => {
+                let response = ControlMessage::Ack(AckMsg {
+                    request_id: set.request_id.clone(),
+                    revision,
+                    applied: true,
+                    requested: Some(requested),
+                    effective: crate::wire::AckEffective::Pair(ConfigPair {
+                        key: set.key.clone(),
+                        value: effective.clone(),
+                    }),
+                });
+                self.cache.store(&set.request_id, &op, &response, now_ms);
+                let event = ControlMessage::Event(EventMsg {
+                    revision,
+                    event: EventBody::ConfigChanged {
+                        key: set.key.clone(),
+                        requested: set.value.clone(),
+                        effective,
+                    },
+                });
+                Outcome {
+                    response: Some(response),
+                    events: vec![event],
+                    close: false,
+                }
+            }
         }
     }
+}
+
+enum SetDecision {
+    Conflict { revision: u64 },
+    Unchanged { revision: u64 },
+    Exhausted,
+    Applied { revision: u64 },
 }
 
 fn error(request_id: &str, code: ErrorCode, message: &str) -> ControlMessage {

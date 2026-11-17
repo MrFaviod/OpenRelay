@@ -9,7 +9,9 @@
 //! inyectan en el micrófono virtual en esta fase.
 
 pub mod acl;
+pub mod control;
 pub mod pairing;
+pub mod runtime;
 
 use std::fmt;
 use std::net::UdpSocket;
@@ -28,11 +30,12 @@ const TARGET_MS: u16 = 40;
 pub const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-/// Error del daemon: socket del sistema o transporte.
+/// Error del daemon: socket, transporte o control.
 #[derive(Debug)]
 pub enum DaemonError {
     Socket(std::io::Error),
     Transport(TransportError),
+    Control(control::ControlError),
 }
 
 impl fmt::Display for DaemonError {
@@ -40,6 +43,7 @@ impl fmt::Display for DaemonError {
         match self {
             Self::Socket(error) => write!(f, "socket UDP: {error}"),
             Self::Transport(error) => write!(f, "transporte: {error}"),
+            Self::Control(error) => write!(f, "control: {error}"),
         }
     }
 }
@@ -55,6 +59,12 @@ impl From<std::io::Error> for DaemonError {
 impl From<TransportError> for DaemonError {
     fn from(error: TransportError) -> Self {
         Self::Transport(error)
+    }
+}
+
+impl From<control::ControlError> for DaemonError {
+    fn from(error: control::ControlError) -> Self {
+        Self::Control(error)
     }
 }
 
@@ -85,18 +95,30 @@ pub fn fnv1a_extend(mut hash: u64, samples: &[i16]) -> u64 {
 
 /// Conduce `server` sobre `socket` hasta `until`, escribiendo en `producer`.
 ///
-/// Un datagrama inválido no detiene el daemon: se descarta. Los errores de
-/// socket sí se devuelven.
+/// Igual que [`serve_with_control`] sin control: sólo audio.
 pub fn serve(
     socket: &UdpSocket,
     server: &mut SessionServer,
     producer: &mut SampleProducer,
     until: Instant,
 ) -> Result<ServeStats, DaemonError> {
+    serve_with_control(socket, server, producer, until, None)
+}
+
+/// Conduce audio y, si hay `control`, el control de las sesiones autorizadas.
+///
+/// El control usa el mismo socket y las mismas sesiones. `poll` lee lo que
+/// `recv_control` ya entregó y responde con `send_control`. Sin `control` el
+/// comportamiento es el de [`serve`].
+pub fn serve_with_control(
+    socket: &UdpSocket,
+    server: &mut SessionServer,
+    producer: &mut SampleProducer,
+    until: Instant,
+    mut control: Option<&mut control::SharedControl>,
+) -> Result<ServeStats, DaemonError> {
     socket.set_read_timeout(Some(READ_TICK))?;
     let origin = Instant::now();
-    // Target alto dentro del contrato (5..=40 ms): el host de prueba es
-    // compartido y el envío de loopback tiene jitter de planificación.
     let mut jitter = JitterBuffer::new(JitterConfig::new(TARGET_MS));
     let mut sessions: Vec<SessionId> = Vec::new();
     let mut stats = ServeStats {
@@ -113,7 +135,6 @@ pub fn serve(
     while Instant::now() < until {
         match socket.recv_from(&mut buf) {
             Ok((len, from)) => {
-                // Un datagrama malformado no tumba el daemon.
                 let _ = server.handle_datagram(Instant::now(), from, &buf[..len]);
             }
             Err(error)
@@ -137,7 +158,16 @@ pub fn serve(
                     sessions.push(session);
                 }
                 ServerEvent::Rejected { .. } => stats.sessions_rejected += 1,
-                ServerEvent::Closed { session } => sessions.retain(|s| *s != session),
+                ServerEvent::Closed { session } => {
+                    sessions.retain(|s| *s != session);
+                }
+            }
+        }
+
+        if let Some(control) = control.as_mut() {
+            control.poll(server, &sessions)?;
+            while let Some((to, bytes)) = server.poll_transmit(now) {
+                socket.send_to(&bytes, to)?;
             }
         }
 
