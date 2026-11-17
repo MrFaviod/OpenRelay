@@ -1,7 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">the reference app</string>
-    <string name="placeholder_title">Base Android de the reference app</string>
-    <string name="placeholder_body">Esta compilación sólo muestra la pantalla inicial. Todavía no captura audio ni se conecta a ningún equipo.</string>
-    <string name="placeholder_note">La captura y el transporte se incorporan en tareas posteriores.</string>
+    <string name="home_title">the reference app</string>
+
+    <!-- Acción visible junto al micrófono. No describe la conexión. -->
+    <string name="action_start_capture">Iniciar captura local</string>
+    <string name="action_stop_capture">Detener captura</string>
+
+    <!-- Estado del audio, separado de la conexión. -->
+    <string name="status_idle">Captura parada</string>
+    <string name="status_local">Captura local</string>
+    <string name="status_error">Error de captura</string>
+
+    <!-- La conexión no es un botón: no hay nada que configurar todavía. -->
+    <string name="connection_unconfigured">La conexión al PC aún no está configurada.</string>
+
+    <string name="cd_mic_start">Iniciar captura local</string>
+    <string name="cd_mic_stop">Detener captura</string>
+    <string name="cd_level">Nivel de entrada %1$d %%</string>
+
+    <string name="action_mute">Silenciar</string>
+    <string name="action_unmute">Quitar silencio</string>
+    <!-- El servicio pone el nivel a 0 al silenciar, pero no hay una medición de que el micrófono baje. -->
+    <string name="mute_applied">Las muestras capturadas se descartan. El nivel publicado queda en cero; el micrófono sigue abierto.</string>
+    <string name="mute_not_applied">Silencio desactivado. El nivel muestra la entrada del micrófono.</string>
+    <string name="mute_requested_disconnected">Silencio pedido. La captura todavía no está en marcha, así que no hay nivel que bajar.</string>
+
+    <string name="error_mic_permission">El micrófono está denegado. Sin ese permiso no hay captura.</string>
+    <!-- Aviso, no error: denegar notificaciones no para la captura. -->
+    <string name="notification_warning_title">Las notificaciones están desactivadas</string>
+    <string name="notification_warning_body">La captura puede seguir. No verás Parar ni Silenciar en la barra.</string>
+    <string name="action_notification_settings">Ajustes de notificaciones</string>
+    <string name="action_allow_notifications">Permitir notificaciones</string>
+    <string name="error_capture">La captura no arrancó. Puedes reintentar.</string>
+    <string name="action_grant">Conceder permiso</string>
+    <string name="action_settings">Abrir ajustes</string>
+    <string name="action_retry">Reintentar</string>
+
+    <string name="advanced_show">Avanzado</string>
+    <string name="advanced_hide">Ocultar avanzado</string>
+    <string name="gain_title">Ganancia</string>
+    <string name="gain_honesty">Mover esto guarda lo que pides. No cambia el audio.</string>
+    <string name="gain_requested">Pedida: %1$d dB</string>
+    <string name="gain_effective">Efectiva: %1$d dB</string>
+    <string name="gain_effective_unavailable">Efectiva: no disponible</string>
+    <string name="version_label">Versión %1$s</string>
 </resources>

@@ -331,6 +331,138 @@ fn bytes_of(value: JValueOwned, env: &JNIEnv) -> Result<Vec<u8>, String> {
     env.convert_byte_array(JByteArray::from(obj)).map_err(text)
 }
 
+mod client;
+
+pub(crate) use client::{BridgeEvent, ProductClient, Provision};
+
+#[cfg(test)]
+mod udp_roundtrip;
+
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Mutex, OnceLock};
+
+use jni::objects::JString;
+use jni::sys::{jdouble, jint, jlong, jstring};
+
+/// Handles de producto. Nunca un puntero crudo hacia Java: el id es opaco.
+fn sessions() -> &'static Mutex<HashMap<u64, ProductClient>> {
+    static SESSIONS: OnceLock<Mutex<HashMap<u64, ProductClient>>> = OnceLock::new();
+    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn next_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+fn jbytes(env: &JNIEnv, value: JObject) -> Result<Vec<u8>, String> {
+    env.convert_byte_array(JByteArray::from(value))
+        .map_err(|e| e.to_string())
+}
+
+fn jtext(env: &mut JNIEnv, value: &JString) -> Result<String, String> {
+    env.get_string(value)
+        .map(|s| s.to_string_lossy().into_owned())
+        .map_err(|e| e.to_string())
+}
+
+fn ret_string(env: &mut JNIEnv, text: String) -> jstring {
+    match env.new_string(text) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+fn with_session<T>(id: u64, f: impl FnOnce(&ProductClient) -> Result<T, String>) -> Result<T, String> {
+    let guard = sessions().lock().map_err(|_| "lock envenenado".to_string())?;
+    let client = guard.get(&id).ok_or("handle desconocido")?;
+    f(client)
+}
+
+/// Arma la identidad del Keystore y abre el UDP. Devuelve el id, o un error con prefijo `ERR `.
+fn open_product(
+    env: &mut JNIEnv,
+    signer: JObject,
+    endpoint: &str,
+    server_name: &str,
+    ca_der: Vec<u8>,
+    pin_hex: &str,
+    chain: Vec<Vec<u8>>,
+) -> Result<u64, String> {
+    let addr: SocketAddr = endpoint
+        .parse()
+        .map_err(|_| "endpoint no es host:puerto")?;
+    if addr.port() == 0 {
+        return Err("puerto de sesión vacío".into());
+    }
+    let pin = SpkiPin::from_hex(pin_hex).ok_or("pin SPKI no es 64 hex")?;
+    if ca_der.is_empty() || chain.is_empty() || chain.len() > identity::MAX_CERT_CHAIN {
+        return Err("provisión de certificados vacía o larga".into());
+    }
+    let vm = env.get_java_vm().map_err(|e| e.to_string())?;
+    let signer_ref = env.new_global_ref(&signer).map_err(|e| e.to_string())?;
+    let spki_obj = env
+        .call_method(&signer, "publicKeyDer", "()[B", &[])
+        .map_err(|e| e.to_string())?
+        .l()
+        .map_err(|e| e.to_string())?;
+    let spki = jbytes(env, spki_obj)?;
+    let key = Arc::new(KeystoreKey {
+        inner: Arc::new(Inner {
+            vm,
+            signer: signer_ref,
+            signatures: AtomicUsize::new(0),
+        }),
+        spki,
+    });
+    let chain = chain
+        .into_iter()
+        .map(CertificateDer::from)
+        .collect::<Vec<_>>();
+    let client = ProductClient::open(Provision {
+        endpoint: addr,
+        server_name: server_name.to_string(),
+        ca_der: CertificateDer::from(ca_der),
+        pin,
+        chain,
+        key,
+    })?;
+    let id = next_id();
+    sessions()
+        .lock()
+        .map_err(|_| "lock envenenado".to_string())?
+        .insert(id, client);
+    Ok(id)
+}
+
+fn event_line(event: BridgeEvent) -> String {
+    match event {
+        BridgeEvent::Authorized => "authorized".into(),
+        BridgeEvent::Rejected => "rejected".into(),
+        BridgeEvent::Closed => "closed".into(),
+        BridgeEvent::IoFault(detail) => format!("io\t{detail}"),
+        BridgeEvent::Ack {
+            request_id,
+            revision,
+            applied,
+            requested_json,
+            effective_json,
+        } => format!(
+            "ack\t{request_id}\t{revision}\t{applied}\t{requested_json}\t{effective_json}"
+        ),
+        BridgeEvent::Error {
+            request_id,
+            code,
+            current_revision,
+        } => match current_revision {
+            Some(revision) => format!("error\t{request_id}\t{code}\t{revision}"),
+            None => format!("error\t{request_id}\t{code}"),
+        },
+    }
+}
+
 mod exports {
     use super::*;
 
@@ -340,11 +472,214 @@ mod exports {
         mut env: JNIEnv,
         _class: JClass,
         signer: JObject,
-    ) -> jni::sys::jstring {
+    ) -> jstring {
         let report = run(&mut env, signer).unwrap_or_else(|e| format!("ERR {e}"));
-        match env.new_string(report) {
-            Ok(s) => s.into_raw(),
-            Err(_) => std::ptr::null_mut(),
+        ret_string(&mut env, report)
+    }
+
+    /// Abre la sesión de producto. `chain` es `byte[][]` (hoja primero).
+    /// Devuelve el handle (>0) o lanza con el texto del error vía el valor negativo codificado en el long alto: 0 y el mensaje por `lastError`.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeOpen(
+        mut env: JNIEnv,
+        _class: JClass,
+        signer: JObject,
+        endpoint: JString,
+        server_name: JString,
+        ca_der: JByteArray,
+        pin_hex: JString,
+        chain: jni::objects::JObjectArray,
+    ) -> jlong {
+        let opened = (|| {
+            let endpoint = jtext(&mut env, &endpoint)?;
+            let server_name = jtext(&mut env, &server_name)?;
+            let pin_hex = jtext(&mut env, &pin_hex)?;
+            let ca = jbytes(&mut env, JObject::from(ca_der))?;
+            let len = env
+                .get_array_length(&chain)
+                .map_err(|e| e.to_string())?;
+            let mut certs = Vec::with_capacity(len as usize);
+            for index in 0..len {
+                let item = env
+                    .get_object_array_element(&chain, index)
+                    .map_err(|e| e.to_string())?;
+                certs.push(jbytes(&mut env, item)?);
+            }
+            open_product(
+                &mut env,
+                signer,
+                &endpoint,
+                &server_name,
+                ca,
+                &pin_hex,
+                certs,
+            )
+        })();
+        match opened {
+            Ok(id) => id as jlong,
+            Err(error) => {
+                remember_error(error);
+                0
+            }
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeHello(
+        _env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+    ) -> jint {
+        call_code(handle as u64, |client| client.hello())
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeConfigGet(
+        mut env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        key: JString,
+    ) -> jstring {
+        let key = jtext(&mut env, &key).unwrap_or_default();
+        let result = with_session(handle as u64, |client| {
+            client.config_get(if key.is_empty() { None } else { Some(key.as_str()) })
+        });
+        ret_string(
+            &mut env,
+            match result {
+                Ok(id) => id,
+                Err(error) => {
+                    remember_error(error.clone());
+                    format!("ERR {error}")
+                }
+            },
+        )
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeConfigSetGain(
+        mut env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        expected_revision: jlong,
+        gain_db: jdouble,
+    ) -> jstring {
+        let result = with_session(handle as u64, |client| {
+            client.config_set_gain(expected_revision as u64, gain_db)
+        });
+        ret_string(
+            &mut env,
+            match result {
+                Ok(id) => id,
+                Err(error) => {
+                    remember_error(error.clone());
+                    format!("ERR {error}")
+                }
+            },
+        )
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativePoll(
+        mut env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+    ) -> jstring {
+        let result = with_session(handle as u64, |client| client.poll_event());
+        ret_string(
+            &mut env,
+            match result {
+                Ok(Some(event)) => event_line(event),
+                Ok(None) => String::new(),
+                Err(error) => format!("ERR {error}"),
+            },
+        )
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeWaitAuthorized(
+        _env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+    ) -> jint {
+        call_code(handle as u64, |client| client.wait_authorized())
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeWaitControl(
+        mut env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        request_id: JString,
+    ) -> jstring {
+        let request_id = jtext(&mut env, &request_id).unwrap_or_default();
+        let result = with_session(handle as u64, |client| client.wait_control(&request_id));
+        ret_string(
+            &mut env,
+            match result {
+                Ok(event) => event_line(event),
+                Err(error) => format!("ERR {error}"),
+            },
+        )
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeClose(
+        _env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+    ) -> jint {
+        let id = handle as u64;
+        let mut guard = match sessions().lock() {
+            Ok(guard) => guard,
+            Err(_) => return 1,
+        };
+        match guard.remove(&id) {
+            Some(mut client) => match client.close() {
+                Ok(()) => 0,
+                Err(_) => 1,
+            },
+            None => 0,
+        }
+    }
+
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeLastError(
+        mut env: JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let text = LAST_ERROR
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_default();
+        ret_string(&mut env, text)
+    }
+}
+
+fn call_code(id: u64, f: impl FnOnce(&ProductClient) -> Result<(), String>) -> jint {
+    match with_session(id, f) {
+        Ok(()) => 0,
+        Err(error) => {
+            remember_error(error);
+            1
         }
     }
 }
+
+fn remember_error(error: String) {
+    if let Ok(mut guard) = LAST_ERROR.lock() {
+        *guard = Some(error);
+    }
+}
+
+static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);

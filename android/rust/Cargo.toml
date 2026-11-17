@@ -15,8 +15,10 @@ name = "arl_bridge"
 crate-type = ["cdylib"]
 
 [dependencies]
+arl-proto = { path = "../../crates/proto" }
 arl-transport = { path = "../../crates/transport" }
 jni = { version = "=0.21.1", default-features = false }
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 rustls-pki-types = "=1.16.0"
+ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }

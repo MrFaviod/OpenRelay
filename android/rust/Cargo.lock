@@ -10,9 +10,11 @@ version = "0.1.0"
 name = "arl-bridge"
 version = "0.0.0"
 dependencies = [
+ "arl-proto",
  "arl-transport",
  "jni",
  "rcgen",
+ "ring",
  "rustls",
  "rustls-pki-types",
 ]

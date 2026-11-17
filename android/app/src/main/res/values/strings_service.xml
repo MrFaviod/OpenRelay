@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stream_channel_name">Captura del micrófono</string>
+    <string name="stream_channel_description">Muestra que the reference app está usando el micrófono y permite pararlo o silenciarlo.</string>
+    <string name="stream_notification_title">the reference app está usando el micrófono</string>
+    <string name="stream_notification_capturing">Capturando en este dispositivo. Todavía no se envía a otro equipo.</string>
+    <string name="stream_notification_muted">Silenciado. El micrófono sigue abierto y no se envía audio.</string>
+    <string name="stream_notification_error">La captura se detuvo por un error.</string>
+    <string name="stream_action_stop">Parar</string>
+    <string name="stream_action_mute">Silenciar</string>
+    <string name="stream_action_unmute">Activar sonido</string>
+    <string name="perm_record_audio_denied">Sin permiso de micrófono no se puede capturar. Concédelo en los ajustes de la app y vuelve a iniciar.</string>
+    <string name="perm_notifications_hidden">Las notificaciones están desactivadas: la captura puede seguir, pero no verás Parar ni Silenciar en la barra.</string>
+    <string name="stream_error_mic_denied">Falta el permiso de micrófono.</string>
+    <string name="stream_error_not_visible">El micrófono sólo se inicia con la app visible.</string>
+    <string name="stream_error_engine">No se pudo abrir el micrófono.</string>
+    <string name="stream_error_cleanup">La captura se cerró con un error nativo.</string>
+</resources>
