@@ -1,84 +1,81 @@
-# arl — alternativa MIT a the reference app
+# arl — an MIT alternative to the reference app
 
-**Nombre de trabajo `arl` (provisional).** No es una marca, un nombre de producto aprobado ni un canal de distribución. La decisión de nombre y distribución (D-11) sigue pendiente.
+**Working name: `arl`.** Not a brand, not an approved product name, and not a distribution channel. The name and distribution decision (D-11) is still open.
 
-**Estado vigente: / validadas localmente; en implementación parcial, no iniciada. Transporte host, base Android, fuente/reporte Linux y núcleo C SPSC/lifecycle cuentan con verificaciones acotadas. No hay vertical Android→Linux validado ni APK nativo de captura, Keystore real o medición física completa. El lifecycle host tiene revisión independiente y pruebas normal+ASan/UBSan; sus objetos compilan con NDK para arm64/x86_64, no acreditan ejecución Android.** Ver [estado /](docs/plan/execution-f2-f3.md).
 
-## Qué es
+## What it is
 
-Un proyecto de software libre bajo licencia MIT, pensado como alternativa a the reference app para **Linux y Android**:
+Free software under the MIT license, meant as an alternative to the reference app for **Linux and Android**:
 
-- Linux en Rust, CLI ligera, sin GUI de escritorio; puede correr en foreground o como unidad `systemd --user` opcional.
-- Android nativo como panel de control y origen del micrófono.
-- Flujo principal de audio: **micrófono Android → Linux**, por LAN, priorizando latencia sobre calidad.
-- Reducción de ruido OSS opcional e integrada (fase posterior; ninguna biblioteca elegida).
-- Comunicación de control **bidireccional**: CLI y panel comparten configuración y estado; el audio de retorno Linux→Android es una fase separada, opt-in y apagada por defecto.
+- Linux in Rust, a small CLI, no desktop GUI. It can run in the foreground or as an optional `systemd --user` unit.
+- A native Android app as the control panel and the microphone source.
+- The main audio path: **Android microphone → Linux**, over the LAN, latency ahead of quality.
+- Optional noise reduction, built in, in a later phase. No library is chosen yet.
+- Control is **bidirectional**: the CLI and the panel share configuration and state. Audio back from Linux to Android is a separate phase, opt-in and off by default.
 
-## Qué no es (alcance y límites)
+## What it is not
 
-- **No** es audio bidireccional en el flujo principal. «Bidireccional» aquí significa control.
-- **No** captura audio de otras apps Android; eso queda fuera salvo aprobación explícita y plan propio.
-- **No** garantiza compatibilidad universal con cualquier distro, driver, app o dispositivo. La compatibilidad se expresa como matriz con celdas verificadas, limitadas o pendientes.
-- **No** usa nube, cuenta, telemetría ni servicio externo.
-- **No** abre API administrativa por LAN, shell remoto ni HTTP de control.
-- **No** usa `verify=false` ni equivalentes; no hay fallback a UDP claro.
+- **Not** bidirectional audio on the main path. "Bidirectional" here means control.
+- **Not** a way to capture audio from other Android apps. That stays out unless it is explicitly approved and planned on its own.
+- **Not** a promise that every distribution, driver, app or device works. Compatibility is a matrix of cells that are verified, limited, or still open.
+- **No** cloud, no account, no telemetry, no external service.
+- **No** admin API over the LAN, no remote shell, no control over HTTP.
+- **No** `verify=false` or anything like it, and no fallback to cleartext UDP.
 
-## Decisiones registradas que afectan al repositorio
+## Decisions that shape the repository
 
-- **(x86) — resuelta por the maintainer el 2026-11-13:** objetivos **x86-64** y **ARM64**; **sin soporte de 32 bits**. Los artefactos GNU propuestos son `x86_64-unknown-linux-gnu` y `aarch64-unknown-linux-gnu`.
-- **(Android) — congelada en:** no se crea Gradle ni app Android en. minSdk28 es propuesta; target/compile se fijan en y se revalidan en.
-- **(baseline) — sin evidencia física:** ningún número de latencia, CPU o memoria de este repositorio es un resultado logrado. El presupuesto de [docs/latency-budget.md](docs/latency-budget.md) es una propuesta.
-- **D-11 (nombre/distribución) — pendiente:** `arl` es provisional y no hay canales de release decididos.
+- **(x86) — settled by the maintainer on 2026-11-13:** targets are **x86-64** and **ARM64**, with **no 32-bit support**. The proposed GNU targets are `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`.
+- **(Android) — frozen at:** created no Gradle project and no Android app. minSdk 28 is a proposal; target and compile SDK are fixed at and re-checked at.
+- **(baseline) — no physical evidence:** no latency, CPU or memory number in this repository is a measured result. The budget in [docs/latency-budget.md](docs/latency-budget.md) is a proposal.
+- **D-11 (name and distribution) — open:** `arl` is provisional, and no release channel is decided.
 
-## Estructura
+## Layout
 
 ```text
-README.md este documento
-INDEX.md índice raíz único de documentación
-AGENTS.md reglas de trabajo del repositorio
-LICENSE MIT, Copyright (c) 2026 the maintainer
-Cargo.toml workspace Rust (resolver 2, miembros crates/*)
-Cargo.lock lock con checksums de
-rust-toolchain.toml toolchain fijada a Rust 1.80.1
-deny.toml política propuesta de cargo-deny (no ejecutada)
-crates/audio-core/ frame v1, PCM16, jitter, métricas, drift, budget
-crates/proto/ control estricto y wire (serde/serde_json fijados)
-docs/plan/ plan y cobertura (snapshots históricos) + acta de ejecución
-docs/security/ modelo de amenaza y flujo de emparejamiento
-docs/protocol.md contrato de control y audio
-docs/config-schema.md configuración requested/effective y claves locales
-docs/dependency-ledger.md deps efectivas, sólo-lock, candidatos y excluidos
-docs/latency-budget.md presupuesto por etapa y recursos (propuesta)
-contracts/ JSON Schema 2020-12 y catálogo de errores
-scripts/check-doc-links.sh checker de enlaces locales (bash, sin dependencias)
-scripts/ci-doc.sh gate documental y de core por fase
-tools/verify.py verificador documental multi-modo (stdlib)
+README.md this file
+INDEX.md the single root index of the documentation
+AGENTS.md working rules for the repository
+LICENSE MIT
+Cargo.toml Rust workspace (resolver 2, members crates/*)
+Cargo.lock lockfile with checksums
+rust-toolchain.toml toolchain pinned to Rust 1.80.1
+deny.toml proposed cargo-deny policy (not run)
+crates/audio-core/ frame v1, PCM16, jitter, metrics, drift, budget
+crates/proto/ strict control and wire format (pinned serde, serde_json)
+docs/plan/ plan and coverage (historical snapshots) plus the execution record
+docs/security/ threat model and pairing flow
+docs/protocol.md control and audio contract
+docs/config-schema.md requested versus effective configuration, and local keys
+docs/dependency-ledger.md effective deps, lock-only deps, candidates and exclusions
+docs/latency-budget.md per-stage and resource budget (a proposal)
+contracts/ JSON Schema 2020-12 and the error catalog
+scripts/check-doc-links.sh local link checker (bash, no dependencies)
+scripts/ci-doc.sh per-phase docs and core gate
+tools/verify.py multi-mode docs verifier (stdlib)
 ```
 
-## Verificación de fase 1
+## Check the current phase
 
 ```sh
-bash scripts/ci-doc.sh --phase f1
-python3 tools/verify.py --contracts --docs --phase f1 --licenses --matrix --budget --forbid-insecure-tls --inventory
-python3 -m unittest discover -s tools/tests
-cargo test --locked --workspace --all-targets
-cargo test --locked --workspace --all-targets -- --ignored
+bash scripts/ci-doc.sh --phase f3
 ```
 
-El gate comprueba enlaces, esquemas, contratos, ledger contra el grafo real de Cargo, presupuesto de audio y de etapas, inventario fail-closed, `cargo fmt --check`, `clippy` con warnings como errores, `cargo doc` con `RUSTDOCFLAGS=-Dwarnings`, tests y el drift de 1 h marcado `#[ignore]`. El workflow de GitHub Actions **no se ha ejecutado** en este proyecto: la evidencia es local. La simulación de drift no es un benchmark ni una medición de hardware.
+The gate checks links, schemas, contracts, the dependency ledger against Cargo's real graph, the audio budget, the fail-closed file inventory, `cargo fmt --check`, `clippy` with warnings as errors, `cargo doc` with `RUSTDOCFLAGS=-Dwarnings`, and the tests. The drift simulation of one hour is marked `#[ignore]`; it is not a benchmark and not a hardware measurement.
 
-## Documentos de entrada
+`--phase f1` and `--phase f2` are historical gates. On this tree they fail on the file inventory, and that failure is the expected one. The GitHub Actions workflow **has not run** on a runner: the evidence is local.
 
-- [Índice raíz](INDEX.md)
-- [Acta de autoridad y ownership /](docs/plan/execution-f0-f1.md)
-- [Acta de fase 01](docs/reviews/fase-01.md)
-- [Modelo de amenaza](docs/security/threat-model.md)
-- [Emparejamiento](docs/security/pairing.md)
-- [Protocolo v1](docs/protocol.md)
-- [Configuración](docs/config-schema.md)
-- [Presupuesto de latencia](docs/latency-budget.md)
-- [Errores](contracts/errors.md)
+## Where to go next
 
-## Licencia
+- [Root index](INDEX.md)
+- [Project status](docs/status.md)
+- [/ execution record](docs/plan/execution-f2-f3.md)
+- [Threat model](docs/security/threat-model.md)
+- [Pairing](docs/security/pairing.md)
+- [Protocol v1](docs/protocol.md)
+- [Configuration](docs/config-schema.md)
+- [Latency budget](docs/latency-budget.md)
+- [Errors](contracts/errors.md)
 
-Código y documentación propios bajo **MIT**; ver [LICENSE](LICENSE). Las dependencias conservan sus licencias y se registran por separado en el [ledger](docs/dependency-ledger.md): usa `serde`, `serde_json`, `itoa`, `memchr` y `ryu`. Ningún componente GPL se copia ni se enlaza de forma accidental; `libpulse`, si se usa, es dinámica y con obligaciones LGPL explícitas.
+## License
+
+Own code and docs are **MIT**; see [LICENSE](LICENSE). Dependencies keep their own licenses and are recorded separately in the [ledger](docs/dependency-ledger.md). No GPL component is copied or linked by accident; `libpulse`, if used, is linked dynamically and its LGPL obligations are stated.

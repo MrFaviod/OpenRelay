@@ -1,6 +1,6 @@
 # Licencias — política del proyecto
 
-**El código y la documentación propios son MIT** ([LICENSE](../LICENSE), Copyright (c) 2026 the maintainer). Este documento fija la política para terceros; no aprueba ninguna dependencia. El [ledger](dependency-ledger.md) registra candidatos y pines.
+**Own code and docs are MIT** ([LICENSE](../LICENSE)). This document sets the policy for third parties; it does not approve any dependency. The [ledger](dependency-ledger.md) records candidates and pins.
 
 ## Política
 
