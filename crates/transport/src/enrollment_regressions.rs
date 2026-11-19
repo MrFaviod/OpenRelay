@@ -317,6 +317,9 @@ fn result_frame() -> Vec<u8> {
         "type": "enroll.result",
         "version": ENROLL_VERSION,
         "status": "accepted",
+        "client_leaf": "3000",
+        "session_ca": "3100",
+        "session_port": 47000,
     }))
     .expect("JSON del contrato");
     let mut frame = Vec::with_capacity(4 + payload.len());

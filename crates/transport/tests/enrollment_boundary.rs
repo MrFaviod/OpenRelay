@@ -50,15 +50,29 @@ fn enrollment_accepts_valid_token_without_client_certificate() {
     assert!(server.is_ready(), "servidor listo sin cert de cliente");
 
     client
-        .send_token(&window_token, &client_spki_der())
+        .send_token_async(&window_token, &client_spki_der())
         .expect("token tras validar pin");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 
     let server_events = collect_server_events(&mut server);
-    let client_events = collect_client_events(&mut client);
     assert!(server_events
         .iter()
         .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
+
+    // El resultado sólo se escribe después de la aprobación local.
+    server
+        .approve(
+            Instant::now(),
+            &openrelay_transport::enrollment::EnrollOutcome {
+                client_leaf_der: vec![0x30, 0x01],
+                session_ca_der: vec![0x30, 0x02],
+                session_port: 47000,
+            },
+        )
+        .expect("aprobación");
+    exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("resultado en vuelo");
+
+    let client_events = collect_client_events(&mut client);
     assert!(client_events
         .iter()
         .any(|event| matches!(event, EnrollmentEvent::Accepted(_))));
@@ -145,7 +159,7 @@ fn expired_window_is_rejected() {
     .expect("cliente");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");
     client
-        .send_token(&window_token, &client_spki_der())
+        .send_token_async(&window_token, &client_spki_der())
         .expect("token");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 
@@ -168,7 +182,7 @@ fn wrong_token_is_rejected() {
 
     let wrong = EnrollmentToken::generate().expect("token distinto");
     client
-        .send_token(&wrong, &client_spki_der())
+        .send_token_async(&wrong, &client_spki_der())
         .expect("token");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
 

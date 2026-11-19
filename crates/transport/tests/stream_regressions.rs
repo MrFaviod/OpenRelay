@@ -65,7 +65,7 @@ fn fresh_enrollment_stream_with_buffered_bytes_is_accepted() {
     assert!(server.is_ready(), "servidor listo sin cert de cliente");
 
     client
-        .send_token(&window_token, &client_spki_der())
+        .send_token_async(&window_token, &client_spki_der())
         .expect("token");
     drain(&mut client, CLIENT_ADDR, &mut server, Instant::now()).expect("vuelo único");
 

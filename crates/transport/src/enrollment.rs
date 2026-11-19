@@ -12,13 +12,19 @@
 //!
 //! ```json
 //! {"type":"enroll.request","version":1,"token":"<64 hex>","spki":"<hex DER>"}
-//! {"type":"enroll.result","version":1,"status":"accepted"}
+//! {"type":"enroll.result","version":1,"status":"accepted",
+//!  "client_leaf":"<hex DER>","session_ca":"<hex DER>","session_port":47000}
 //! {"type":"enroll.result","version":1,"status":"rejected","reason":"expired"}
 //! ```
+//!
+//! El resultado `accepted` no se escribe cuando el token es válido: el
+//! servidor espera la decisión local (`approve`/`reject_pending`, o la
+//! expiración de la ventana) porque la CA que firma la hoja de sesión vive en
+//! el daemon, no en este crate.
 
 use std::collections::VecDeque;
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -43,10 +49,27 @@ use crate::ALPN_ENROLL;
 pub const ENROLL_TOKEN_LEN: usize = 32;
 /// TTL máximo de una ventana de enrolamiento.
 pub const MAX_ENROLL_TTL: Duration = Duration::from_secs(300);
-/// Payload JSON máximo de un mensaje de enrolamiento.
-pub const MAX_ENROLL_PAYLOAD: usize = 512;
+/// Payload JSON máximo de un mensaje de enrolamiento. El resultado aceptado
+/// lleva dos certificados DER en hexadecimal (hoja de sesión y CA de sesión).
+pub const MAX_ENROLL_PAYLOAD: usize = 8 * 1024;
 /// Versión del contrato de enrolamiento.
 pub const ENROLL_VERSION: u64 = 1;
+
+/// Resultado de un enrolamiento aprobado.
+///
+/// `client_leaf_der` es la hoja `clientAuth` firmada por la CA local cuyo SPKI
+/// coincide con el que declaró el cliente. `session_ca_der` es la CA que el
+/// cliente debe poner en el `RootCertStore` del servidor de **sesión**.
+/// `session_port` es el puerto UDP donde escucha ese servidor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnrollOutcome {
+    /// Certificado DER de la hoja de cliente.
+    pub client_leaf_der: Vec<u8>,
+    /// CA DER que firma el certificado del servidor de sesión.
+    pub session_ca_der: Vec<u8>,
+    /// Puerto UDP del servidor de sesión.
+    pub session_port: u16,
+}
 
 /// Token de un solo uso. Su `Debug` no lo imprime.
 #[derive(Clone, PartialEq, Eq)]
@@ -104,6 +127,8 @@ pub enum EnrollReject {
     Version,
     /// Mensaje malformado.
     Malformed,
+    /// El usuario local no aprobó el dispositivo.
+    Denied,
 }
 
 impl EnrollReject {
@@ -115,6 +140,7 @@ impl EnrollReject {
             Self::Mismatch => "mismatch",
             Self::Version => "version",
             Self::Malformed => "malformed",
+            Self::Denied => "denied",
         }
     }
 }
@@ -163,6 +189,10 @@ pub enum EnrollError {
     Malformed,
     /// Ventana ya abierta.
     WindowOpen,
+    /// El servidor rechazó el enrolamiento (motivo del resultado).
+    Rejected(EnrollReject),
+    /// La espera bloqueante agotó su plazo.
+    Timeout,
     /// Stream rechazado.
     Stream(&'static str),
 }
@@ -179,6 +209,8 @@ impl fmt::Display for EnrollError {
             Self::Oversized => write!(f, "mensaje de enrolamiento demasiado grande"),
             Self::Malformed => write!(f, "mensaje de enrolamiento malformado"),
             Self::WindowOpen => write!(f, "ya hay una ventana de enrolamiento abierta"),
+            Self::Rejected(reason) => write!(f, "enrolamiento rechazado: {reason}"),
+            Self::Timeout => write!(f, "el enrolamiento agotó su plazo"),
             Self::Stream(reason) => write!(f, "stream rechazado: {reason}"),
         }
     }
@@ -199,8 +231,8 @@ fn enroll_transport() -> Arc<TransportConfig> {
     ));
     config.max_concurrent_bidi_streams(1u32.into());
     config.max_concurrent_uni_streams(0u32.into());
-    config.stream_receive_window(2_048u32.into());
-    config.receive_window(4_096u32.into());
+    config.stream_receive_window(16_384u32.into());
+    config.receive_window(32_768u32.into());
     config.datagram_receive_buffer_size(None);
     config.datagram_send_buffer_size(0);
     Arc::new(config)
@@ -266,6 +298,20 @@ fn decode_spki_pin(text: &str) -> Option<SpkiPin> {
     Some(SpkiPin::from_spki_der(&bytes))
 }
 
+fn decode_hex(text: &str) -> Option<Vec<u8>> {
+    if text.is_empty() || text.len() % 2 != 0 {
+        return None;
+    }
+    text.as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some(((high << 4) | low) as u8)
+        })
+        .collect()
+}
+
 fn ct_eq(left: &[u8; ENROLL_TOKEN_LEN], right: &[u8; ENROLL_TOKEN_LEN]) -> bool {
     let mut diff = 0u8;
     for (a, b) in left.iter().zip(right.iter()) {
@@ -274,10 +320,25 @@ fn ct_eq(left: &[u8; ENROLL_TOKEN_LEN], right: &[u8; ENROLL_TOKEN_LEN]) -> bool 
     diff == 0
 }
 
+fn is_timeout(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    )
+}
+
 struct Window {
     token: EnrollmentToken,
     expires: Instant,
     used: bool,
+}
+
+/// Solicitud válida esperando la decisión local. Guarda el SPKI en claro: el
+/// daemon lo necesita para firmar la hoja de sesión.
+struct Decision {
+    pin: SpkiPin,
+    spki: Vec<u8>,
+    expires: Instant,
 }
 
 /// Servidor de enrolamiento sans-IO de una sola ventana.
@@ -285,6 +346,8 @@ pub struct EnrollServer {
     endpoint: Endpoint,
     accept_config: Arc<QuinnServerConfig>,
     window: Option<Window>,
+    /// Token ya consumido, esperando aprobación/rechazo locales.
+    decision: Option<Decision>,
     pending: VecDeque<Incoming>,
     conn: Option<Connection>,
     handle: Option<ConnectionHandle>,
@@ -326,6 +389,7 @@ impl EnrollServer {
             endpoint,
             accept_config,
             window: None,
+            decision: None,
             pending: VecDeque::new(),
             conn: None,
             handle: None,
@@ -433,6 +497,79 @@ impl EnrollServer {
     /// Cierra la ventana y destruye el estado temporal.
     pub fn close_window(&mut self) {
         self.window = None;
+        self.decision = None;
+    }
+
+    /// Pin de la solicitud válida que espera decisión local.
+    pub fn pending(&self) -> Option<SpkiPin> {
+        self.decision.as_ref().map(|decision| decision.pin)
+    }
+
+    /// SPKI DER declarado por la solicitud pendiente (el que firma la CA).
+    pub fn pending_spki(&self) -> Option<&[u8]> {
+        self.decision
+            .as_ref()
+            .map(|decision| decision.spki.as_slice())
+    }
+
+    /// Aprueba la solicitud pendiente y escribe el resultado en el stream.
+    ///
+    /// La hoja y la CA las aporta el dueño de la CA (el daemon). Este crate no
+    /// las valida: sólo las transporta. Una solicitud expirada se rechaza.
+    pub fn approve(&mut self, now: Instant, outcome: &EnrollOutcome) -> Result<(), EnrollError> {
+        let Some(decision) = self.decision.take() else {
+            return Err(EnrollError::NotReady);
+        };
+        let Some(mut conn) = self.conn.take() else {
+            return Err(EnrollError::Closed);
+        };
+        if now >= decision.expires {
+            self.reject(&mut conn, now, EnrollReject::Expired);
+            self.conn = Some(conn);
+            return Err(EnrollError::Rejected(EnrollReject::Expired));
+        }
+        self.respond(
+            &mut conn,
+            json!({
+                "type":"enroll.result",
+                "version":ENROLL_VERSION,
+                "status":"accepted",
+                "client_leaf": to_hex(&outcome.client_leaf_der),
+                "session_ca": to_hex(&outcome.session_ca_der),
+                "session_port": outcome.session_port,
+            }),
+        );
+        self.conn = Some(conn);
+        Ok(())
+    }
+
+    /// Rechaza la solicitud pendiente con motivo y cierra la conexión.
+    pub fn reject_pending(
+        &mut self,
+        now: Instant,
+        reason: EnrollReject,
+    ) -> Result<(), EnrollError> {
+        let Some(_decision) = self.decision.take() else {
+            return Err(EnrollError::NotReady);
+        };
+        let Some(mut conn) = self.conn.take() else {
+            return Err(EnrollError::Closed);
+        };
+        self.reject(&mut conn, now, reason);
+        self.conn = Some(conn);
+        Ok(())
+    }
+
+    /// Expira la solicitud pendiente (la ventana TTL es el plazo de decisión).
+    pub fn handle_timeout(&mut self, now: Instant) -> Result<(), EnrollError> {
+        if self
+            .decision
+            .as_ref()
+            .is_some_and(|decision| now >= decision.expires)
+        {
+            let _ = self.reject_pending(now, EnrollReject::Expired);
+        }
+        Ok(())
     }
 
     fn pump(&mut self, now: Instant) -> Result<(), EnrollError> {
@@ -688,10 +825,14 @@ impl EnrollServer {
                     return;
                 }
                 window.used = true;
-                self.respond(
-                    conn,
-                    json!({"type":"enroll.result","version":ENROLL_VERSION,"status":"accepted"}),
-                );
+                // El token es válido, pero la respuesta espera la decisión
+                // local: el daemon firma la hoja y llama a `approve`.
+                let expires = window.expires;
+                self.decision = Some(Decision {
+                    pin: identity,
+                    spki: decode_hex(spki_text).expect("SPKI ya validado"),
+                    expires,
+                });
                 self.events.push_back(EnrollmentEvent::Accepted(identity));
                 self.window = None;
             }
@@ -768,12 +909,47 @@ pub struct EnrollClient {
     terminal: bool,
     /// Pin enviado en el último `enroll.request`; el `Accepted` lo devuelve.
     sent_identity: Option<SpkiPin>,
+    /// Resultado aceptado ya parseado (hoja, CA y puerto de sesión).
+    outcome: Option<EnrollOutcome>,
+    /// Socket real para el modo bloqueante de [`Self::send_token`]. `None` en
+    /// el cliente sans-IO que se bombea a mano.
+    socket: Option<UdpSocket>,
 }
 
+/// Espera máxima del handshake antes de rendirse.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Lectura máxima del socket por vuelta del modo bloqueante.
+const RECV_SLICE: Duration = Duration::from_millis(20);
+
 impl EnrollClient {
-    /// Conecta al endpoint de enrolamiento validando el pin del certificado
-    /// efímero. El token no se envía hasta completar esa validación.
+    /// Conecta al endpoint de enrolamiento y deja el cliente listo para el
+    /// modo bloqueante: [`Self::send_token`] bombea el handshake y espera el
+    /// resultado por su propio socket UDP.
+    ///
+    /// Para un banco de pruebas sans-IO que bombea datagramas a mano, usar
+    /// [`Self::connect_sans_io`].
     pub fn connect(
+        server_roots: Arc<RootCertStore>,
+        server_pin: SpkiPin,
+        now: Instant,
+        server_addr: SocketAddr,
+        server_name: &str,
+    ) -> Result<Self, EnrollError> {
+        let mut client =
+            Self::connect_sans_io(server_roots, server_pin, now, server_addr, server_name)?;
+        let socket = UdpSocket::bind(("0.0.0.0", 0))
+            .map_err(|error| EnrollError::Connect(format!("socket UDP: {error}")))?;
+        socket
+            .set_read_timeout(Some(RECV_SLICE))
+            .map_err(|error| EnrollError::Connect(format!("timeout UDP: {error}")))?;
+        client.socket = Some(socket);
+        Ok(client)
+    }
+
+    /// Cliente sans-IO: el dueño bombea [`Self::handle_datagram`] y
+    /// [`Self::poll_transmit`]. El token se envía con
+    /// [`Self::send_token_async`].
+    pub fn connect_sans_io(
         server_roots: Arc<RootCertStore>,
         server_pin: SpkiPin,
         now: Instant,
@@ -807,6 +983,8 @@ impl EnrollClient {
             scratch: Vec::new(),
             terminal: false,
             sent_identity: None,
+            outcome: None,
+            socket: None,
         })
     }
 
@@ -862,8 +1040,63 @@ impl EnrollClient {
     }
 
     /// Envía el token de la ventana junto con el SPKI DER de la clave que el
-    /// cliente usará en mTLS. Sólo debe llamarse tras [`Self::is_ready`].
+    /// cliente usará en mTLS y espera la decisión del servidor.
+    ///
+    /// Es la API de producto: requiere un cliente creado con [`Self::connect`]
+    /// (socket propio). Bombea el handshake hasta `Ready`, escribe el
+    /// `enroll.request` y espera el `enroll.result` hasta el TTL máximo de la
+    /// ventana más un margen. Un rechazo local o una expiración devuelve
+    /// [`EnrollError::Rejected`].
     pub fn send_token(
+        &mut self,
+        token: &EnrollmentToken,
+        client_spki_der: &[u8],
+    ) -> Result<EnrollOutcome, EnrollError> {
+        if self.terminal || (self.socket.is_none() && !self.ready) {
+            return Err(EnrollError::NotReady);
+        }
+        if self.socket.is_none() {
+            return Err(EnrollError::Connect(
+                "cliente sans-IO: usa send_token_async y bombea los datagramas".to_owned(),
+            ));
+        }
+        let handshake_deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+        while !self.is_ready() {
+            if self.terminal {
+                return Err(EnrollError::Closed);
+            }
+            if Instant::now() >= handshake_deadline {
+                return Err(EnrollError::Timeout);
+            }
+            self.drive()?;
+        }
+        self.send_token_async(token, client_spki_der)?;
+        let result_deadline = Instant::now() + MAX_ENROLL_TTL + Duration::from_secs(30);
+        loop {
+            while let Some(event) = self.next_event() {
+                match event {
+                    EnrollmentEvent::Accepted(_) => {
+                        return self.outcome.take().ok_or(EnrollError::Malformed)
+                    }
+                    EnrollmentEvent::Rejected(reason) => return Err(EnrollError::Rejected(reason)),
+                    EnrollmentEvent::Closed => return Err(EnrollError::Closed),
+                    _ => {}
+                }
+            }
+            if self.terminal {
+                return Err(EnrollError::Closed);
+            }
+            if Instant::now() >= result_deadline {
+                return Err(EnrollError::Timeout);
+            }
+            self.drive()?;
+        }
+    }
+
+    /// Envía el token sin esperar el resultado. El dueño debe bombear el
+    /// cliente y leer [`EnrollmentEvent::Accepted`]; después
+    /// [`Self::outcome`] devuelve la hoja y la CA.
+    pub fn send_token_async(
         &mut self,
         token: &EnrollmentToken,
         client_spki_der: &[u8],
@@ -879,6 +1112,41 @@ impl EnrollClient {
         });
         self.sent_identity = Some(SpkiPin::from_spki_der(client_spki_der));
         self.write_frame(&value)
+    }
+
+    /// Resultado aceptado, si el servidor ya respondió.
+    pub fn outcome(&self) -> Option<&EnrollOutcome> {
+        self.outcome.as_ref()
+    }
+
+    /// Una vuelta del modo bloqueante: temporizadores, salida y una lectura.
+    fn drive(&mut self) -> Result<(), EnrollError> {
+        let now = Instant::now();
+        self.conn.handle_timeout(now);
+        let socket = self
+            .socket
+            .take()
+            .ok_or(EnrollError::Connect("cliente sin socket".to_owned()))?;
+        while let Some((to, bytes)) = self.poll_transmit(now) {
+            socket
+                .send_to(&bytes, to)
+                .map_err(|error| EnrollError::Connect(format!("envío UDP: {error}")))?;
+        }
+        let mut buf = [0u8; 2048];
+        match socket.recv_from(&mut buf) {
+            Ok((len, from)) => {
+                self.socket = Some(socket);
+                self.handle_datagram(Instant::now(), from, &buf[..len])?;
+                return Ok(());
+            }
+            Err(error) if is_timeout(&error) => {}
+            Err(error) => {
+                self.socket = Some(socket);
+                return Err(EnrollError::Connect(format!("lectura UDP: {error}")));
+            }
+        }
+        self.socket = Some(socket);
+        Ok(())
     }
 
     /// Envía un frame de sondeo negativo (audio/control/ticket o JSON
@@ -1069,7 +1337,33 @@ impl EnrollClient {
         }
         match value.get("status").and_then(Value::as_str) {
             Some("accepted") => match self.sent_identity {
-                Some(identity) => self.events.push_back(EnrollmentEvent::Accepted(identity)),
+                Some(identity) => {
+                    let leaf = value
+                        .get("client_leaf")
+                        .and_then(Value::as_str)
+                        .and_then(decode_hex);
+                    let ca = value
+                        .get("session_ca")
+                        .and_then(Value::as_str)
+                        .and_then(decode_hex);
+                    let port = value
+                        .get("session_port")
+                        .and_then(Value::as_u64)
+                        .and_then(|port| u16::try_from(port).ok());
+                    match (leaf, ca, port) {
+                        (Some(client_leaf_der), Some(session_ca_der), Some(session_port)) => {
+                            self.outcome = Some(EnrollOutcome {
+                                client_leaf_der,
+                                session_ca_der,
+                                session_port,
+                            });
+                            self.events.push_back(EnrollmentEvent::Accepted(identity));
+                        }
+                        _ => self
+                            .events
+                            .push_back(EnrollmentEvent::Rejected(EnrollReject::Malformed)),
+                    }
+                }
                 None => self
                     .events
                     .push_back(EnrollmentEvent::Rejected(EnrollReject::Malformed)),

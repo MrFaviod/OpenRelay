@@ -14,7 +14,7 @@ use openrelay_transport::identity::{self, SpkiPin};
 use openrelay_transport::quinn::{SessionClient, SessionServer, TransportError};
 use rcgen::{
     date_time_ymd, BasicConstraints, Certificate, CertificateParams, DnType,
-    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
+    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, RemoteKeyPair, PKCS_ECDSA_P256_SHA256,
 };
 use ring::signature::{EcdsaKeyPair, ECDSA_P256_SHA256_ASN1_SIGNING};
 use rustls::pki_types::{CertificateDer, SubjectPublicKeyInfoDer};
@@ -145,6 +145,60 @@ impl TestCa {
 
     pub fn cert_der(&self) -> CertificateDer<'static> {
         self.cert.der().clone()
+    }
+
+    /// Firma una hoja de cliente para una clave pública P-256 ya existente.
+    ///
+    /// Es el mismo patrón que usa el daemon para (`ENROLL_REQUEST`)`: la CA
+    /// firma el TBS y la clave privada del dispositivo nunca sale de él.
+    pub fn issue_client_leaf(&self, spki_der: &[u8]) -> Vec<u8> {
+        let point = p256_point(spki_der);
+        let mut params = CertificateParams::new(Vec::<String>::new()).expect("params hoja");
+        params
+            .distinguished_name
+            .push(DnType::CommonName, "openrelay-device");
+        params.is_ca = IsCa::ExplicitNoCa;
+        params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
+        params.not_before = date_time_ymd(1975, 1, 1);
+        params.not_after = date_time_ymd(4096, 1, 1);
+        let key = KeyPair::from_remote(Box::new(PublicOnlyKey { point })).expect("clave remota");
+        let cert = params
+            .signed_by(&key, &self.cert, &self.key)
+            .expect("hoja de cliente firmada");
+        cert.der().to_vec()
+    }
+}
+
+/// Punto P-256 sin comprimir a partir del SPKI DER (prefijo fijo de 26 bytes).
+fn p256_point(spki: &[u8]) -> Vec<u8> {
+    const PREFIX: [u8; 26] = [
+        0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
+        0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+    ];
+    assert_eq!(spki.len(), 91, "SPKI P-256 sin comprimir");
+    assert_eq!(spki[..26], PREFIX, "prefijo SPKI P-256");
+    assert_eq!(spki[26], 0x04, "punto sin comprimir");
+    spki[26..].to_vec()
+}
+
+/// Sólo la parte pública: rcgen firma el certificado con la CA, no con esta
+/// clave, así que `sign` no se usa.
+struct PublicOnlyKey {
+    point: Vec<u8>,
+}
+
+impl RemoteKeyPair for PublicOnlyKey {
+    fn public_key(&self) -> &[u8] {
+        &self.point
+    }
+
+    fn sign(&self, _msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
+        Err(rcgen::Error::RingUnspecified)
+    }
+
+    fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
+        &PKCS_ECDSA_P256_SHA256
     }
 }
 
