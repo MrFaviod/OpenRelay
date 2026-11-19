@@ -22,7 +22,7 @@
 ## Formato QR
 
 ```
-arl://pair?v=1&h=<host:port>&pin=<64 hex>&t=<64 hex>
+openrelay://pair?v=1&h=<host:port>&pin=<64 hex>&t=<64 hex>
 ```
 
 - `pin`: SPKI del certificado efímero del servidor de enrolamiento. El cliente

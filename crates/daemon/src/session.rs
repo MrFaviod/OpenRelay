@@ -6,7 +6,7 @@
 //! descarta y se cuenta, como exige `docs/protocol.md` §8.3.
 //!
 //! Cuando faltan secuencias dentro de la ventana de reordenamiento (20 ms) se
-//! generan tramas PLC con [`arl_codec::OpusDecoder::decode`]`(None)`. Un hueco
+//! generan tramas PLC con [`openrelay_codec::OpusDecoder::decode`]`(None)`. Un hueco
 //! mayor o un cambio de época se trata como discontinuidad: se reinicia el
 //! decodificador y no se inventan tramas. El estado del decodificador depende
 //! del perfil (2.5, 5 o 10 ms); se conserva uno por perfil porque la cabecera
@@ -31,12 +31,12 @@
 //! de 5 ms, escalando con 120 y 480 muestras. El tiempo lo inyecta el runtime;
 //! el limitador no lee relojes ni asigna memoria.
 
-use arl_audio_core::cadence::{sustained_fps, CadenceLimiter};
-use arl_audio_core::{AudioPayload, OpusFrame, SAMPLE_COUNT};
-use arl_codec::{CodecError, CodecProfile, OpusDecoder};
-use arl_dsp::NsChain;
+use openrelay_audio_core::cadence::{sustained_fps, CadenceLimiter};
+use openrelay_audio_core::{AudioPayload, OpusFrame, SAMPLE_COUNT};
+use openrelay_codec::{CodecError, CodecProfile, OpusDecoder};
+use openrelay_dsp::NsChain;
 
-/// Frecuencia del perfil de audio de arl, en Hz.
+/// Frecuencia del perfil de audio de openrelay, en Hz.
 #[cfg(feature = "speexdsp")]
 const NATIVE_SAMPLE_RATE: u32 = 48_000;
 
@@ -409,9 +409,9 @@ fn max_plc_frames(duration_us: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arl_audio_core::cadence::BURST_FRAMES;
-    use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
-    use arl_codec::OpusEncoder;
+    use openrelay_audio_core::cadence::BURST_FRAMES;
+    use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+    use openrelay_codec::OpusEncoder;
 
     fn opus_frame(epoch: u32, seq: u32, flags: Flags, packet: &[u8]) -> OpusFrame {
         OpusFrame::new(epoch, seq, flags, SAMPLE_COUNT as u16, packet).expect("frame Opus")

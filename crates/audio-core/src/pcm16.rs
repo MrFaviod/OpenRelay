@@ -1,4 +1,4 @@
-//! Perfil PCM16LE mono 48 kHz de arl.
+//! Perfil PCM16LE mono 48 kHz de openrelay.
 //!
 //! Un frame fijo contiene 240 muestras (`5 ms` a `48 kHz`) en un solo canal:
 //! 480 bytes little-endian. El perfil no negocia formato en v1.

@@ -4,12 +4,12 @@
 //! buffer nunca compara tiempos de dispositivos distintos, sólo diferencias
 //! del mismo reloj inyectado por el test.
 
-use arl_audio_core::jitter::{
+use openrelay_audio_core::jitter::{
     EmitKind, JitterBuffer, JitterConfig, JitterEmit, PopOutcome, PushOutcome, CAPACITY_FRAMES,
     TARGET_DEFAULT_MS, TARGET_MAX_MS, TARGET_MIN_MS,
 };
-use arl_audio_core::metrics::{JitterCounters, JitterMetrics};
-use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use openrelay_audio_core::metrics::{JitterCounters, JitterMetrics};
+use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
 
 const MS: u64 = 1_000;
 

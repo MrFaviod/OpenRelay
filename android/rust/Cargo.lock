@@ -3,17 +3,17 @@
 version = 3
 
 [[package]]
-name = "arl-audio-core"
+name = "openrelay-audio-core"
 version = "0.1.0"
 
 [[package]]
-name = "arl-bridge"
+name = "openrelay-bridge"
 version = "0.0.0"
 dependencies = [
- "arl-audio-core",
- "arl-codec",
- "arl-proto",
- "arl-transport",
+ "openrelay-audio-core",
+ "openrelay-codec",
+ "openrelay-proto",
+ "openrelay-transport",
  "jni",
  "rcgen",
  "ring",
@@ -22,14 +22,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "arl-codec"
+name = "openrelay-codec"
 version = "0.1.0"
 dependencies = [
  "opus",
 ]
 
 [[package]]
-name = "arl-proto"
+name = "openrelay-proto"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -37,11 +37,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "arl-transport"
+name = "openrelay-transport"
 version = "0.1.0"
 dependencies = [
- "arl-audio-core",
- "arl-proto",
+ "openrelay-audio-core",
+ "openrelay-proto",
  "bytes",
  "quinn-proto",
  "ring",

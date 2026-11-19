@@ -50,26 +50,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
-name = "arl-audio-core"
+name = "openrelay-audio-core"
 version = "0.1.0"
 
 [[package]]
-name = "arl-audio-linux"
+name = "openrelay-audio-linux"
 version = "0.1.0"
 dependencies = [
  "alsa",
- "arl-audio-core",
+ "openrelay-audio-core",
  "pipewire",
  "rtrb",
 ]
 
 [[package]]
-name = "arl-cli"
+name = "openrelay-cli"
 version = "0.1.0"
 dependencies = [
- "arl-daemon",
- "arl-proto",
- "arl-transport",
+ "openrelay-daemon",
+ "openrelay-proto",
+ "openrelay-transport",
  "rcgen",
  "rustix",
  "rustls",
@@ -77,22 +77,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "arl-codec"
+name = "openrelay-codec"
 version = "0.1.0"
 dependencies = [
  "opus",
 ]
 
 [[package]]
-name = "arl-daemon"
+name = "openrelay-daemon"
 version = "0.1.0"
 dependencies = [
- "arl-audio-core",
- "arl-audio-linux",
- "arl-codec",
- "arl-dsp",
- "arl-proto",
- "arl-transport",
+ "openrelay-audio-core",
+ "openrelay-audio-linux",
+ "openrelay-codec",
+ "openrelay-dsp",
+ "openrelay-proto",
+ "openrelay-transport",
  "rcgen",
  "ring",
  "rustls",
@@ -102,14 +102,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "arl-dsp"
+name = "openrelay-dsp"
 version = "0.1.0"
 dependencies = [
  "cc",
 ]
 
 [[package]]
-name = "arl-proto"
+name = "openrelay-proto"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -117,11 +117,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "arl-transport"
+name = "openrelay-transport"
 version = "0.1.0"
 dependencies = [
- "arl-audio-core",
- "arl-proto",
+ "openrelay-audio-core",
+ "openrelay-proto",
  "bytes",
  "quinn-proto",
  "rcgen",

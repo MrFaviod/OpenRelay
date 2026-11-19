@@ -5,16 +5,16 @@ mod common;
 
 use std::time::Instant;
 
-use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
-use arl_proto::wire::ControlMessage;
-use arl_transport::quinn::{
+use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use openrelay_proto::wire::ControlMessage;
+use openrelay_transport::quinn::{
     Acl, Capabilities, RejectReason, ServerEvent, SessionClient, SessionLimits, SessionServer,
     TransportError,
 };
 
 use common::{exchange, roots, session_setup, TestCa, CLIENT_ADDR, SERVER_ADDR};
 
-fn authorized_session(server: &mut SessionServer) -> Option<arl_transport::quinn::SessionId> {
+fn authorized_session(server: &mut SessionServer) -> Option<openrelay_transport::quinn::SessionId> {
     while let Some(event) = server.next_event() {
         if let ServerEvent::Authorized { session, .. } = event {
             return Some(session);
@@ -30,8 +30,8 @@ fn server_was_authorized(server: &mut SessionServer) -> bool {
 #[test]
 fn authorized_session_delivers_real_audio_and_control() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon", true, false);
-    let client_leaf = ca.leaf("arl-android", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon", true, false);
+    let client_leaf = ca.leaf("openrelay-android", false, false);
     let (mut client, mut server) =
         session_setup(&client_leaf, &server_leaf, &ca, Some(&client_leaf))
             .expect("configuración de sesión");
@@ -93,10 +93,10 @@ fn authorized_session_delivers_real_audio_and_control() {
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("control en vuelo");
     assert_eq!(server.recv_control(session), Some(ping.clone()));
 
-    let event = ControlMessage::Event(arl_proto::wire::EventMsg {
+    let event = ControlMessage::Event(openrelay_proto::wire::EventMsg {
         revision: 1,
-        event: arl_proto::wire::EventBody::SessionState {
-            state: arl_proto::control::SessionState::Active,
+        event: openrelay_proto::wire::EventBody::SessionState {
+            state: openrelay_proto::control::SessionState::Active,
             detail: None,
         },
     });
@@ -110,10 +110,10 @@ fn authorized_session_delivers_real_audio_and_control() {
 #[test]
 fn session_without_client_certificate_is_rejected() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon", true, false);
+    let server_leaf = ca.leaf("openrelay-daemon", true, false);
     let mut acl = Acl::new();
     acl.allow(
-        ca.leaf("arl-android", false, false).spki_sha256(),
+        ca.leaf("openrelay-android", false, false).spki_sha256(),
         Capabilities::none().with_mic(),
     );
     let mut server = SessionServer::new(
@@ -144,8 +144,8 @@ fn session_without_client_certificate_is_rejected() {
 #[test]
 fn valid_certificate_without_acl_is_denied() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon", true, false);
-    let client_leaf = ca.leaf("arl-android", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon", true, false);
+    let client_leaf = ca.leaf("openrelay-android", false, false);
     let (mut client, mut server) =
         session_setup(&client_leaf, &server_leaf, &ca, None).expect("configuración de sesión");
 
@@ -172,9 +172,9 @@ fn valid_certificate_without_acl_is_denied() {
 #[test]
 fn wrong_server_pin_fails_before_authorization() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon", true, false);
-    let impostor = ca.leaf("arl-impostor", true, false);
-    let client_leaf = ca.leaf("arl-android", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon", true, false);
+    let impostor = ca.leaf("openrelay-impostor", true, false);
+    let client_leaf = ca.leaf("openrelay-android", false, false);
     let mut acl = Acl::new();
     acl.allow(client_leaf.pin, Capabilities::none().with_mic());
     let mut server = SessionServer::new(
@@ -209,8 +209,8 @@ fn wrong_server_pin_fails_before_authorization() {
 #[test]
 fn expired_server_certificate_is_rejected() {
     let ca = TestCa::new();
-    let expired = ca.leaf("arl-daemon-expired", true, true);
-    let client_leaf = ca.leaf("arl-android", false, false);
+    let expired = ca.leaf("openrelay-daemon-expired", true, true);
+    let client_leaf = ca.leaf("openrelay-android", false, false);
     let mut acl = Acl::new();
     acl.allow(client_leaf.pin, Capabilities::none().with_mic());
     let mut server = SessionServer::new(
@@ -240,8 +240,8 @@ fn expired_server_certificate_is_rejected() {
 fn enrollment_anchor_does_not_authorize_session() {
     let session_ca = TestCa::new();
     let enroll_ca = TestCa::new();
-    let server_leaf = session_ca.leaf("arl-daemon", true, false);
-    let client_leaf = enroll_ca.leaf("arl-android", false, false);
+    let server_leaf = session_ca.leaf("openrelay-daemon", true, false);
+    let client_leaf = enroll_ca.leaf("openrelay-android", false, false);
     let mut acl = Acl::new();
     acl.allow(client_leaf.pin, Capabilities::none().with_mic());
     let mut server = SessionServer::new(
@@ -275,8 +275,8 @@ fn enrollment_anchor_does_not_authorize_session() {
 fn client_certificate_from_foreign_ca_is_rejected() {
     let session_ca = TestCa::new();
     let foreign_ca = TestCa::new();
-    let server_leaf = session_ca.leaf("arl-daemon", true, false);
-    let client_leaf = foreign_ca.leaf("arl-android", false, false);
+    let server_leaf = session_ca.leaf("openrelay-daemon", true, false);
+    let client_leaf = foreign_ca.leaf("openrelay-android", false, false);
     let mut acl = Acl::new();
     acl.allow(client_leaf.pin, Capabilities::none().with_mic());
     let mut server = SessionServer::new(

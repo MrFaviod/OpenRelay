@@ -7,11 +7,11 @@
 //! `capabilities`; si falta cualquiera de los dos, la sesión se queda en
 //! PCM16. Ningún `OpusFrame` se reetiqueta como PCM16 ni al revés.
 
-use arl_audio_core::{
+use openrelay_audio_core::{
     AudioFormat, AudioFrame, AudioPayload, Flags, OpusFrame, FEATURE_AUDIO_OPUS,
     FEATURE_AUDIO_PCM16, SAMPLE_COUNT,
 };
-use arl_codec::{CodecProfile, OpusEncoder};
+use openrelay_codec::{CodecProfile, OpusEncoder};
 
 /// Bitrate del codificador Opus del puente (bits/s).
 pub(crate) const OPUS_BITRATE_BPS: u32 = 64_000;
@@ -195,7 +195,7 @@ impl Default for AudioSender {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arl_codec::OpusDecoder;
+    use openrelay_codec::OpusDecoder;
 
     fn features(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_string()).collect()
@@ -300,12 +300,12 @@ mod tests {
             panic!("el perfil PCM16 no produjo un AudioFrame");
         };
         let (wire, len) = payload.encode();
-        let reference = arl_audio_core::AudioFrame::new(1, 0, Flags::NONE, samples)
+        let reference = openrelay_audio_core::AudioFrame::new(1, 0, Flags::NONE, samples)
             .expect("frame de referencia")
             .encode();
-        assert_eq!(len, arl_audio_core::DATAGRAM_LEN);
+        assert_eq!(len, openrelay_audio_core::DATAGRAM_LEN);
         assert_eq!(&wire[..len], &reference[..], "PCM16 cambió en el cable");
-        assert_eq!(wire[0], arl_audio_core::TYPE_AUDIO);
+        assert_eq!(wire[0], openrelay_audio_core::TYPE_AUDIO);
         assert_eq!(frame.samples(), &samples);
     }
 
@@ -329,9 +329,9 @@ mod tests {
         assert_eq!(frame.sample_count(), 240);
         assert_eq!(frame.duration_us(), 5_000);
         let (wire, len) = payload.encode();
-        assert_eq!(wire[0], arl_audio_core::TYPE_AUDIO_OPUS);
-        assert_eq!(len, arl_audio_core::HEADER_LEN + frame.packet().len());
-        let decoded = arl_audio_core::AudioPayload::decode(&wire[..len]).expect("decode");
+        assert_eq!(wire[0], openrelay_audio_core::TYPE_AUDIO_OPUS);
+        assert_eq!(len, openrelay_audio_core::HEADER_LEN + frame.packet().len());
+        let decoded = openrelay_audio_core::AudioPayload::decode(&wire[..len]).expect("decode");
         let AudioPayload::Opus(decoded) = decoded else {
             panic!("el datagrama Opus no volvió como Opus");
         };

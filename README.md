@@ -1,11 +1,11 @@
-# arl — an MIT alternative to the reference app
+# openrelay — an MIT audio relay for Linux and Android
 
-**Working name: `arl`.** Not a brand, not an approved product name, and not a distribution channel. The name and distribution decision (D-11) is still open.
+**Working name: `openrelay`.** Not a brand, not an approved product name, and not a distribution channel. The name and distribution decision (D-11) is still open.
 
 
 ## What it is
 
-Free software under the MIT license, meant as an alternative to the reference app for **Linux and Android**:
+Free software under the MIT license, an audio relay for **Linux and Android**:
 
 - Linux in Rust, a small CLI, no desktop GUI. It can run in the foreground or as an optional `systemd --user` unit.
 - A native Android app as the control panel and the microphone source.
@@ -27,7 +27,7 @@ Free software under the MIT license, meant as an alternative to the reference ap
 - **(x86) — settled by the maintainer on 2026-11-13:** targets are **x86-64** and **ARM64**, with **no 32-bit support**. The proposed GNU targets are `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`.
 - **(Android) — frozen at:** created no Gradle project and no Android app. minSdk 28 is a proposal; target and compile SDK are fixed at and re-checked at.
 - **(baseline) — no physical evidence:** no latency, CPU or memory number in this repository is a measured result. The budget in [docs/latency-budget.md](docs/latency-budget.md) is a proposal.
-- **D-11 (name and distribution) — open:** `arl` is provisional, and no release channel is decided.
+- **D-11 (name and distribution) — open:** `openrelay` is provisional, and no release channel is decided.
 
 ## Layout
 

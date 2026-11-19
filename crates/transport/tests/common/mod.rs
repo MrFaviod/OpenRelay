@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use arl_transport::enrollment::{EnrollClient, EnrollError, EnrollServer, EnrollmentToken};
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{SessionClient, SessionServer, TransportError};
+use openrelay_transport::enrollment::{EnrollClient, EnrollError, EnrollServer, EnrollmentToken};
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{SessionClient, SessionServer, TransportError};
 use rcgen::{
     date_time_ymd, BasicConstraints, Certificate, CertificateParams, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
@@ -106,7 +106,7 @@ impl TestCa {
         let mut params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
         params
             .distinguished_name
-            .push(DnType::CommonName, "arl-test-ca");
+            .push(DnType::CommonName, "openrelay-test-ca");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -302,11 +302,11 @@ pub fn session_setup(
     acl_client_leaf: Option<&TestLeaf>,
 ) -> Result<(SessionClient, SessionServer), String> {
     let server_identity = server_leaf.certified(ca);
-    let mut acl = arl_transport::quinn::Acl::new();
+    let mut acl = openrelay_transport::quinn::Acl::new();
     if let Some(leaf) = acl_client_leaf {
         acl.allow(
             leaf.spki_sha256(),
-            arl_transport::quinn::Capabilities::none()
+            openrelay_transport::quinn::Capabilities::none()
                 .with_mic()
                 .with_control_read()
                 .with_control_write(),
@@ -316,14 +316,14 @@ pub fn session_setup(
         server_identity,
         roots(ca),
         acl,
-        arl_transport::quinn::SessionLimits::default(),
+        openrelay_transport::quinn::SessionLimits::default(),
     )
     .map_err(|error| error.to_string())?;
     let client = SessionClient::connect(
         client_leaf.certified(ca),
         roots(ca),
         server_leaf.pin,
-        arl_transport::quinn::SessionLimits::default(),
+        openrelay_transport::quinn::SessionLimits::default(),
         Instant::now(),
         SERVER_ADDR,
         "localhost",
@@ -336,7 +336,7 @@ pub fn enrollment_setup(
     ca: &TestCa,
     token: EnrollmentToken,
 ) -> Result<(EnrollClient, EnrollServer), String> {
-    let leaf = ca.leaf("arl-enroll-test", true, false);
+    let leaf = ca.leaf("openrelay-enroll-test", true, false);
     let mut server = EnrollServer::new(leaf.certified(ca)).map_err(|error| error.to_string())?;
     server
         .open_window(

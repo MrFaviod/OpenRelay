@@ -1,4 +1,4 @@
-//! Core de audio de arl: frame v1, perfil PCM16LE mono 48 kHz, jitter buffer
+//! Core de audio de openrelay: frame v1, perfil PCM16LE mono 48 kHz, jitter buffer
 //! acotado y control de drift con resampling.
 //!
 //! Este crate no hace red, no codifica, no toca dispositivos y no usa
@@ -12,7 +12,7 @@
 //! Interfaz para consumidores (jitter/PLC en T06, captura en T14):
 //!
 //! ```
-//! use arl_audio_core::{AudioFrame, Flags, DATAGRAM_LEN, SAMPLE_COUNT};
+//! use openrelay_audio_core::{AudioFrame, Flags, DATAGRAM_LEN, SAMPLE_COUNT};
 //!
 //! let mut samples = [0i16; SAMPLE_COUNT];
 //! samples[0] = 1_000;

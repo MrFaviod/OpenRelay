@@ -9,13 +9,13 @@
 # El serial es obligatorio: nunca se opera el adb por defecto.
 set -euo pipefail
 
-PKG=dev.arl.audio
-TEST_PKG=dev.arl.audio.test
-CLASS=dev.arl.audio.FgsLifecycleTest
+PKG=dev.openrelay.app
+TEST_PKG=dev.openrelay.app.test
+CLASS=dev.openrelay.app.FgsLifecycleTest
 RUNNER=androidx.test.runner.AndroidJUnitRunner
 RECORD_AUDIO=android.permission.RECORD_AUDIO
 POST_NOTIFICATIONS=android.permission.POST_NOTIFICATIONS
-LOCK="${ARL_ADB_LOCK:-$HOME/.cache/arl-emu/adb.lock}"
+LOCK="${OPENRELAY_ADB_LOCK:-$HOME/.cache/openrelay-emu/adb.lock}"
 
 SERIAL=""
 OUT=""
@@ -51,7 +51,7 @@ METHODS=(
 DENY_RECORD=withoutRecordAudioItDoesNotRunAndSaysWhy
 DENY_NOTIF=deniedNotificationsDoNotBlockTheForegroundService
 
-ADB="${ANDROID_HOME:-$HOME/.local/share/arl-toolchains/android-sdk}/platform-tools/adb"
+ADB="${ANDROID_HOME:-$HOME/Android/Sdk}/platform-tools/adb"
 if [ ! -x "$ADB" ]; then
   echo "adb no ejecutable: $ADB" >&2
   exit 2
@@ -164,9 +164,9 @@ if len(cases) != 1:
     sys.exit(3)
 got = cases[0].get("name")
 klass = cases[0].get("classname")
-if got != want or klass != "dev.arl.audio.FgsLifecycleTest":
+if got != want or klass != "dev.openrelay.app.FgsLifecycleTest":
     sys.stderr.write(
-        f"{path}: testcase {klass}#{got}, se esperaba dev.arl.audio.FgsLifecycleTest#{want}\n"
+        f"{path}: testcase {klass}#{got}, se esperaba dev.openrelay.app.FgsLifecycleTest#{want}\n"
     )
     sys.exit(3)
 print(f"{tests} {failures} {errors} {skipped}")
@@ -239,7 +239,7 @@ for method in "${METHODS[@]}"; do
   set +e
   adb_s shell am instrument -w -r \
     -e class "$CLASS#$method" \
-    -e listener dev.arl.audio.FgsXmlListener \
+    -e listener dev.openrelay.app.FgsXmlListener \
     -e fgsXmlName "${method}.xml" \
     -e debug false \
     "$TEST_PKG/$RUNNER" >"$OUT/${method}.instrument" 2>&1

@@ -1,4 +1,4 @@
-//! `arl-proto` — subconjunto de control del contrato `arl.control/v1`.
+//! `openrelay-proto` — subconjunto de control del contrato `openrelay.control/v1`.
 //!
 //! Alcance de T08: envelope, framing de control (`u32` BE + JSON acotado),
 //! máquina de estados de configuración (revisión, `request_id`,

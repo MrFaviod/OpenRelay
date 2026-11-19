@@ -23,9 +23,9 @@ mod common;
 
 use std::time::Instant;
 
-use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
-use arl_proto::wire::ControlMessage;
-use arl_transport::quinn::{
+use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use openrelay_proto::wire::ControlMessage;
+use openrelay_transport::quinn::{
     Acl, Capabilities, SessionClient, SessionId, SessionLimits, SessionServer, TransportError,
 };
 
@@ -34,7 +34,7 @@ use common::{exchange, roots, TestCa, TestLeaf, CLIENT_ADDR, SERVER_ADDR};
 /// Sesión autorizada del servidor, si el handshake la concedió.
 fn authorized_session(server: &mut SessionServer) -> Option<SessionId> {
     while let Some(event) = server.next_event() {
-        if let arl_transport::quinn::ServerEvent::Authorized { session, .. } = event {
+        if let openrelay_transport::quinn::ServerEvent::Authorized { session, .. } = event {
             return Some(session);
         }
     }
@@ -91,8 +91,8 @@ fn ping(request_id: &str) -> ControlMessage {
 #[test]
 fn mic_only_delivers_client_audio_and_denies_the_rest() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-cap-mic", true, false);
-    let client_leaf = ca.leaf("arl-client-cap-mic", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-cap-mic", true, false);
+    let client_leaf = ca.leaf("openrelay-client-cap-mic", false, false);
     let mut server = server_with_caps(
         &server_leaf,
         &client_leaf,
@@ -159,8 +159,8 @@ fn mic_only_delivers_client_audio_and_denies_the_rest() {
 #[test]
 fn return_audio_only_delivers_server_audio_and_drops_client_audio() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-cap-ret", true, false);
-    let client_leaf = ca.leaf("arl-client-cap-ret", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-cap-ret", true, false);
+    let client_leaf = ca.leaf("openrelay-client-cap-ret", false, false);
     let mut server = server_with_caps(
         &server_leaf,
         &client_leaf,
@@ -207,8 +207,8 @@ fn return_audio_only_delivers_server_audio_and_drops_client_audio() {
 #[test]
 fn control_write_only_delivers_client_control() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-cap-cw", true, false);
-    let client_leaf = ca.leaf("arl-client-cap-cw", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-cap-cw", true, false);
+    let client_leaf = ca.leaf("openrelay-client-cap-cw", false, false);
     let mut server = server_with_caps(
         &server_leaf,
         &client_leaf,
@@ -255,8 +255,8 @@ fn control_write_only_delivers_client_control() {
 #[test]
 fn control_read_only_delivers_server_control() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-cap-cr", true, false);
-    let client_leaf = ca.leaf("arl-client-cap-cr", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-cap-cr", true, false);
+    let client_leaf = ca.leaf("openrelay-client-cap-cr", false, false);
     let mut server = server_with_caps(
         &server_leaf,
         &client_leaf,
@@ -304,8 +304,8 @@ fn control_read_only_delivers_server_control() {
 #[test]
 fn explicit_entry_without_capabilities_authorizes_and_denies_everything() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-cap-none", true, false);
-    let client_leaf = ca.leaf("arl-client-cap-none", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-cap-none", true, false);
+    let client_leaf = ca.leaf("openrelay-client-cap-none", false, false);
     let mut server = server_with_caps(&server_leaf, &client_leaf, &ca, Capabilities::none());
     let mut client = client_for(&client_leaf, &server_leaf, &ca);
 

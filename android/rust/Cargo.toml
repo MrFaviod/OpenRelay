@@ -1,5 +1,5 @@
 [package]
-name = "arl-bridge"
+name = "openrelay-bridge"
 version = "0.0.0"
 edition = "2021"
 rust-version = "1.80"
@@ -11,14 +11,14 @@ description = "Puente JNI de test: identidad mTLS de cliente desde AndroidKeySto
 [workspace]
 
 [lib]
-name = "arl_bridge"
+name = "openrelay_bridge"
 crate-type = ["cdylib"]
 
 [dependencies]
-arl-audio-core = { path = "../../crates/audio-core" }
-arl-codec = { path = "../../crates/codec" }
-arl-proto = { path = "../../crates/proto" }
-arl-transport = { path = "../../crates/transport" }
+openrelay-audio-core = { path = "../../crates/audio-core" }
+openrelay-codec = { path = "../../crates/codec" }
+openrelay-proto = { path = "../../crates/proto" }
+openrelay-transport = { path = "../../crates/transport" }
 jni = { version = "=0.21.1", default-features = false }
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }

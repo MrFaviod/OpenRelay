@@ -4,8 +4,8 @@
 //! las muestras salen idénticas. Con la feature, el NS pedido ejecuta una etapa
 //! y declara su retardo; apagado sigue siendo bypass.
 
-use arl_audio_core::{AudioFrame, AudioPayload, Flags, SAMPLE_COUNT};
-use arl_daemon::session::SessionAudio;
+use openrelay_audio_core::{AudioFrame, AudioPayload, Flags, SAMPLE_COUNT};
+use openrelay_daemon::session::SessionAudio;
 
 /// Bloque determinista con variación suficiente para el NS.
 fn block(seed: i16) -> [i16; SAMPLE_COUNT] {

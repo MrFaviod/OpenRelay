@@ -3,7 +3,7 @@
 //! El retorno reutiliza el frame `type=1` (PCM16LE, 48 kHz, mono, 240
 //! muestras). El puente no decodifica a mano: el transporte ya entrega el
 //! [`AudioPayload`] tipado con el decodificador del contrato
-//! (`arl_audio_core::AudioPayload::decode`), y aquí sólo se copian las
+//! (`openrelay_audio_core::AudioPayload::decode`), y aquí sólo se copian las
 //! muestras a una cola separada del flujo de micrófono.
 //!
 //! La cola está apagada por defecto: sin el anuncio
@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 
-use arl_audio_core::{AudioPayload, SAMPLE_COUNT};
+use openrelay_audio_core::{AudioPayload, SAMPLE_COUNT};
 
 /// Frames de 5 ms que caben en la cola (20 ms). Al llenarse se tira el más
 /// viejo: el retorno no se recupera por retransmisión.
@@ -97,7 +97,7 @@ impl Default for ReturnQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arl_audio_core::{AudioFrame, Flags};
+    use openrelay_audio_core::{AudioFrame, Flags};
 
     /// Frame `type=1` válido según el contrato: se codifica y se decodifica
     /// con el decodificador existente antes de entrar en la cola.
@@ -108,7 +108,7 @@ mod tests {
         }
         let frame = AudioFrame::new(1, 0, Flags::NONE, samples).expect("frame type=1");
         let wire = frame.encode();
-        assert_eq!(wire.len(), arl_audio_core::DATAGRAM_LEN);
+        assert_eq!(wire.len(), openrelay_audio_core::DATAGRAM_LEN);
         AudioPayload::decode(&wire).expect("el frame de retorno no decodifica")
     }
 

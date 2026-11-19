@@ -2,5 +2,5 @@
 <resources>
     <!-- Tema mínimo sin ActionBar para una Activity Compose; los colores y la
          tipografía reales los aporta Material3 en Kotlin. -->
-    <style name="Theme.ArlAudio" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.OpenRelay" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

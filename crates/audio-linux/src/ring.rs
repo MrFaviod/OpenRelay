@@ -1,7 +1,7 @@
-//! SPSC de capacidad fija para el camino de captura de arl.
+//! SPSC de capacidad fija para el camino de captura de openrelay.
 //!
 //! El anillo transporta **muestras** `i16` del perfil PCM16 mono 48 kHz de
-//! `arl-audio-core`, no frames de 240 muestras. Esa decisión es deliberada: los
+//! `openrelay-audio-core`, no frames de 240 muestras. Esa decisión es deliberada: los
 //! buffers de PipeWire llegan con tamaños arbitrarios (y pueden cambiar entre
 //! callbacks), de modo que cualquier unidad mayor que la muestra obligaría a
 //! partir o recomponer frames en el callback RT. Una FIFO de muestras conserva
@@ -13,7 +13,7 @@
 //! productor; el subconsumo se cuenta en el consumidor y se rellena con
 //! silencio.
 
-use arl_audio_core::BYTES_PER_SAMPLE;
+use openrelay_audio_core::BYTES_PER_SAMPLE;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 /// Resultado de una escritura en el anillo.
@@ -123,7 +123,7 @@ impl SampleConsumer {
     /// Esta es **la** función que llama el callback de proceso de PipeWire: los
     /// tests la ejercitan tal cual, no una copia. Escribe en
     /// `dst[offset + i * stride ..]` con `i16::to_le_bytes`, el mismo wire que
-    /// `arl_audio_core::pcm16` (`BYTES_PER_SAMPLE` bytes por muestra, LE).
+    /// `openrelay_audio_core::pcm16` (`BYTES_PER_SAMPLE` bytes por muestra, LE).
     ///
     /// - `stride` menor que el tamaño de muestra o no alineado se trata como
     ///   configuración inválida: no se escribe nada y no se cuenta underrun.

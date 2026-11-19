@@ -7,20 +7,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use arl_daemon::pairing::{self, Pairing};
-use arl_transport::enrollment::{
+use common::{exchange, roots, token, TestCa, TestLeaf, CLIENT_ADDR, SERVER_ADDR};
+use openrelay_daemon::pairing::{self, Pairing};
+use openrelay_transport::enrollment::{
     EnrollClient, EnrollReject, EnrollServer, EnrollmentEvent, EnrollmentToken,
 };
-use arl_transport::identity::{extract_spki_der, SpkiPin};
-use arl_transport::quinn::{
+use openrelay_transport::identity::{extract_spki_der, SpkiPin};
+use openrelay_transport::quinn::{
     Capabilities, ClientEvent, RejectReason, ServerEvent, SessionClient, SessionLimits,
     SessionServer,
 };
-use common::{exchange, roots, token, TestCa, TestLeaf, CLIENT_ADDR, SERVER_ADDR};
 use serde_json::json;
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("arl-pairing-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("openrelay-pairing-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("directorio de prueba");
     dir.join("identities.json")
@@ -45,7 +45,7 @@ fn accepted_pin(events: &[EnrollmentEvent]) -> Option<SpkiPin> {
 
 /// Servidor de enrolamiento con ventana abierta y cliente con el pin correcto.
 fn enroll_pair(ca: &TestCa, window: EnrollmentToken) -> (EnrollClient, EnrollServer, SpkiPin) {
-    let leaf = ca.leaf("arl-enroll-pairing", true, false);
+    let leaf = ca.leaf("openrelay-enroll-pairing", true, false);
     let mut server = EnrollServer::new(leaf.certified(ca)).expect("servidor enroll");
     server
         .open_window(window, Duration::from_secs(120), Instant::now())
@@ -85,7 +85,7 @@ fn session_pair(
     ca: &TestCa,
     daemon: &TestLeaf,
     android: &TestLeaf,
-    acl: arl_transport::quinn::Acl,
+    acl: openrelay_transport::quinn::Acl,
 ) -> (SessionClient, SessionServer) {
     let server = SessionServer::new(
         daemon.certified(ca),
@@ -110,9 +110,9 @@ fn session_pair(
 #[test]
 fn a_wrong_server_pin_never_sends_token() {
     let ca = TestCa::new();
-    let leaf = ca.leaf("arl-enroll-pairing", true, false);
-    let impostor = ca.leaf("arl-impostor", true, false);
-    let android = ca.leaf("arl-android", false, false);
+    let leaf = ca.leaf("openrelay-enroll-pairing", true, false);
+    let impostor = ca.leaf("openrelay-impostor", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
     let window = token();
     server
@@ -140,12 +140,12 @@ fn a_wrong_server_pin_never_sends_token() {
 #[test]
 fn b_expired_and_reused_tokens_are_rejected() {
     let ca = TestCa::new();
-    let android = ca.leaf("arl-android", false, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let spki = extract_spki_der(android.cert.der()).expect("SPKI");
 
     // Vencido: la ventana ya expiró al llegar el mensaje.
     let expired = token();
-    let leaf = ca.leaf("arl-enroll-pairing", true, false);
+    let leaf = ca.leaf("openrelay-enroll-pairing", true, false);
     let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
     server
         .open_window(expired.clone(), Duration::from_nanos(1), Instant::now())
@@ -196,7 +196,7 @@ fn b_expired_and_reused_tokens_are_rejected() {
 #[test]
 fn c_enrolled_identity_stays_pending_and_writes_nothing() {
     let ca = TestCa::new();
-    let android = ca.leaf("arl-android", false, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let window = token();
     let (mut client, mut server, _) = enroll_pair(&ca, window.clone());
     let path = scratch("pending");
@@ -216,16 +216,20 @@ fn c_enrolled_identity_stays_pending_and_writes_nothing() {
 #[test]
 fn d_approval_persists_identity_and_authorizes_mtls() {
     let ca = TestCa::new();
-    let daemon = ca.leaf("arl-daemon", true, false);
-    let android = ca.leaf("arl-android", false, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let window = token();
     let (mut enroll_client_side, mut enroll_server, _) = enroll_pair(&ca, window.clone());
     let path = scratch("approve");
     let caps = Capabilities::none().with_mic();
 
     // Antes de aprobar: mTLS con la misma identidad es rechazado.
-    let (mut before_client, mut before_server) =
-        session_pair(&ca, &daemon, &android, arl_transport::quinn::Acl::new());
+    let (mut before_client, mut before_server) = session_pair(
+        &ca,
+        &daemon,
+        &android,
+        openrelay_transport::quinn::Acl::new(),
+    );
     exchange(
         &mut before_client,
         CLIENT_ADDR,
@@ -303,14 +307,14 @@ fn e_audio_and_control_on_enroll_surface_are_rejected() {
 #[test]
 fn qr_payload_has_the_documented_shape() {
     let ca = TestCa::new();
-    let leaf = ca.leaf("arl-enroll-pairing", true, false);
+    let leaf = ca.leaf("openrelay-enroll-pairing", true, false);
     let window = token();
     let addr = SERVER_ADDR;
     let qr = Pairing::qr_payload(leaf.pin, addr, &window);
     assert_eq!(
         qr,
         format!(
-            "arl://pair?v=1&h={addr}&pin={}&t={}",
+            "openrelay://pair?v=1&h={addr}&pin={}&t={}",
             leaf.pin.to_hex(),
             window.to_hex()
         )

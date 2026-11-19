@@ -29,8 +29,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CAP ARL_CAPTURE_RING_SAMPLES /* 960 */
-#define MAXREAD ARL_CAPTURE_FRAME_SAMPLES /* 240 */
+#define CAP OPENRELAY_CAPTURE_RING_SAMPLES /* 960 */
+#define MAXREAD OPENRELAY_CAPTURE_FRAME_SAMPLES /* 240 */
 
 static unsigned long g_fail;
 
@@ -49,20 +49,20 @@ static void bad(const char *what, unsigned long a, unsigned long b) {
 /* Fast-forward the public counters to `target` samples of cumulative push,
  * draining as we go so the ring is always empty between blocks. The parent
  * repro does the same thing; this is seconds, not hours. */
-static int fast_forward(arl_spsc *r, uint32_t target, int16_t *filler) {
+static int fast_forward(openrelay_spsc *r, uint32_t target, int16_t *filler) {
     uint64_t left = target;
-    arl_spsc_push_result p;
+    openrelay_spsc_push_result p;
     uint32_t d = 0;
 
     while (left) {
         uint32_t n = left > CAP ? CAP : (uint32_t)left;
-        if (arl_spsc_push(r, filler, n, &p) != ARL_CAPTURE_OK) {
+        if (openrelay_spsc_push(r, filler, n, &p) != OPENRELAY_CAPTURE_OK) {
             return 1;
         }
         if (p.written != n || p.dropped != 0u) {
             return 1;
         }
-        if (arl_spsc_drain(r, n, &d) != ARL_CAPTURE_OK || d != n) {
+        if (openrelay_spsc_drain(r, n, &d) != OPENRELAY_CAPTURE_OK || d != n) {
             return 1;
         }
         left -= n;
@@ -74,7 +74,7 @@ static int fast_forward(arl_spsc *r, uint32_t target, int16_t *filler) {
  * boundary, rather than crossing it with remaining payload.
  * Positive control: this case passes on the pre-fix core as well. */
 static void s1_read_across_wrap(void) {
-    arl_spsc *r = NULL;
+    openrelay_spsc *r = NULL;
     int16_t filler[CAP], src[CAP], dst[MAXREAD];
     uint32_t f = 0, rd = 0, total = 0;
 
@@ -84,7 +84,7 @@ static void s1_read_across_wrap(void) {
     for (uint32_t i = 0; i < CAP; i++) {
         filler[i] = (int16_t)(-6000 + (int)i);
     }
-    if (arl_spsc_create(&r) != ARL_CAPTURE_OK) {
+    if (openrelay_spsc_create(&r) != OPENRELAY_CAPTURE_OK) {
         bad("s1 create", 1, 0);
         return;
     }
@@ -92,13 +92,13 @@ static void s1_read_across_wrap(void) {
         bad("s1 fast_forward", 1, 0);
         goto done;
     }
-    CK(arl_spsc_free(r, &f) == 0 && f == CAP, "s1 free before", f, CAP);
+    CK(openrelay_spsc_free(r, &f) == 0 && f == CAP, "s1 free before", f, CAP);
 
     for (uint32_t i = 0; i < CAP; i++) {
         src[i] = (int16_t)((700 + i) & 0x7FFFu);
     }
     /* push 1920 in two 960 blocks, draining nothing: the second push crosses 2^32 */
-    arl_spsc_push_result p;
+    openrelay_spsc_push_result p;
     int16_t tmp[CAP];
     for (uint32_t blk = 0; blk < 2; blk++) {
         for (uint32_t i = 0; i < CAP; i++) {
@@ -107,13 +107,13 @@ static void s1_read_across_wrap(void) {
         /* keep the ring able to accept a full block: drain what we pushed */
         if (blk == 1) {
             /* the second block is what crosses the wrap; read it all back */
-            if (arl_spsc_push(r, tmp, CAP, &p) != 0 || p.written != CAP) {
+            if (openrelay_spsc_push(r, tmp, CAP, &p) != 0 || p.written != CAP) {
                 bad("s1 push2", p.written, CAP);
                 goto done;
             }
             while (total < CAP) {
                 rd = 0;
-                if (arl_spsc_read(r, dst, MAXREAD, &rd) != 0) {
+                if (openrelay_spsc_read(r, dst, MAXREAD, &rd) != 0) {
                     bad("s1 read rc", 1, 0);
                     goto done;
                 }
@@ -128,19 +128,19 @@ static void s1_read_across_wrap(void) {
             }
             CK(total == CAP, "s1 total", total, CAP);
         } else {
-            if (arl_spsc_push(r, tmp, CAP, &p) != 0 || p.written != CAP) {
+            if (openrelay_spsc_push(r, tmp, CAP, &p) != 0 || p.written != CAP) {
                 bad("s1 push1", p.written, CAP);
                 goto done;
             }
             uint32_t d = 0;
-            if (arl_spsc_drain(r, CAP, &d) != 0 || d != CAP) {
+            if (openrelay_spsc_drain(r, CAP, &d) != 0 || d != CAP) {
                 bad("s1 drain1", d, CAP);
                 goto done;
             }
         }
     }
 done:
-    (void)arl_spsc_destroy(&r);
+    (void)openrelay_spsc_destroy(&r);
 }
 
 /* S2: the drain itself is what crosses the wrap; the following read must
@@ -148,7 +148,7 @@ done:
  * Positive control: the 912 just pushed are drained before the next push, so
  * the ring is empty across the wrap and this case passes on the pre-fix core. */
 static void s2_drain_across_wrap(void) {
-    arl_spsc *r = NULL;
+    openrelay_spsc *r = NULL;
     int16_t filler[CAP], a[CAP], b[CAP], dst[MAXREAD];
     uint32_t f = 0, d = 0, rd = 0, total = 0;
     const uint32_t target = (uint32_t)(0u - 912u); /* 2^32 - 912 */
@@ -156,7 +156,7 @@ static void s2_drain_across_wrap(void) {
     for (uint32_t i = 0; i < CAP; i++) {
         filler[i] = (int16_t)(-6000 + (int)i);
     }
-    if (arl_spsc_create(&r) != ARL_CAPTURE_OK) {
+    if (openrelay_spsc_create(&r) != OPENRELAY_CAPTURE_OK) {
         bad("s2 create", 1, 0);
         return;
     }
@@ -168,30 +168,30 @@ static void s2_drain_across_wrap(void) {
         a[i] = (int16_t)((300 + i) & 0x7FFFu);
         b[i] = (int16_t)((900 + i) & 0x7FFFu);
     }
-    arl_spsc_push_result p;
+    openrelay_spsc_push_result p;
     /* 912 + 960 crosses 2^32 inside the push; drain 912 next (still crossing) */
-    if (arl_spsc_push(r, a, 912u, &p) != 0 || p.written != 912u) {
+    if (openrelay_spsc_push(r, a, 912u, &p) != 0 || p.written != 912u) {
         bad("s2 push a", p.written, 912);
         goto done;
     }
-    if (arl_spsc_free(r, &f) != 0 || f != CAP - 912u) {
+    if (openrelay_spsc_free(r, &f) != 0 || f != CAP - 912u) {
         bad("s2 free mid", f, CAP - 912u);
         goto done;
     }
-    if (arl_spsc_drain(r, 912u, &d) != 0 || d != 912u) {
+    if (openrelay_spsc_drain(r, 912u, &d) != 0 || d != 912u) {
         bad("s2 drain", d, 912);
         goto done;
     }
-    CK(arl_spsc_free(r, &f) == 0 && f == CAP, "s2 free after drain", f, CAP);
+    CK(openrelay_spsc_free(r, &f) == 0 && f == CAP, "s2 free after drain", f, CAP);
 
     /* push a full block after the wrap and read it back in order */
-    if (arl_spsc_push(r, b, CAP, &p) != 0 || p.written != CAP) {
+    if (openrelay_spsc_push(r, b, CAP, &p) != 0 || p.written != CAP) {
         bad("s2 push b", p.written, CAP);
         goto done;
     }
     while (total < CAP) {
         rd = 0;
-        if (arl_spsc_read(r, dst, MAXREAD, &rd) != 0) {
+        if (openrelay_spsc_read(r, dst, MAXREAD, &rd) != 0) {
             bad("s2 read rc", 1, 0);
             goto done;
         }
@@ -206,7 +206,7 @@ static void s2_drain_across_wrap(void) {
     }
     CK(total == CAP, "s2 total", total, CAP);
 done:
-    (void)arl_spsc_destroy(&r);
+    (void)openrelay_spsc_destroy(&r);
 }
 
 /* S3: interleaved partial push/read/read-short across the wrap.
@@ -214,7 +214,7 @@ done:
  * the pre-fix core (first mismatch window at 96 of 200) and passes on
  * src/spsc.c. */
 static void s3_interleaved(void) {
-    arl_spsc *r = NULL;
+    openrelay_spsc *r = NULL;
     int16_t filler[CAP], src[CAP], dst[MAXREAD];
     uint32_t rd = 0, expect = 0;
     const uint32_t target = (uint32_t)(0u - 100u); /* 2^32 - 100 */
@@ -222,7 +222,7 @@ static void s3_interleaved(void) {
     for (uint32_t i = 0; i < CAP; i++) {
         filler[i] = (int16_t)(-6000 + (int)i);
     }
-    if (arl_spsc_create(&r) != ARL_CAPTURE_OK) {
+    if (openrelay_spsc_create(&r) != OPENRELAY_CAPTURE_OK) {
         bad("s3 create", 1, 0);
         return;
     }
@@ -233,13 +233,13 @@ static void s3_interleaved(void) {
     for (uint32_t i = 0; i < CAP; i++) {
         src[i] = (int16_t)(i & 0x7FFFu);
     }
-    arl_spsc_push_result p;
+    openrelay_spsc_push_result p;
     /* 100 then 40 then 60: 200 samples pushed straddling 2^32 */
     const uint32_t chunks[3] = {100u, 40u, 60u};
     uint32_t off = 0;
     for (int c = 0; c < 3; c++) {
         uint32_t n = chunks[c];
-        if (arl_spsc_push(r, src + off, n, &p) != 0 || p.written != n) {
+        if (openrelay_spsc_push(r, src + off, n, &p) != 0 || p.written != n) {
             bad("s3 push", p.written, n);
             goto done;
         }
@@ -252,7 +252,7 @@ static void s3_interleaved(void) {
             want = 16u;
         }
         rd = 0;
-        if (arl_spsc_read(r, dst, want, &rd) != 0) {
+        if (openrelay_spsc_read(r, dst, want, &rd) != 0) {
             bad("s3 read rc", 1, 0);
             goto done;
         }
@@ -268,14 +268,14 @@ static void s3_interleaved(void) {
     }
     CK(expect == off, "s3 total", expect, off);
 done:
-    (void)arl_spsc_destroy(&r);
+    (void)openrelay_spsc_destroy(&r);
 }
 
 /* S4: free() stays coherent on both sides of the wrap.
  * Positive control: it asserts occupancy only, never a payload, so it passes
  * on the pre-fix core as well. */
 static void s4_free_coherent(void) {
-    arl_spsc *r = NULL;
+    openrelay_spsc *r = NULL;
     int16_t filler[CAP];
     uint32_t f = 0;
     const uint32_t target = (uint32_t)(0u - 480u);
@@ -283,7 +283,7 @@ static void s4_free_coherent(void) {
     for (uint32_t i = 0; i < CAP; i++) {
         filler[i] = (int16_t)(-6000 + (int)i);
     }
-    if (arl_spsc_create(&r) != ARL_CAPTURE_OK) {
+    if (openrelay_spsc_create(&r) != OPENRELAY_CAPTURE_OK) {
         bad("s4 create", 1, 0);
         return;
     }
@@ -291,39 +291,39 @@ static void s4_free_coherent(void) {
         bad("s4 fast_forward", 1, 0);
         goto done;
     }
-    CK(arl_spsc_free(r, &f) == 0 && f == CAP, "s4 empty", f, CAP);
+    CK(openrelay_spsc_free(r, &f) == 0 && f == CAP, "s4 empty", f, CAP);
 
-    arl_spsc_push_result p;
+    openrelay_spsc_push_result p;
     /* fill to 480, check, top up to 960 across the counter wrap */
-    if (arl_spsc_push(r, filler, 480u, &p) != 0 || p.written != 480u) {
+    if (openrelay_spsc_push(r, filler, 480u, &p) != 0 || p.written != 480u) {
         bad("s4 push 480", p.written, 480);
         goto done;
     }
-    CK(arl_spsc_free(r, &f) == 0 && f == CAP - 480u, "s4 at 480", f, CAP - 480u);
-    if (arl_spsc_push(r, filler, 480u, &p) != 0 || p.written != 480u) {
+    CK(openrelay_spsc_free(r, &f) == 0 && f == CAP - 480u, "s4 at 480", f, CAP - 480u);
+    if (openrelay_spsc_push(r, filler, 480u, &p) != 0 || p.written != 480u) {
         bad("s4 push cross", p.written, 480);
         goto done;
     }
-    CK(arl_spsc_free(r, &f) == 0 && f == 0u, "s4 full after wrap", f, 0u);
+    CK(openrelay_spsc_free(r, &f) == 0 && f == 0u, "s4 full after wrap", f, 0u);
     /* a push onto a full ring after the wrap must drop everything */
-    if (arl_spsc_push(r, filler, 32u, &p) != 0 || p.written != 0u ||
+    if (openrelay_spsc_push(r, filler, 32u, &p) != 0 || p.written != 0u ||
         p.dropped != 32u) {
         bad("s4 drop when full", p.written, 0);
         goto done;
     }
 done:
-    (void)arl_spsc_destroy(&r);
+    (void)openrelay_spsc_destroy(&r);
 }
 
 /* S5: many laps of the physical index with the counters still low.
  * Positive control: the counters never approach 2^32 here, so this case says
  * nothing about the wrap and passes on the pre-fix core. */
 static void s5_physical_laps(void) {
-    arl_spsc *r = NULL;
+    openrelay_spsc *r = NULL;
     int16_t src[CAP], dst[MAXREAD];
     uint32_t rd = 0, expect = 0;
 
-    if (arl_spsc_create(&r) != ARL_CAPTURE_OK) {
+    if (openrelay_spsc_create(&r) != OPENRELAY_CAPTURE_OK) {
         bad("s5 create", 1, 0);
         return;
     }
@@ -332,15 +332,15 @@ static void s5_physical_laps(void) {
         for (uint32_t i = 0; i < n; i++) {
             src[i] = (int16_t)((expect + i) & 0x7FFFu);
         }
-        arl_spsc_push_result p;
-        if (arl_spsc_push(r, src, n, &p) != 0 || p.written != n) {
+        openrelay_spsc_push_result p;
+        if (openrelay_spsc_push(r, src, n, &p) != 0 || p.written != n) {
             bad("s5 push", p.written, n);
             goto done;
         }
         uint32_t got = 0;
         while (got < n) {
             rd = 0;
-            if (arl_spsc_read(r, dst, MAXREAD, &rd) != 0) {
+            if (openrelay_spsc_read(r, dst, MAXREAD, &rd) != 0) {
                 bad("s5 read rc", 1, 0);
                 goto done;
             }
@@ -359,7 +359,7 @@ static void s5_physical_laps(void) {
         expect += n;
     }
 done:
-    (void)arl_spsc_destroy(&r);
+    (void)openrelay_spsc_destroy(&r);
 }
 
 int main(void) {

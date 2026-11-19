@@ -36,9 +36,9 @@ static int f_defect; /* el principal vio liberacion defectuosa */
 static int hold_armed_read;
 static int hold_armed_drain;
 
-int32_t __real_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
+int32_t __real_openrelay_spsc_read(openrelay_spsc *ring, int16_t *dst, uint32_t tope,
                              uint32_t *read);
-int32_t __real_arl_spsc_drain(arl_spsc *ring, uint32_t tope, uint32_t *dropped);
+int32_t __real_openrelay_spsc_drain(openrelay_spsc *ring, uint32_t tope, uint32_t *dropped);
 
 static void set_flag(int *flag) {
   pthread_mutex_lock(&mu);
@@ -83,9 +83,9 @@ static void hold_point(void) {
   pthread_mutex_unlock(&mu);
 }
 
-int32_t __wrap_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
+int32_t __wrap_openrelay_spsc_read(openrelay_spsc *ring, int16_t *dst, uint32_t tope,
                              uint32_t *read) {
-  int32_t rc = __real_arl_spsc_read(ring, dst, tope, read);
+  int32_t rc = __real_openrelay_spsc_read(ring, dst, tope, read);
   if (hold_armed_read) {
     hold_armed_read = 0;
     hold_point();
@@ -93,9 +93,9 @@ int32_t __wrap_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
   return rc;
 }
 
-int32_t __wrap_arl_spsc_drain(arl_spsc *ring, uint32_t tope,
+int32_t __wrap_openrelay_spsc_drain(openrelay_spsc *ring, uint32_t tope,
                               uint32_t *dropped) {
-  int32_t rc = __real_arl_spsc_drain(ring, tope, dropped);
+  int32_t rc = __real_openrelay_spsc_drain(ring, tope, dropped);
   if (hold_armed_drain) {
     hold_armed_drain = 0;
     hold_point();
@@ -104,8 +104,8 @@ int32_t __wrap_arl_spsc_drain(arl_spsc *ring, uint32_t tope,
 }
 
 struct loan {
-  arl_capture_owner *ow;
-  arl_capture *acq;
+  openrelay_capture_owner *ow;
+  openrelay_capture *acq;
   int32_t rc_acq;
   int32_t rc_op;
   uint32_t n;
@@ -115,11 +115,11 @@ struct loan {
 
 static void *borrower(void *arg) {
   struct loan *l = (struct loan *)arg;
-  arl_capture_counters ct;
+  openrelay_capture_counters ct;
 
   l->acq = NULL;
-  l->rc_acq = arl_owner_acquire(l->ow, &l->acq);
-  if (l->rc_acq != ARL_CAPTURE_OK) {
+  l->rc_acq = openrelay_owner_acquire(l->ow, &l->acq);
+  if (l->rc_acq != OPENRELAY_CAPTURE_OK) {
     set_flag(&f_held); /* despierta al principal: SETUP con acquire fallido */
     return NULL;
   }
@@ -129,28 +129,28 @@ static void *borrower(void *arg) {
     (void)wait_flag(&f_go);
     if (read_defect()) {
       /* Liberado por defecto: no tocar cap. */
-      arl_owner_release(l->ow);
+      openrelay_owner_release(l->ow);
       set_flag(&f_done);
       return NULL;
     }
-    l->rc_op = arl_capture_get_counters(l->acq, &ct);
+    l->rc_op = openrelay_capture_get_counters(l->acq, &ct);
   } else if (l->mode == LOAN_READ) {
     l->n = OT_NSAMP;
-    l->rc_op = arl_capture_read(l->acq, l->dst, &l->n); /* wrap retiene */
+    l->rc_op = openrelay_capture_read(l->acq, l->dst, &l->n); /* wrap retiene */
   } else {
     l->n = OT_NSAMP;
-    l->rc_op = arl_capture_drain(l->acq, &l->n); /* wrap retiene */
+    l->rc_op = openrelay_capture_drain(l->acq, &l->n); /* wrap retiene */
   }
-  arl_owner_release(l->ow);
+  openrelay_owner_release(l->ow);
   set_flag(&f_done);
   return NULL;
 }
 
 /* Casos 1, 2read, 2drain: prestamo retenido, destroy BUSY, luego OK. */
 static int case_loan(enum loan_mode mode, const char *name) {
-  arl_capture *cap = NULL;
-  arl_capture *before;
-  arl_capture_owner ow;
+  openrelay_capture *cap = NULL;
+  openrelay_capture *before;
+  openrelay_capture_owner ow;
   struct loan l;
   pthread_t th;
   int32_t rc;
@@ -161,7 +161,7 @@ static int case_loan(enum loan_mode mode, const char *name) {
   l.mode = mode;
   if (setup_closed(&cap) != 0) return 2;
   before = cap;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
@@ -175,16 +175,16 @@ static int case_loan(enum loan_mode mode, const char *name) {
     printf("SETUP_FAIL loan not held within %ds\n", WAIT_S);
     return 2;
   }
-  if (l.rc_acq != ARL_CAPTURE_OK || l.acq != before) {
+  if (l.rc_acq != OPENRELAY_CAPTURE_OK || l.acq != before) {
     printf("SETUP_FAIL acquire rc=%d\n", l.rc_acq);
     return 2;
   }
   printf("LOAN_HELD case=%s\n", name);
 
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("DESTROY_HELD rc=%d owner_same=%d\n", rc, ow.cap == before);
-  if (!(rc == ARL_CAPTURE_ERR_BUSY && ow.cap == before)) {
-    if (rc == ARL_CAPTURE_OK && ow.cap == NULL) {
+  if (!(rc == OPENRELAY_CAPTURE_ERR_BUSY && ow.cap == before)) {
+    if (rc == OPENRELAY_CAPTURE_OK && ow.cap == NULL) {
       printf("RED destroy OK while loan held (%s)\n", name);
       pthread_mutex_lock(&mu);
       f_defect = 1;
@@ -205,12 +205,12 @@ static int case_loan(enum loan_mode mode, const char *name) {
   pthread_join(th, NULL);
 
   if (mode == LOAN_COUNTERS) {
-    if (l.rc_op != ARL_CAPTURE_OK) {
+    if (l.rc_op != OPENRELAY_CAPTURE_OK) {
       printf("FAIL counters rc=%d\n", l.rc_op);
       fails++;
     }
   } else {
-    if (l.rc_op != ARL_CAPTURE_OK || l.n != OT_NSAMP) {
+    if (l.rc_op != OPENRELAY_CAPTURE_OK || l.n != OT_NSAMP) {
       printf("FAIL consumer rc=%d n=%u\n", l.rc_op, (unsigned)l.n);
       fails++;
     }
@@ -220,36 +220,36 @@ static int case_loan(enum loan_mode mode, const char *name) {
     }
   }
 
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("RETRY_DESTROY rc=%d owner_null=%d\n", rc, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) fails++;
   printf(fails ? "RESULT=FAIL case=%s\n" : "RESULT=PASS case=%s\n", name);
   return fails ? 1 : 0;
 }
 
 /* Caso 3: tras cierre del owner, acquire BUSY con *out NULL, sin tocar cap. */
 static int case3(void) {
-  arl_capture *cap = NULL;
-  arl_capture_owner ow;
+  openrelay_capture *cap = NULL;
+  openrelay_capture_owner ow;
   static int sentinel;
-  arl_capture *out = (arl_capture *)(void *)&sentinel;
+  openrelay_capture *out = (openrelay_capture *)(void *)&sentinel;
   int32_t rc;
   int fails = 0;
 
   if (setup_closed(&cap) != 0) return 2;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
-  rc = arl_owner_try_destroy(&ow);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) {
+  rc = openrelay_owner_try_destroy(&ow);
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) {
     printf("SETUP_FAIL close rc=%d\n", rc);
     return 2;
   }
-  rc = arl_owner_acquire(&ow, &out);
+  rc = openrelay_owner_acquire(&ow, &out);
   printf("AFTER_CLOSE_ACQUIRE rc=%d out_null=%d owner_cap_null=%d\n", rc,
          out == NULL, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_ERR_BUSY || out != NULL || ow.cap != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || out != NULL || ow.cap != NULL) fails++;
   printf(fails ? "RESULT=FAIL case=3\n" : "RESULT=PASS case=3\n");
   return fails ? 1 : 0;
 }
@@ -257,66 +257,66 @@ static int case3(void) {
 /* Caso 4: retiro con flags. Core owner intacto; admision reabierta; acquire
  * posible; tras ack del fixture, destroy OK. */
 static int case4(void) {
-  arl_capture *cap = NULL;
-  arl_capture *before;
-  arl_capture_owner ow;
-  arl_capture *out = NULL;
+  openrelay_capture *cap = NULL;
+  openrelay_capture *before;
+  openrelay_capture_owner ow;
+  openrelay_capture *out = NULL;
   uint64_t epoch;
   int32_t rc;
   int fails = 0;
 
   if (setup_closed(&cap) != 0) return 2;
   before = cap;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
-  epoch = arl_fx_enable_token();
-  arl_fx_set_retire(epoch, ARL_BE_RETIRE_DATA);
-  rc = arl_owner_try_destroy(&ow);
+  epoch = openrelay_fx_enable_token();
+  openrelay_fx_set_retire(epoch, OPENRELAY_BE_RETIRE_DATA);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("RETIRE_DESTROY rc=%d owner_same=%d\n", rc, ow.cap == before);
-  if (rc != ARL_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
 
-  rc = arl_owner_acquire(&ow, &out);
+  rc = openrelay_owner_acquire(&ow, &out);
   printf("REOPEN_ACQUIRE rc=%d out_same=%d\n", rc, out == before);
-  if (rc != ARL_CAPTURE_OK || out != before) {
+  if (rc != OPENRELAY_CAPTURE_OK || out != before) {
     fails++;
   } else {
-    arl_owner_release(&ow);
+    openrelay_owner_release(&ow);
   }
 
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("RETIRE_DESTROY_AGAIN rc=%d owner_same=%d\n", rc, ow.cap == before);
-  if (rc != ARL_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
 
-  arl_fx_ack_retire(epoch);
-  printf("FIXTURE_ACK ack_epoch_ok=%d\n", arl_fx_ack_epoch() == epoch);
-  if (arl_fx_ack_epoch() != epoch) fails++;
-  rc = arl_owner_try_destroy(&ow);
+  openrelay_fx_ack_retire(epoch);
+  printf("FIXTURE_ACK ack_epoch_ok=%d\n", openrelay_fx_ack_epoch() == epoch);
+  if (openrelay_fx_ack_epoch() != epoch) fails++;
+  rc = openrelay_owner_try_destroy(&ow);
   printf("RETRY_DESTROY rc=%d owner_null=%d\n", rc, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) fails++;
   printf(fails ? "RESULT=FAIL case=4\n" : "RESULT=PASS case=4\n");
   return fails ? 1 : 0;
 }
 
 /* Caso 5: control quiescente. Destroy OK al primer intento, un solo release. */
 static int case5(void) {
-  arl_capture *cap = NULL;
-  arl_capture_owner ow;
-  arl_capture *out = NULL;
+  openrelay_capture *cap = NULL;
+  openrelay_capture_owner ow;
+  openrelay_capture *out = NULL;
   int32_t rc;
   int fails = 0;
 
   if (setup_closed(&cap) != 0) return 2;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("QUIESCENT_DESTROY rc=%d owner_null=%d\n", rc, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) fails++;
-  rc = arl_owner_acquire(&ow, &out);
-  if (rc != ARL_CAPTURE_ERR_BUSY || out != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) fails++;
+  rc = openrelay_owner_acquire(&ow, &out);
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || out != NULL) fails++;
   printf("POST_CLOSE_ACQUIRE rc=%d out_null=%d\n", rc, out == NULL);
   printf(fails ? "RESULT=FAIL case=5\n" : "RESULT=PASS case=5\n");
   return fails ? 1 : 0;
@@ -325,49 +325,49 @@ static int case5(void) {
 /* Caso 6: saturacion del gate con estado test-only en owner estable.
  * No produce CLOSED ni cambia cap. Mas abajo, aritmetica etiquetada. */
 static int case6(void) {
-  arl_capture *cap = NULL;
-  arl_capture_owner ow;
-  arl_capture *out = NULL;
+  openrelay_capture *cap = NULL;
+  openrelay_capture_owner ow;
+  openrelay_capture *out = NULL;
   uint32_t carried;
   int32_t rc;
   int fails = 0;
 
   if (setup_closed(&cap) != 0) return 2;
-  arl_capture *before = cap;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  openrelay_capture *before = cap;
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
-  atomic_store(&ow.gate, ARL_OWNER_MAX_BORROWS); /* test-only */
-  rc = arl_owner_acquire(&ow, &out);
+  atomic_store(&ow.gate, OPENRELAY_OWNER_MAX_BORROWS); /* test-only */
+  rc = openrelay_owner_acquire(&ow, &out);
   printf("SATURATED_ACQUIRE rc=%d out_null=%d gate_max=%d\n", rc, out == NULL,
-         atomic_load(&ow.gate) == ARL_OWNER_MAX_BORROWS);
-  if (rc != ARL_CAPTURE_ERR_BUSY || out != NULL ||
-      atomic_load(&ow.gate) != ARL_OWNER_MAX_BORROWS)
+         atomic_load(&ow.gate) == OPENRELAY_OWNER_MAX_BORROWS);
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || out != NULL ||
+      atomic_load(&ow.gate) != OPENRELAY_OWNER_MAX_BORROWS)
     fails++;
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("SATURATED_DESTROY rc=%d owner_same=%d\n", rc, ow.cap == before);
-  if (rc != ARL_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
+  if (rc != OPENRELAY_CAPTURE_ERR_BUSY || ow.cap != before) fails++;
 
   /* Aritmetica pura (no es comportamiento del owner): MAX+1 cae en el bit CLOSED. */
-  carried = (uint32_t)(ARL_OWNER_MAX_BORROWS + 1u);
-  printf("ARITH_ONLY MAX+1==CLOSED %d\n", carried == ARL_OWNER_CLOSED);
-  if (carried != ARL_OWNER_CLOSED) fails++;
+  carried = (uint32_t)(OPENRELAY_OWNER_MAX_BORROWS + 1u);
+  printf("ARITH_ONLY MAX+1==CLOSED %d\n", carried == OPENRELAY_OWNER_CLOSED);
+  if (carried != OPENRELAY_OWNER_CLOSED) fails++;
 
   atomic_store(&ow.gate, 0u); /* restaura estado estable */
-  rc = arl_owner_acquire(&ow, &out);
-  if (rc != ARL_CAPTURE_OK || out != before) fails++;
-  else arl_owner_release(&ow);
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_acquire(&ow, &out);
+  if (rc != OPENRELAY_CAPTURE_OK || out != before) fails++;
+  else openrelay_owner_release(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("RETRY_DESTROY rc=%d owner_null=%d\n", rc, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) fails++;
   printf(fails ? "RESULT=FAIL case=6\n" : "RESULT=PASS case=6\n");
   return fails ? 1 : 0;
 }
 
 struct contender {
-  arl_capture_owner *ow;
-  arl_capture *cap;
+  openrelay_capture_owner *ow;
+  openrelay_capture *cap;
   int ok;
   int busy;
   int bad;
@@ -381,16 +381,16 @@ static void *contender(void *arg) {
 
   (void)pthread_barrier_wait(&bar);
   for (i = 0; i < NITER; i++) {
-    arl_capture *out = (arl_capture *)(void *)w; /* centinela no nulo */
-    int32_t rc = arl_owner_acquire(w->ow, &out);
-    if (rc == ARL_CAPTURE_OK) {
+    openrelay_capture *out = (openrelay_capture *)(void *)w; /* centinela no nulo */
+    int32_t rc = openrelay_owner_acquire(w->ow, &out);
+    if (rc == OPENRELAY_CAPTURE_OK) {
       if (out == w->cap) {
         w->ok++;
       } else {
         w->bad++;
       }
-      arl_owner_release(w->ow);
-    } else if (rc == ARL_CAPTURE_ERR_BUSY && out == NULL) {
+      openrelay_owner_release(w->ow);
+    } else if (rc == OPENRELAY_CAPTURE_ERR_BUSY && out == NULL) {
       w->busy++; /* contencion CAS: BUSY permitido */
     } else {
       w->bad++;
@@ -402,18 +402,18 @@ static void *contender(void *arg) {
 /* Caso 7: acquire concurrente en owner estable. Sin liberacion propia del
  * owner; el almacenamiento vive hasta despues de los joins. */
 static int case7(void) {
-  arl_capture *cap = NULL;
-  arl_capture_owner ow;
+  openrelay_capture *cap = NULL;
+  openrelay_capture_owner ow;
   struct contender w[NTHR];
   pthread_t th[NTHR];
-  arl_capture *before;
+  openrelay_capture *before;
   int ok = 0, busy = 0, bad = 0, i;
   int32_t rc;
   int fails = 0;
 
   if (setup_closed(&cap) != 0) return 2;
   before = cap;
-  if (arl_owner_init(&ow, cap) != ARL_CAPTURE_OK) {
+  if (openrelay_owner_init(&ow, cap) != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL owner_init\n");
     return 2;
   }
@@ -441,9 +441,9 @@ static int case7(void) {
          ok, busy, bad);
   if (bad != 0 || ok + busy != NTHR * NITER || ok == 0) fails++;
   if (atomic_load(&ow.gate) != 0u || ow.cap != before) fails++;
-  rc = arl_owner_try_destroy(&ow);
+  rc = openrelay_owner_try_destroy(&ow);
   printf("POST_CONTENTION_DESTROY rc=%d owner_null=%d\n", rc, ow.cap == NULL);
-  if (rc != ARL_CAPTURE_OK || ow.cap != NULL) fails++;
+  if (rc != OPENRELAY_CAPTURE_OK || ow.cap != NULL) fails++;
   printf(fails ? "RESULT=FAIL case=7\n" : "RESULT=PASS case=7\n");
   return fails ? 1 : 0;
 }

@@ -2,7 +2,7 @@
 """Genera un SBOM CycloneDX 1.5 desde Cargo.lock, sin dependencias externas.
 
 Uso:
-    python3 scripts/sbom.py --lock Cargo.lock --output dist/arl-0.1.0.cdx.json
+    python3 scripts/sbom.py --lock Cargo.lock --output dist/openrelay-0.1.0.cdx.json
 
 El SBOM lista cada paquete resuelto en Cargo.lock (workspace y registro) con su
 versión y su licencia, tomada de `cargo metadata --locked --all-features`. Si
@@ -108,15 +108,15 @@ def main() -> int:
     bom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "serialNumber": f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, 'arl-sbom:' + digest)}",
+        "serialNumber": f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, 'openrelay-sbom:' + digest)}",
         "version": 1,
         "metadata": {
             "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "tools": [{"vendor": "arl", "name": "sbom.py", "version": "1"}],
+            "tools": [{"vendor": "openrelay", "name": "sbom.py", "version": "1"}],
             "component": {
                 "type": "application",
-                "bom-ref": f"pkg:cargo/arl@{version}",
-                "name": "arl",
+                "bom-ref": f"pkg:cargo/openrelay@{version}",
+                "name": "openrelay",
                 "version": version,
             },
         },

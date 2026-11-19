@@ -20,14 +20,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "return-audio")]
-use arl_audio_linux::monitor::MonitorSource;
-use arl_audio_linux::{ring, SampleProducer};
+use openrelay_audio_linux::monitor::MonitorSource;
+use openrelay_audio_linux::{ring, SampleProducer};
 #[cfg(feature = "return-audio")]
-use arl_proto::control::Feature;
-use arl_proto::control::{ErrorCode, PeerRole, RemoteAction};
-use arl_proto::wire::{decode_frame, encode_message, ControlMessage};
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{
+use openrelay_proto::control::Feature;
+use openrelay_proto::control::{ErrorCode, PeerRole, RemoteAction};
+use openrelay_proto::wire::{decode_frame, encode_message, ControlMessage};
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{
     Acl, ServerEvent, SessionId, SessionLimits, SessionServer, TransportError,
 };
 use rustls::crypto::ring::sign::any_ecdsa_type;
@@ -86,7 +86,7 @@ impl Default for RuntimeConfig {
         Self {
             quic_bind: None,
             provision: None,
-            local_device_id: "arl-cli-local".to_owned(),
+            local_device_id: "openrelay-cli-local".to_owned(),
         }
     }
 }
@@ -379,7 +379,7 @@ impl ProductRuntime {
         self.quic.is_some()
     }
 
-    /// Aplica una línea del socket Unix. El JSON es el que ya habla `arl`.
+    /// Aplica una línea del socket Unix. El JSON es el que ya habla `openrelay`.
     pub fn local_line(&mut self, line: &str) -> Value {
         if line.len() > MAX_LINE {
             return error_reply(
@@ -655,19 +655,21 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
             let key = match args.get("key") {
                 None | Some(Value::Null) => None,
                 Some(Value::String(name)) => Some(
-                    arl_proto::control::ConfigKey::new(name)
+                    openrelay_proto::control::ConfigKey::new(name)
                         .map_err(|code| failure(code, "clave de configuración inválida"))?,
                 ),
                 Some(_) => return Err(failure(ErrorCode::Invalid, "key debe ser texto")),
             };
-            Ok(ControlMessage::ConfigGet(arl_proto::wire::ConfigGetMsg {
-                request_id: request_id.to_owned(),
-                key,
-            }))
+            Ok(ControlMessage::ConfigGet(
+                openrelay_proto::wire::ConfigGetMsg {
+                    request_id: request_id.to_owned(),
+                    key,
+                },
+            ))
         }
         "config.set" => {
             let key = match args.get("key").and_then(Value::as_str) {
-                Some(name) => arl_proto::control::ConfigKey::new(name)
+                Some(name) => openrelay_proto::control::ConfigKey::new(name)
                     .map_err(|code| failure(code, "clave de configuración inválida"))?,
                 None => return Err(failure(ErrorCode::Invalid, "falta key")),
             };
@@ -676,11 +678,13 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
                 .and_then(Value::as_u64)
                 .ok_or_else(|| failure(ErrorCode::Invalid, "falta expected_revision"))?;
             let value = match args.get("value") {
-                Some(Value::Bool(flag)) => arl_proto::control::ConfigValue::Bool(*flag),
-                Some(Value::String(text)) => arl_proto::control::ConfigValue::String(text.clone()),
+                Some(Value::Bool(flag)) => openrelay_proto::control::ConfigValue::Bool(*flag),
+                Some(Value::String(text)) => {
+                    openrelay_proto::control::ConfigValue::String(text.clone())
+                }
                 Some(Value::Number(number)) => match (number.as_i64(), number.as_f64()) {
-                    (Some(integer), _) => arl_proto::control::ConfigValue::Integer(integer),
-                    (None, Some(real)) => arl_proto::control::ConfigValue::Number(real),
+                    (Some(integer), _) => openrelay_proto::control::ConfigValue::Integer(integer),
+                    (None, Some(real)) => openrelay_proto::control::ConfigValue::Number(real),
                     _ => return Err(failure(ErrorCode::Invalid, "value no representable")),
                 },
                 _ => {
@@ -690,18 +694,20 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
                     ))
                 }
             };
-            Ok(ControlMessage::ConfigSet(arl_proto::wire::ConfigSetMsg {
-                request_id: request_id.to_owned(),
-                expected_revision,
-                key,
-                value,
-            }))
+            Ok(ControlMessage::ConfigSet(
+                openrelay_proto::wire::ConfigSetMsg {
+                    request_id: request_id.to_owned(),
+                    expected_revision,
+                    key,
+                    value,
+                },
+            ))
         }
-        "capabilities" => Ok(ControlMessage::Hello(arl_proto::wire::HelloMsg {
+        "capabilities" => Ok(ControlMessage::Hello(openrelay_proto::wire::HelloMsg {
             request_id: request_id.to_owned(),
             role: PeerRole::LinuxCli,
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            protocol_version: arl_proto::wire::SCHEMA_VERSION.to_owned(),
+            protocol_version: openrelay_proto::wire::SCHEMA_VERSION.to_owned(),
         })),
         _ => Err(failure(ErrorCode::Unsupported, "op desconocida")),
     }
@@ -736,7 +742,7 @@ mod tests {
     #[cfg(feature = "return-audio")]
     #[test]
     fn runtime_no_elige_retorno_si_la_config_lo_apaga() {
-        use arl_proto::control::Feature;
+        use openrelay_proto::control::Feature;
         let peer = [Feature::AudioPcm16_48kMono, Feature::AudioReturnPcm48kMono];
         assert!(
             return_targets(&[7u64, 8], false, |_| Some(peer.to_vec())).is_empty(),

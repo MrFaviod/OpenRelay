@@ -4,10 +4,10 @@
 //! que es exactamente la función que invoca el callback de proceso del stream.
 //! No hay una variante "de test" del render.
 
-use arl_audio_core::pcm16::{from_le_bytes, BYTES_PER_SAMPLE, SILENCE};
-use arl_audio_core::{PAYLOAD_LEN, SAMPLE_COUNT};
-use arl_audio_linux::ring::{ring, SampleProducer};
-use arl_audio_linux::{NegotiatedFormat, CHANNEL_COUNT, MEDIA_CLASS, NODE_NAME};
+use openrelay_audio_core::pcm16::{from_le_bytes, BYTES_PER_SAMPLE, SILENCE};
+use openrelay_audio_core::{PAYLOAD_LEN, SAMPLE_COUNT};
+use openrelay_audio_linux::ring::{ring, SampleProducer};
+use openrelay_audio_linux::{NegotiatedFormat, CHANNEL_COUNT, MEDIA_CLASS, NODE_NAME};
 
 /// Frames que caben en un buffer de callback con el stride del contrato.
 fn dst_for(frames: usize) -> Vec<u8> {
@@ -254,10 +254,13 @@ fn consumo_acumulado_reproduce_una_secuencia_larga() {
 
 #[test]
 fn constante_de_contrato_coincide_con_el_core() {
-    assert_eq!(NODE_NAME, "arl-mic");
+    assert_eq!(NODE_NAME, "openrelay-mic");
     assert_eq!(MEDIA_CLASS, "Audio/Source");
-    assert_eq!(CHANNEL_COUNT, arl_audio_core::CHANNELS as u32);
-    assert_eq!(BYTES_PER_SAMPLE, arl_audio_core::pcm16::BYTES_PER_SAMPLE);
+    assert_eq!(CHANNEL_COUNT, openrelay_audio_core::CHANNELS as u32);
+    assert_eq!(
+        BYTES_PER_SAMPLE,
+        openrelay_audio_core::pcm16::BYTES_PER_SAMPLE
+    );
     assert_eq!(PAYLOAD_LEN, SAMPLE_COUNT * 2);
 }
 

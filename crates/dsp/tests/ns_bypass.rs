@@ -1,10 +1,10 @@
-//! Pruebas del bypass real y del supresor SpeexDSP de `arl-dsp`.
+//! Pruebas del bypass real y del supresor SpeexDSP de `openrelay-dsp`.
 //!
 //! Sin feature se demuestra que el bypass no ejecuta etapas, no altera la
 //! muestra y declara retardo cero. Con `speexdsp` se demuestra que la etapa
-//! corre, declara retardo y atenúa ruido blanco en las tres tramas de arl.
+//! corre, declara retardo y atenúa ruido blanco en las tres tramas de openrelay.
 
-use arl_dsp::{NoiseSuppressor, NsChain, NsCounters, NsError};
+use openrelay_dsp::{NoiseSuppressor, NsChain, NsCounters, NsError};
 
 /// Ruido blanco determinista en el rango completo de i16.
 fn noise_block(len: usize, seed: u32) -> Vec<i16> {
@@ -18,6 +18,7 @@ fn noise_block(len: usize, seed: u32) -> Vec<i16> {
 }
 
 /// RMS de un bloque PCM16.
+#[cfg(feature = "speexdsp")]
 fn rms(samples: &[i16]) -> f64 {
     if samples.is_empty() {
         return 0.0;
@@ -159,7 +160,7 @@ fn speexdsp_attenuates_white_noise() {
 
 #[cfg(feature = "speexdsp")]
 #[test]
-fn speexdsp_handles_every_arl_profile_block() {
+fn speexdsp_handles_every_openrelay_profile_block() {
     for frame_samples in [120, 240, 480] {
         let mut chain = NsChain::speexdsp(48_000, frame_samples).expect("cadena SpeexDSP");
         assert_eq!(chain.added_latency_samples(), frame_samples);

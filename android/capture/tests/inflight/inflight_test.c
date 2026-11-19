@@ -1,11 +1,11 @@
 /* T13a life inflight regressions (read/drain en vuelo frente a destroy).
  *
  * Un proceso = un escenario:
- *   read     : consumidor retenido DENTRO de arl_capture_read (tras __real_arl_spsc_read).
- *   drain    : consumidor retenido DENTRO de arl_capture_drain (tras __real_arl_spsc_drain).
+ *   read     : consumidor retenido DENTRO de openrelay_capture_read (tras __real_openrelay_spsc_read).
+ *   drain    : consumidor retenido DENTRO de openrelay_capture_drain (tras __real_openrelay_spsc_drain).
  *   control  : sin retencion; consumidor termina, luego destroy debe ser OK.
  *
- * Costura: --wrap de arl_spsc_read/drain. El wrapper ejecuta la operacion real
+ * Costura: --wrap de openrelay_spsc_read/drain. El wrapper ejecuta la operacion real
  * y espera con mutex/condvar de test ANTES de devolver al motor. El motor usa
  * el objeto real; no hay maquina de estados ni flags de backend como sustituto.
  *
@@ -27,7 +27,7 @@
 #include "backend_fixture.h"
 
 #define WAIT_S 5
-#define NSAMP ARL_CAPTURE_FRAME_SAMPLES
+#define NSAMP OPENRELAY_CAPTURE_FRAME_SAMPLES
 
 enum scen { SC_NONE = 0, SC_READ, SC_DRAIN, SC_CONTROL };
 
@@ -39,9 +39,9 @@ static int hold_entered;
 static int hold_released;
 static int hold_release_defective;
 
-int32_t __real_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
+int32_t __real_openrelay_spsc_read(openrelay_spsc *ring, int16_t *dst, uint32_t tope,
                              uint32_t *read);
-int32_t __real_arl_spsc_drain(arl_spsc *ring, uint32_t tope, uint32_t *dropped);
+int32_t __real_openrelay_spsc_drain(openrelay_spsc *ring, uint32_t tope, uint32_t *dropped);
 
 /* Retiene al consumidor en el punto de llamada, ya dentro de la API publica. */
 static void hold_point(void) {
@@ -59,9 +59,9 @@ static void hold_point(void) {
   pthread_mutex_unlock(&hold_mu);
 }
 
-int32_t __wrap_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
+int32_t __wrap_openrelay_spsc_read(openrelay_spsc *ring, int16_t *dst, uint32_t tope,
                              uint32_t *read) {
-  int32_t rc = __real_arl_spsc_read(ring, dst, tope, read);
+  int32_t rc = __real_openrelay_spsc_read(ring, dst, tope, read);
   if (hold_armed_read) {
     hold_armed_read = 0;
     hold_point();
@@ -69,9 +69,9 @@ int32_t __wrap_arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope,
   return rc;
 }
 
-int32_t __wrap_arl_spsc_drain(arl_spsc *ring, uint32_t tope,
+int32_t __wrap_openrelay_spsc_drain(openrelay_spsc *ring, uint32_t tope,
                               uint32_t *dropped) {
-  int32_t rc = __real_arl_spsc_drain(ring, tope, dropped);
+  int32_t rc = __real_openrelay_spsc_drain(ring, tope, dropped);
   if (hold_armed_drain) {
     hold_armed_drain = 0;
     hold_point();
@@ -80,7 +80,7 @@ int32_t __wrap_arl_spsc_drain(arl_spsc *ring, uint32_t tope,
 }
 
 struct consumer {
-  arl_capture *cap;
+  openrelay_capture *cap;
   enum scen kind;
   int32_t rc;
   uint32_t n;
@@ -91,57 +91,57 @@ static void *consumer_main(void *arg) {
   struct consumer *c = (struct consumer *)arg;
   c->n = NSAMP;
   if (c->kind == SC_DRAIN) {
-    c->rc = arl_capture_drain(c->cap, &c->n);
+    c->rc = openrelay_capture_drain(c->cap, &c->n);
   } else {
-    c->rc = arl_capture_read(c->cap, c->dst, &c->n);
+    c->rc = openrelay_capture_read(c->cap, c->dst, &c->n);
   }
   return NULL;
 }
 
-static const arl_capture_format k_pcm = {
-    ARL_CAPTURE_SAMPLE_RATE_HZ, ARL_CAPTURE_CHANNELS,
-    ARL_CAPTURE_BYTES_PER_SAMPLE, ARL_CAPTURE_FRAME_SAMPLES, 0u};
+static const openrelay_capture_format k_pcm = {
+    OPENRELAY_CAPTURE_SAMPLE_RATE_HZ, OPENRELAY_CAPTURE_CHANNELS,
+    OPENRELAY_CAPTURE_BYTES_PER_SAMPLE, OPENRELAY_CAPTURE_FRAME_SAMPLES, 0u};
 
 /* Setup valido: open/start/push/stop/close conservando el anillo. */
-static int setup_ring(arl_capture **cap) {
-  arl_capture_status st;
+static int setup_ring(openrelay_capture **cap) {
+  openrelay_capture_status st;
   int16_t pat[NSAMP];
   uint32_t i;
   int32_t rc;
 
   for (i = 0; i < NSAMP; i++) pat[i] = (int16_t)(i + 1u);
-  arl_fx_reset();
-  arl_fx_set_prepare_format(k_pcm.sample_rate_hz, k_pcm.channels,
+  openrelay_fx_reset();
+  openrelay_fx_set_prepare_format(k_pcm.sample_rate_hz, k_pcm.channels,
                             k_pcm.bytes_per_sample, k_pcm.frame_samples, 0u);
-  arl_fx_set_effective_format(k_pcm.sample_rate_hz, k_pcm.channels,
+  openrelay_fx_set_effective_format(k_pcm.sample_rate_hz, k_pcm.channels,
                               k_pcm.bytes_per_sample, k_pcm.frame_samples, 0u);
-  rc = arl_capture_open(cap, ARL_CAPTURE_RING_SAMPLES);
-  if (rc != ARL_CAPTURE_OK || *cap == NULL) {
+  rc = openrelay_capture_open(cap, OPENRELAY_CAPTURE_RING_SAMPLES);
+  if (rc != OPENRELAY_CAPTURE_OK || *cap == NULL) {
     printf("SETUP_FAIL open rc=%d\n", rc);
     return 2;
   }
-  rc = arl_capture_start(*cap);
-  if (rc != ARL_CAPTURE_OK) {
+  rc = openrelay_capture_start(*cap);
+  if (rc != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL start rc=%d\n", rc);
     return 2;
   }
-  rc = arl_capture_get_status(*cap, &st);
-  if (rc != ARL_CAPTURE_OK || st.state != ARL_CAPTURE_STATE_STARTED) {
+  rc = openrelay_capture_get_status(*cap, &st);
+  if (rc != OPENRELAY_CAPTURE_OK || st.state != OPENRELAY_CAPTURE_STATE_STARTED) {
     printf("SETUP_FAIL status rc=%d state=%u\n", rc, (unsigned)st.state);
     return 2;
   }
-  rc = arl_capture_push(*cap, st.generation, pat, NSAMP);
-  if (rc != ARL_CAPTURE_OK) {
+  rc = openrelay_capture_push(*cap, st.generation, pat, NSAMP);
+  if (rc != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL push rc=%d\n", rc);
     return 2;
   }
-  rc = arl_capture_stop(*cap);
-  if (rc != ARL_CAPTURE_OK) {
+  rc = openrelay_capture_stop(*cap);
+  if (rc != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL stop rc=%d\n", rc);
     return 2;
   }
-  rc = arl_capture_close(*cap);
-  if (rc != ARL_CAPTURE_OK) {
+  rc = openrelay_capture_close(*cap);
+  if (rc != OPENRELAY_CAPTURE_OK) {
     printf("SETUP_FAIL close rc=%d\n", rc);
     return 2;
   }
@@ -166,8 +166,8 @@ static void release_consumer(int defective) {
 
 int main(int argc, char **argv) {
   enum scen kind = SC_NONE;
-  arl_capture *cap = NULL;
-  arl_capture *before;
+  openrelay_capture *cap = NULL;
+  openrelay_capture *before;
   struct consumer c;
   pthread_t th;
   struct timespec ts;
@@ -201,15 +201,15 @@ int main(int argc, char **argv) {
       return 2;
     }
     pthread_join(th, NULL);
-    printf("CONSUMER_API_CALLED=arl_capture_read rc=%d n=%u\n", c.rc,
+    printf("CONSUMER_API_CALLED=openrelay_capture_read rc=%d n=%u\n", c.rc,
            (unsigned)c.n);
-    if (c.rc != ARL_CAPTURE_OK || c.n != NSAMP || !pattern_ok(c.dst)) {
+    if (c.rc != OPENRELAY_CAPTURE_OK || c.n != NSAMP || !pattern_ok(c.dst)) {
       printf("FAIL control consumer read rc=%d n=%u\n", c.rc, (unsigned)c.n);
       return 1;
     }
-    rc_d = arl_capture_destroy(&cap);
+    rc_d = openrelay_capture_destroy(&cap);
     printf("CONTROL_DESTROY rc=%d owner_after_null=%d\n", rc_d, cap == NULL);
-    if (rc_d == ARL_CAPTURE_OK && cap == NULL) {
+    if (rc_d == OPENRELAY_CAPTURE_OK && cap == NULL) {
       printf("RESULT=PASS control destroy OK when quiescent\n");
       return 0;
     }
@@ -239,17 +239,17 @@ int main(int argc, char **argv) {
   printf("WRAP_REACHED op=%s consumer_inside_public_api=1\n", argv[1]);
 
   printf("OWNER_BEFORE_DESTROY=%p\n", (void *)before);
-  rc_d = arl_capture_destroy(&cap);
+  rc_d = openrelay_capture_destroy(&cap);
   /* No evaluar before después de una posible liberación. */
   printf("DESTROY_WHILE_HELD rc=%d owner_after=%p\n", rc_d, (void *)cap);
 
-  if (rc_d == ARL_CAPTURE_ERR_BUSY && cap == before) {
+  if (rc_d == OPENRELAY_CAPTURE_ERR_BUSY && cap == before) {
     /* Comportamiento correcto: soltar, join, luego destroy OK. */
     release_consumer(0);
     pthread_join(th, NULL);
-    printf("CONSUMER_API_CALLED=arl_capture_%s rc=%d n=%u\n",
+    printf("CONSUMER_API_CALLED=openrelay_capture_%s rc=%d n=%u\n",
            kind == SC_DRAIN ? "drain" : "read", c.rc, (unsigned)c.n);
-    if (c.rc != ARL_CAPTURE_OK || c.n != NSAMP) {
+    if (c.rc != OPENRELAY_CAPTURE_OK || c.n != NSAMP) {
       printf("FAIL consumer rc=%d n=%u\n", c.rc, (unsigned)c.n);
       fails++;
     }
@@ -257,19 +257,19 @@ int main(int argc, char **argv) {
       printf("FAIL consumer read payload mismatch\n");
       fails++;
     }
-    rc_d = arl_capture_destroy(&cap);
+    rc_d = openrelay_capture_destroy(&cap);
     printf("POST_RELEASE_DESTROY rc=%d owner_after_null=%d\n", rc_d,
            cap == NULL);
-    if (rc_d != ARL_CAPTURE_OK || cap != NULL) fails++;
+    if (rc_d != OPENRELAY_CAPTURE_OK || cap != NULL) fails++;
     printf(fails ? "RESULT=FAIL post-release checks\n"
                  : "RESULT=PASS destroy BUSY while consumer in flight\n");
     return fails ? 1 : 0;
   }
 
   /* Destroy no dio BUSY+owner intacto. Captura hecha; ahora limpieza segura. */
-  if (rc_d == ARL_CAPTURE_OK && cap == NULL) {
+  if (rc_d == OPENRELAY_CAPTURE_OK && cap == NULL) {
     printf("RESULT=RED destroy returned OK and owner NULL while %s consumer "
-           "still inside arl_capture_%s (expected ERR_BUSY, owner unchanged)\n",
+           "still inside openrelay_capture_%s (expected ERR_BUSY, owner unchanged)\n",
            argv[1], argv[1]);
     release_consumer(1); /* wrapper: pthread_exit sin volver al motor */
     pthread_join(th, NULL);

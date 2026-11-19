@@ -1,4 +1,4 @@
-//! Sonda acotada de la fuente PipeWire de arl sobre un servidor privado.
+//! Sonda acotada de la fuente PipeWire de openrelay sobre un servidor privado.
 //!
 //! Abre [`PipeWireSource`] (queda inactiva), deja que el servidor registre el
 //! nodo, empuja una fixture PCM16LE determinista —una rampa triangular con
@@ -52,8 +52,8 @@
 //! negoció pero el callback no entregó ni un frame. Un `0` con cero muestras no
 //! es un PASS.
 
-use arl_audio_core::{SAMPLE_COUNT, SAMPLE_RATE_HZ};
-use arl_audio_linux::{init, NegotiatedFormat, PipeWireSource, SampleProducer};
+use openrelay_audio_core::{SAMPLE_COUNT, SAMPLE_RATE_HZ};
+use openrelay_audio_linux::{init, NegotiatedFormat, PipeWireSource, SampleProducer};
 use std::time::{Duration, Instant};
 
 /// Periodo de la rampa en muestras: 500 ms a 48 kHz, pendiente ±5.
@@ -627,7 +627,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arl_audio_linux::ring;
+    use openrelay_audio_linux::ring;
 
     /// La fixture es una función pura del índice: mismo índice, misma muestra,
     /// con marcador exacto cada [`MARKER_PERIOD`] y fuera del rango de la rampa.

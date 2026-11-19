@@ -11,8 +11,8 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use arl_transport::identity::SpkiPin;
-use arl_transport::quinn::SessionId;
+use openrelay_transport::identity::SpkiPin;
+use openrelay_transport::quinn::SessionId;
 use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::pairing;

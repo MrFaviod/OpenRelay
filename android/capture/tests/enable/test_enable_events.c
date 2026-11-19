@@ -20,7 +20,7 @@
 #include "capture-spsc.h"
 #include "backend_fixture.h"
 
-#define NS ARL_CAPTURE_FRAME_SAMPLES
+#define NS OPENRELAY_CAPTURE_FRAME_SAMPLES
 #define KIND_ERROR 1
 #define KIND_DISCONNECT 2
 
@@ -44,7 +44,7 @@ static int fails;
 static void (*g_enable_hook)(void);
 static int g_hook_fired;
 
-void arl_test_hook(const char *id) {
+void openrelay_test_hook(const char *id) {
   void (*fn)(void);
   if (strcmp(id, "enable_done") != 0 || g_enable_hook == NULL) {
     return;
@@ -55,7 +55,7 @@ void arl_test_hook(const char *id) {
 }
 
 /* ---- estado de caso (estatico: vive hasta los joins) ---- */
-static arl_capture *cap;
+static openrelay_capture *cap;
 static int16_t buf[NS];
 static int g_kind;
 
@@ -77,9 +77,9 @@ static struct note_job g_job;
 static void *job_note(void *p) {
   struct note_job *j = p;
   if (j->kind == KIND_ERROR) {
-    j->rc = arl_capture_note_error(cap, j->gen, j->code);
+    j->rc = openrelay_capture_note_error(cap, j->gen, j->code);
   } else {
-    j->rc = arl_capture_note_disconnect(cap, j->gen);
+    j->rc = openrelay_capture_note_disconnect(cap, j->gen);
   }
   return NULL;
 }
@@ -87,13 +87,13 @@ static void *job_note(void *p) {
 static void enable_note_hook(void) {
   pthread_t t;
 
-  h_tok = arl_fx_enable_token();
+  h_tok = openrelay_fx_enable_token();
   g_hook_fired = 1;
   /* Productor serial dentro de enable: el gate no debe estar abierto. */
-  h_push_rc = arl_capture_push(cap, h_tok, buf, NS);
+  h_push_rc = openrelay_capture_push(cap, h_tok, buf, NS);
   /* Notas con token viejo (0) y desconocido (tok+5): sin mutacion. */
-  h_stale0_rc = arl_capture_note_error(cap, 0u, -42);
-  h_stale_unk_rc = arl_capture_note_disconnect(cap, h_tok + 5u);
+  h_stale0_rc = openrelay_capture_note_error(cap, 0u, -42);
+  h_stale_unk_rc = openrelay_capture_note_disconnect(cap, h_tok + 5u);
   /* Nota con el token vigente desde el hilo de error, con join antes de volver. */
   g_job.kind = g_kind;
   g_job.gen = h_tok;
@@ -108,13 +108,13 @@ static void enable_note_hook(void) {
 }
 
 static int setup(void) {
-  arl_fx_reset();
+  openrelay_fx_reset();
   cap = NULL;
   g_enable_hook = NULL;
   g_hook_fired = 0;
-  arl_fx_set_prepare_format(48000u, 1u, 2u, 240u, 0u);
-  arl_fx_set_effective_format(48000u, 1u, 2u, 240u, 0u);
-  return arl_capture_open(&cap, ARL_CAPTURE_RING_SAMPLES) == ARL_CAPTURE_OK &&
+  openrelay_fx_set_prepare_format(48000u, 1u, 2u, 240u, 0u);
+  openrelay_fx_set_effective_format(48000u, 1u, 2u, 240u, 0u);
+  return openrelay_capture_open(&cap, OPENRELAY_CAPTURE_RING_SAMPLES) == OPENRELAY_CAPTURE_OK &&
          cap != NULL;
 }
 
@@ -128,17 +128,17 @@ static int report(const char *name) {
 }
 
 /* Cierre de limpieza sin aserto de setup: el caso ya puede estar en rojo. */
-static void cleanup(arl_capture_status *st) {
-  arl_capture *own;
+static void cleanup(openrelay_capture_status *st) {
+  openrelay_capture *own;
   if (cap == NULL) {
     return;
   }
-  if (st->state == ARL_CAPTURE_STATE_STARTED) {
-    (void)arl_capture_stop(cap);
+  if (st->state == OPENRELAY_CAPTURE_STATE_STARTED) {
+    (void)openrelay_capture_stop(cap);
   }
-  (void)arl_capture_close(cap);
+  (void)openrelay_capture_close(cap);
   own = cap;
-  CHECK(arl_capture_destroy(&own) == ARL_CAPTURE_OK && own == NULL);
+  CHECK(openrelay_capture_destroy(&own) == OPENRELAY_CAPTURE_OK && own == NULL);
   if (own == NULL) {
     cap = NULL;
   }
@@ -147,8 +147,8 @@ static void cleanup(arl_capture_status *st) {
 /* Casos 1 y 2: nota con token vigente dentro de enable (error / disconnect). */
 static int enable_case(int kind, const char *name, uint32_t want_state,
                        int32_t want_last) {
-  arl_capture_status st;
-  arl_capture_counters ctr;
+  openrelay_capture_status st;
+  openrelay_capture_counters ctr;
   int32_t rc;
   uint32_t n;
   int16_t dst[NS];
@@ -156,21 +156,21 @@ static int enable_case(int kind, const char *name, uint32_t want_state,
   SETUP(setup());
   g_kind = kind;
   g_enable_hook = enable_note_hook;
-  rc = arl_capture_start(cap);
+  rc = openrelay_capture_start(cap);
   SETUP(g_hook_fired == 1);                 /* hook enable_done disparado */
-  SETUP(arl_fx_calls(ARL_FX_ENABLE) == 1u); /* enable real una vez */
+  SETUP(openrelay_fx_calls(OPENRELAY_FX_ENABLE) == 1u); /* enable real una vez */
   printf("ORACLE %s in_enable tok=%llu push=%d stale_err0=%d stale_disc_unk=%d note=%d\n",
          name, (unsigned long long)h_tok, h_push_rc, h_stale0_rc,
          h_stale_unk_rc, h_note_rc);
-  CHECK(h_push_rc == ARL_CAPTURE_ERR_CLOSED);
-  CHECK(h_stale0_rc == ARL_CAPTURE_ERR_CLOSED);
-  CHECK(h_stale_unk_rc == ARL_CAPTURE_ERR_CLOSED);
-  CHECK(h_note_rc == ARL_CAPTURE_OK);
+  CHECK(h_push_rc == OPENRELAY_CAPTURE_ERR_CLOSED);
+  CHECK(h_stale0_rc == OPENRELAY_CAPTURE_ERR_CLOSED);
+  CHECK(h_stale_unk_rc == OPENRELAY_CAPTURE_ERR_CLOSED);
+  CHECK(h_note_rc == OPENRELAY_CAPTURE_OK);
   printf("ORACLE %s start_rc=%d\n", name, rc);
-  CHECK(rc == ARL_CAPTURE_OK);
+  CHECK(rc == OPENRELAY_CAPTURE_OK);
 
   /* Control: aplica el evento publicado durante enable. */
-  SETUP(arl_capture_get_status(cap, &st) == ARL_CAPTURE_OK);
+  SETUP(openrelay_capture_get_status(cap, &st) == OPENRELAY_CAPTURE_OK);
   printf("ORACLE %s status state=%u gen=%llu last_error=%d\n", name, st.state,
          (unsigned long long)st.generation, st.last_error);
   CHECK(st.state == want_state);
@@ -178,12 +178,12 @@ static int enable_case(int kind, const char *name, uint32_t want_state,
   CHECK(st.last_error == want_last);
 
   /* Gate no reabierto por start: push con el token vigente es ERR_CLOSED. */
-  CHECK(arl_capture_push(cap, h_tok, buf, NS) == ARL_CAPTURE_ERR_CLOSED);
+  CHECK(openrelay_capture_push(cap, h_tok, buf, NS) == OPENRELAY_CAPTURE_ERR_CLOSED);
   n = NS;
-  rc = arl_capture_read(cap, dst, &n);
-  CHECK(rc == ARL_CAPTURE_ERR_CLOSED);
+  rc = openrelay_capture_read(cap, dst, &n);
+  CHECK(rc == OPENRELAY_CAPTURE_ERR_CLOSED);
   CHECK(n == 0u);
-  SETUP(arl_capture_get_counters(cap, &ctr) == ARL_CAPTURE_OK);
+  SETUP(openrelay_capture_get_counters(cap, &ctr) == OPENRELAY_CAPTURE_OK);
   printf("ORACLE %s counters written=%llu callbacks=%llu\n", name,
          (unsigned long long)ctr.samples_written,
          (unsigned long long)ctr.callbacks);
@@ -196,29 +196,29 @@ static int enable_case(int kind, const char *name, uint32_t want_state,
 
 /* Caso 3: control positivo tras STARTED, sin hook. */
 static int control_case(void) {
-  arl_capture_status st;
-  arl_capture_counters ctr;
+  openrelay_capture_status st;
+  openrelay_capture_counters ctr;
   int32_t rc;
   uint32_t n;
   int16_t dst[NS];
 
   SETUP(setup());
-  SETUP(arl_capture_start(cap) == ARL_CAPTURE_OK);
-  CHECK(arl_capture_push(cap, 1u, buf, NS) == ARL_CAPTURE_OK);
-  SETUP(arl_capture_get_counters(cap, &ctr) == ARL_CAPTURE_OK);
+  SETUP(openrelay_capture_start(cap) == OPENRELAY_CAPTURE_OK);
+  CHECK(openrelay_capture_push(cap, 1u, buf, NS) == OPENRELAY_CAPTURE_OK);
+  SETUP(openrelay_capture_get_counters(cap, &ctr) == OPENRELAY_CAPTURE_OK);
   CHECK(ctr.samples_written == NS);
   CHECK(ctr.callbacks == 1u);
-  CHECK(arl_capture_note_error(cap, 1u, -7) == ARL_CAPTURE_OK);
-  SETUP(arl_capture_get_status(cap, &st) == ARL_CAPTURE_OK);
+  CHECK(openrelay_capture_note_error(cap, 1u, -7) == OPENRELAY_CAPTURE_OK);
+  SETUP(openrelay_capture_get_status(cap, &st) == OPENRELAY_CAPTURE_OK);
   printf("ORACLE control status state=%u gen=%llu last_error=%d\n", st.state,
          (unsigned long long)st.generation, st.last_error);
-  CHECK(st.state == ARL_CAPTURE_STATE_ERROR);
+  CHECK(st.state == OPENRELAY_CAPTURE_STATE_ERROR);
   CHECK(st.generation == 2u);
   CHECK(st.last_error == -7);
-  CHECK(arl_capture_push(cap, 1u, buf, NS) == ARL_CAPTURE_ERR_CLOSED);
+  CHECK(openrelay_capture_push(cap, 1u, buf, NS) == OPENRELAY_CAPTURE_ERR_CLOSED);
   n = NS;
-  rc = arl_capture_read(cap, dst, &n);
-  CHECK(rc == ARL_CAPTURE_ERR_CLOSED);
+  rc = openrelay_capture_read(cap, dst, &n);
+  CHECK(rc == OPENRELAY_CAPTURE_ERR_CLOSED);
   CHECK(n == 0u);
   cleanup(&st);
   return report("control_started_note_close_destroy");
@@ -230,11 +230,11 @@ int main(int argc, char **argv) {
     return 2;
   }
   if (strcmp(argv[1], "enable_error") == 0) {
-    return enable_case(KIND_ERROR, "enable_error", ARL_CAPTURE_STATE_ERROR, -42);
+    return enable_case(KIND_ERROR, "enable_error", OPENRELAY_CAPTURE_STATE_ERROR, -42);
   }
   if (strcmp(argv[1], "enable_disconnect") == 0) {
     return enable_case(KIND_DISCONNECT, "enable_disconnect",
-                       ARL_CAPTURE_STATE_DISCONNECTED, ARL_CAPTURE_ERR_CLOSED);
+                       OPENRELAY_CAPTURE_STATE_DISCONNECTED, OPENRELAY_CAPTURE_ERR_CLOSED);
   }
   if (strcmp(argv[1], "control_positive") == 0) {
     return control_case();

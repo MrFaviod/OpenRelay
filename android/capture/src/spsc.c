@@ -1,6 +1,6 @@
 /* src/spsc.c — real shared T13a SPSC capture core (C11).
  *
- * Fixed capacity ARL_CAPTURE_RING_SAMPLES (960) mono int16 samples, one
+ * Fixed capacity OPENRELAY_CAPTURE_RING_SAMPLES (960) mono int16 samples, one
  * producer and one consumer. create/destroy are the only allocating
  * operations; push/read/drain/free never allocate, free, lock, log or do IO.
  *
@@ -32,10 +32,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define SPSC_CAP ARL_CAPTURE_RING_SAMPLES
-#define SPSC_MAX_READ ARL_CAPTURE_FRAME_SAMPLES
+#define SPSC_CAP OPENRELAY_CAPTURE_RING_SAMPLES
+#define SPSC_MAX_READ OPENRELAY_CAPTURE_FRAME_SAMPLES
 
-struct arl_spsc {
+struct openrelay_spsc {
     _Atomic uint32_t head; /* producer-owned publish cursor */
     _Atomic uint32_t tail; /* consumer-owned consume cursor */
     uint32_t widx;         /* producer-owned physical write slot, 0..CAP-1 */
@@ -56,57 +56,57 @@ static uint32_t spsc_advance(uint32_t idx, uint32_t take) {
     return idx;
 }
 
-int32_t arl_spsc_create(arl_spsc **out) {
-    arl_spsc *r;
+int32_t openrelay_spsc_create(openrelay_spsc **out) {
+    openrelay_spsc *r;
 
     if (out == NULL) {
-        return ARL_CAPTURE_ERR_NO_OUTPUT;
+        return OPENRELAY_CAPTURE_ERR_NO_OUTPUT;
     }
     *out = NULL;
-    r = (arl_spsc *)malloc(sizeof(*r));
+    r = (openrelay_spsc *)malloc(sizeof(*r));
     if (r == NULL) {
-        return ARL_CAPTURE_ERR_STATE;
+        return OPENRELAY_CAPTURE_ERR_STATE;
     }
     atomic_init(&r->head, 0u);
     atomic_init(&r->tail, 0u);
     r->widx = 0u;
     r->ridx = 0u;
     *out = r;
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }
 
-int32_t arl_spsc_destroy(arl_spsc **owner) {
-    arl_spsc *r;
+int32_t openrelay_spsc_destroy(openrelay_spsc **owner) {
+    openrelay_spsc *r;
 
     if (owner == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
     r = *owner;
     if (r == NULL) {
-        return ARL_CAPTURE_OK;
+        return OPENRELAY_CAPTURE_OK;
     }
     *owner = NULL;
     free(r);
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }
 
-int32_t arl_spsc_push(arl_spsc *ring, const int16_t *samples, uint32_t n,
-                      arl_spsc_push_result *out) {
+int32_t openrelay_spsc_push(openrelay_spsc *ring, const int16_t *samples, uint32_t n,
+                      openrelay_spsc_push_result *out) {
     uint32_t head, tail, occ, free_n, take, first, idx;
 
     if (out == NULL) {
-        return ARL_CAPTURE_ERR_NO_OUTPUT;
+        return OPENRELAY_CAPTURE_ERR_NO_OUTPUT;
     }
     out->written = 0u;
     out->dropped = 0u;
     if (ring == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
     if (n == 0u) {
-        return ARL_CAPTURE_OK; /* samples may be null here */
+        return OPENRELAY_CAPTURE_OK; /* samples may be null here */
     }
     if (samples == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
 
     head = atomic_load_explicit(&ring->head, memory_order_relaxed);
@@ -134,27 +134,27 @@ int32_t arl_spsc_push(arl_spsc *ring, const int16_t *samples, uint32_t n,
 
     out->written = take;
     out->dropped = n - take;
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }
 
-int32_t arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope, uint32_t *read) {
+int32_t openrelay_spsc_read(openrelay_spsc *ring, int16_t *dst, uint32_t tope, uint32_t *read) {
     uint32_t head, tail, avail, take, first, idx;
 
     if (read == NULL) {
-        return ARL_CAPTURE_ERR_NO_OUTPUT;
+        return OPENRELAY_CAPTURE_ERR_NO_OUTPUT;
     }
     *read = 0u;
     if (ring == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
     if (tope > SPSC_MAX_READ) {
-        return ARL_CAPTURE_ERR_ARGS; /* tope 0 is allowed, dst may be null */
+        return OPENRELAY_CAPTURE_ERR_ARGS; /* tope 0 is allowed, dst may be null */
     }
     if (tope == 0u) {
-        return ARL_CAPTURE_OK;
+        return OPENRELAY_CAPTURE_OK;
     }
     if (dst == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
 
     tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
@@ -180,18 +180,18 @@ int32_t arl_spsc_read(arl_spsc *ring, int16_t *dst, uint32_t tope, uint32_t *rea
     }
 
     *read = take;
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }
 
-int32_t arl_spsc_drain(arl_spsc *ring, uint32_t tope, uint32_t *dropped) {
+int32_t openrelay_spsc_drain(openrelay_spsc *ring, uint32_t tope, uint32_t *dropped) {
     uint32_t head, tail, avail, take;
 
     if (dropped == NULL) {
-        return ARL_CAPTURE_ERR_NO_OUTPUT;
+        return OPENRELAY_CAPTURE_ERR_NO_OUTPUT;
     }
     *dropped = 0u;
     if (ring == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
 
     tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
@@ -204,23 +204,23 @@ int32_t arl_spsc_drain(arl_spsc *ring, uint32_t tope, uint32_t *dropped) {
         atomic_store_explicit(&ring->tail, tail + take, memory_order_release);
     }
     *dropped = take;
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }
 
-int32_t arl_spsc_free(const arl_spsc *ring, uint32_t *out) {
+int32_t openrelay_spsc_free(const openrelay_spsc *ring, uint32_t *out) {
     uint32_t head, tail, occ;
 
     if (out == NULL) {
-        return ARL_CAPTURE_ERR_NO_OUTPUT;
+        return OPENRELAY_CAPTURE_ERR_NO_OUTPUT;
     }
     *out = 0u;
     if (ring == NULL) {
-        return ARL_CAPTURE_ERR_NULL;
+        return OPENRELAY_CAPTURE_ERR_NULL;
     }
     /* Bounded observational read, not a transactional snapshot. */
     head = atomic_load_explicit(&ring->head, memory_order_acquire);
     tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
     occ = spsc_occ(head, tail);
     *out = (occ >= SPSC_CAP) ? 0u : (SPSC_CAP - occ);
-    return ARL_CAPTURE_OK;
+    return OPENRELAY_CAPTURE_OK;
 }

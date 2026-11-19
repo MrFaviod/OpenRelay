@@ -15,8 +15,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Instant;
 
-use arl_proto::wire::ControlMessage;
 use bytes::BytesMut;
+use openrelay_proto::wire::ControlMessage;
 use quinn_proto::crypto::rustls::QuicClientConfig;
 use quinn_proto::{
     ClientConfig as QuinnClientConfig, Connection, ConnectionError, ConnectionHandle,
@@ -57,7 +57,7 @@ impl TestCa {
         let mut params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
         params
             .distinguished_name
-            .push(DnType::CommonName, "arl-test-ca-t10a");
+            .push(DnType::CommonName, "openrelay-test-ca-t10a");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -357,8 +357,8 @@ fn inject_raw_prefix(conn: &mut Connection, prefix: &[u8]) {
 #[test]
 fn quinn_regressions_zero_prefix_closes_0x104_and_drops_residuals() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10a", true);
-    let client_leaf = ca.leaf("arl-client-t10a", false);
+    let server_leaf = ca.leaf("openrelay-server-t10a", true);
+    let client_leaf = ca.leaf("openrelay-client-t10a", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut client = SessionClient::connect(
         client_leaf.certified(&ca),
@@ -431,8 +431,8 @@ fn quinn_regressions_zero_prefix_closes_0x104_and_drops_residuals() {
 #[test]
 fn quinn_regressions_over_limit_prefix_closes_0x104_and_drops_residuals() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10a-2", true);
-    let client_leaf = ca.leaf("arl-client-t10a-2", false);
+    let server_leaf = ca.leaf("openrelay-server-t10a-2", true);
+    let client_leaf = ca.leaf("openrelay-client-t10a-2", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -476,8 +476,8 @@ fn quinn_regressions_over_limit_prefix_closes_0x104_and_drops_residuals() {
 #[test]
 fn quinn_regressions_peer_observes_application_close_0x104() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10a-3", true);
-    let client_leaf = ca.leaf("arl-client-t10a-3", false);
+    let server_leaf = ca.leaf("openrelay-server-t10a-3", true);
+    let client_leaf = ca.leaf("openrelay-client-t10a-3", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -505,8 +505,8 @@ fn quinn_regressions_peer_observes_application_close_0x104() {
 #[test]
 fn quinn_regressions_valid_control_frame_is_still_delivered() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10a-4", true);
-    let client_leaf = ca.leaf("arl-client-t10a-4", false);
+    let server_leaf = ca.leaf("openrelay-server-t10a-4", true);
+    let client_leaf = ca.leaf("openrelay-client-t10a-4", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut client = SessionClient::connect(
         client_leaf.certified(&ca),

@@ -1,7 +1,7 @@
-//! Códec Opus en modo *restricted low delay* para arl.
+//! Códec Opus en modo *restricted low delay* para openrelay.
 //!
 //! Este crate envuelve `libopus` (vía el crate seguro `opus`) y expone una API
-//! mínima para el perfil de audio de arl: PCM16 mono a 48 kHz y tramas de
+//! mínima para el perfil de audio de openrelay: PCM16 mono a 48 kHz y tramas de
 //! 2.5, 5 o 10 ms. El códec es **opcional**: el camino PCM16 fijo sigue siendo
 //! el contrato por defecto y este crate no lo modifica.
 //!
@@ -24,7 +24,7 @@
 //! # Ejemplo
 //!
 //! ```
-//! use arl_codec::{CodecProfile, OpusDecoder, OpusEncoder};
+//! use openrelay_codec::{CodecProfile, OpusDecoder, OpusEncoder};
 //!
 //! let profile = CodecProfile::LowDelay5Ms;
 //! let mut encoder = OpusEncoder::new(profile, 64_000).expect("encoder");
@@ -44,9 +44,9 @@
 
 use core::fmt;
 
-/// Frecuencia de muestreo del perfil de arl (Hz).
+/// Frecuencia de muestreo del perfil de openrelay (Hz).
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
-/// Canales del perfil de arl (mono).
+/// Canales del perfil de openrelay (mono).
 pub const CHANNELS: u16 = 1;
 /// Bitrate mínimo aceptado por los perfiles (bits/s).
 pub const MIN_BITRATE_BPS: u32 = 64_000;
@@ -54,7 +54,7 @@ pub const MIN_BITRATE_BPS: u32 = 64_000;
 pub const MAX_BITRATE_BPS: u32 = 96_000;
 /// Tamaño máximo de un datagrama del transporte (bytes).
 pub const MAX_DATAGRAM_LEN: usize = 1_200;
-/// Cabecera del frame v1 de `arl-audio-core` (bytes).
+/// Cabecera del frame v1 de `openrelay-audio-core` (bytes).
 pub const FRAME_HEADER_LEN: usize = 28;
 /// Presupuesto máximo del paquete Opus dentro del datagrama (bytes).
 pub const MAX_PACKET_LEN: usize = MAX_DATAGRAM_LEN - FRAME_HEADER_LEN;

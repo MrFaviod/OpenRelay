@@ -1,5 +1,5 @@
 //! Socket Unix de control: servidor (un hilo, una línea JSON por petición) y
-//! cliente mínimo para las órdenes de `arl`.
+//! cliente mínimo para las órdenes de `openrelay`.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -8,7 +8,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::time::Duration;
 
-use arl_proto::control::ErrorCode;
+use openrelay_proto::control::ErrorCode;
 use serde_json::{json, Value};
 
 /// Tamaño máximo de una línea de petición.
@@ -79,13 +79,13 @@ where
         match listener.accept() {
             Ok((stream, _)) => {
                 if let Err(error) = handle_conn(stream, handler) {
-                    eprintln!("arl: conexión: {error}");
+                    eprintln!("openrelay: conexión: {error}");
                 }
             }
             Err(error) if is_wait(&error) => {
                 let _ = handler(Interleave::Idle);
             }
-            Err(error) => eprintln!("arl: accept: {error}"),
+            Err(error) => eprintln!("openrelay: accept: {error}"),
         }
     }
 }

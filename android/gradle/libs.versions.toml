@@ -1,5 +1,5 @@
 # Catálogo de versiones: todas las versiones son exactas y estables.
-# Toolchain congelada en T12 (ver docs/plan/execution-f2-f3.md):
+# Toolchain fijada para compilar la app y el puente nativo:
 #   AGP 8.7.3 / Kotlin 2.0.21 / Compose 2.0.21 / Gradle 8.10.2 / JDK 17
 #   compile+target 35 / min 28 / build-tools 35.0.0 / NDK 27.2.12479018 / CMake 3.22.1
 [versions]

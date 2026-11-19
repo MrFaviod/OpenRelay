@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:arl:contract:capabilities-v1",
-  "title": "arl capabilities v1",
-  "description": "Capacidades y limites declarados por un extremo arl v1. No autoriza operaciones por si mismo: la ACL del daemon decide. remote_actions solo admite config.read/config.write; iniciar el microfono o pedir permisos son acciones locales del dispositivo y no existen como mensaje remoto.",
+  "$id": "urn:openrelay:contract:capabilities-v1",
+  "title": "openrelay capabilities v1",
+  "description": "Capacidades y limites declarados por un extremo openrelay v1. No autoriza operaciones por si mismo: la ACL del daemon decide. remote_actions solo admite config.read/config.write; iniciar el microfono o pedir permisos son acciones locales del dispositivo y no existen como mensaje remoto.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "arl.capabilities/v1"
+      "const": "openrelay.capabilities/v1"
     },
     "device_id": {
       "type": "string",

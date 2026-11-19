@@ -3,7 +3,7 @@
 //!
 //! Requiere un daemon PipeWire privado en ejecución (PIPEWIRE_REMOTE,
 //! XDG_RUNTIME_DIR), por eso es `#[ignore]`:
-//! `cargo test -p arl-daemon --test vertical_loopback -- --ignored`.
+//! `cargo test -p openrelay-daemon --test vertical_loopback -- --ignored`.
 
 #[path = "common/mod.rs"]
 mod common;
@@ -13,13 +13,13 @@ use std::sync::Once;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arl_audio_core::{AudioFrame, Flags, Samples, SAMPLE_COUNT};
-use arl_audio_linux::{PipeWireSource, SampleProducer};
-use arl_daemon::{fnv1a_extend, serve, ServeStats, FNV_OFFSET};
-use arl_transport::quinn::{
+use common::{roots, TestCa, TestLeaf};
+use openrelay_audio_core::{AudioFrame, Flags, Samples, SAMPLE_COUNT};
+use openrelay_audio_linux::{PipeWireSource, SampleProducer};
+use openrelay_daemon::{fnv1a_extend, serve, ServeStats, FNV_OFFSET};
+use openrelay_transport::quinn::{
     Acl, Capabilities, ClientEvent, SessionClient, SessionLimits, SessionServer,
 };
-use common::{roots, TestCa, TestLeaf};
 
 const FRAMES: u32 = 100;
 const PACE: Duration = Duration::from_millis(5);
@@ -131,12 +131,12 @@ fn scenario(
 #[test]
 #[ignore = "requiere PipeWire privado: PIPEWIRE_REMOTE y XDG_RUNTIME_DIR"]
 fn vertical_loopback() {
-    INIT.call_once(arl_audio_linux::init);
+    INIT.call_once(openrelay_audio_linux::init);
     let mut source = PipeWireSource::open(RING_SAMPLES).expect("PipeWire privado");
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-server", true, false);
-    let allowed_leaf = ca.leaf("arl-daemon-client-ok", false, false);
-    let rogue_leaf = ca.leaf("arl-daemon-client-rogue", false, false);
+    let server_leaf = ca.leaf("openrelay-daemon-server", true, false);
+    let allowed_leaf = ca.leaf("openrelay-daemon-client-ok", false, false);
+    let rogue_leaf = ca.leaf("openrelay-daemon-client-rogue", false, false);
 
     // 1) Cliente autorizado por ACL: todos los frames llegan al producer.
     let (stats, sent, authorized) =

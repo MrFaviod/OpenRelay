@@ -1,4 +1,4 @@
-/* arl capture ABI v1 — BASELINE T13a para implementar y probar (ajuste padre). No es ejecución.
+/* openrelay capture ABI v1 — BASELINE T13a para implementar y probar (ajuste padre). No es ejecución.
  * Declaraciones únicamente. Sin implementación, sin Oboe, sin JNI.
  * Autocontenido: C99, anchos fijos, sin cabeceras del producto.
  *
@@ -8,7 +8,7 @@
  * hueco del anillo, no por un máximo inventado del callback.
  *
  * Vida: close deja el objeto vivo. destroy es la única llamada que
- * libera, y sólo con precondiciones válidas. Recibe arl_capture ** y,
+ * libera, y sólo con precondiciones válidas. Recibe openrelay_capture ** y,
  * al volver OK, escribe *owner = null. No hay tabla de handles: un
  * alias previo queda inválido y no se inspecciona. La generación
  * descarta audio viejo; no decide si un puntero sigue vivo.
@@ -17,87 +17,87 @@
  * Un worker de control posee open/start/stop/close/destroy. El callback
  * no llama a JNI, red, alloc, free, locks, log, IO, stop, close ni destroy.
  */
-#ifndef ARL_CAPTURE_ABI_H
-#define ARL_CAPTURE_ABI_H
+#ifndef OPENRELAY_CAPTURE_ABI_H
+#define OPENRELAY_CAPTURE_ABI_H
 
 #include <stddef.h>
 #include <stdint.h>
 
-#define ARL_CAPTURE_ABI_MAJOR 1u
-#define ARL_CAPTURE_ABI_MINOR 3u
+#define OPENRELAY_CAPTURE_ABI_MAJOR 1u
+#define OPENRELAY_CAPTURE_ABI_MINOR 3u
 
-#define ARL_CAPTURE_SAMPLE_RATE_HZ 48000u
-#define ARL_CAPTURE_CHANNELS 1u
-#define ARL_CAPTURE_FRAME_SAMPLES 240u
-#define ARL_CAPTURE_FRAME_US 5000u
-#define ARL_CAPTURE_BYTES_PER_SAMPLE 2u
-#define ARL_CAPTURE_FRAME_BYTES 480u
+#define OPENRELAY_CAPTURE_SAMPLE_RATE_HZ 48000u
+#define OPENRELAY_CAPTURE_CHANNELS 1u
+#define OPENRELAY_CAPTURE_FRAME_SAMPLES 240u
+#define OPENRELAY_CAPTURE_FRAME_US 5000u
+#define OPENRELAY_CAPTURE_BYTES_PER_SAMPLE 2u
+#define OPENRELAY_CAPTURE_FRAME_BYTES 480u
 
 /* Capacidad fija en muestras, no en frames. 20 ms = 4 frames de cable.
  * Propuesta de este corte: el contrato de PCM no fija este número. */
-#define ARL_CAPTURE_RING_SAMPLES 960u
+#define OPENRELAY_CAPTURE_RING_SAMPLES 960u
 
-#define ARL_CAPTURE_OK 0
-#define ARL_CAPTURE_ERR_NULL (-1)
-#define ARL_CAPTURE_ERR_STATE (-2)
-#define ARL_CAPTURE_ERR_ARGS (-3)
-#define ARL_CAPTURE_ERR_FORMAT (-4)
-#define ARL_CAPTURE_ERR_BUSY (-5)
-#define ARL_CAPTURE_ERR_CLOSED (-6)
+#define OPENRELAY_CAPTURE_OK 0
+#define OPENRELAY_CAPTURE_ERR_NULL (-1)
+#define OPENRELAY_CAPTURE_ERR_STATE (-2)
+#define OPENRELAY_CAPTURE_ERR_ARGS (-3)
+#define OPENRELAY_CAPTURE_ERR_FORMAT (-4)
+#define OPENRELAY_CAPTURE_ERR_BUSY (-5)
+#define OPENRELAY_CAPTURE_ERR_CLOSED (-6)
 /* El llamador pasó un destino null donde la llamada escribe un conteo. */
-#define ARL_CAPTURE_ERR_NO_OUTPUT (-7)
+#define OPENRELAY_CAPTURE_ERR_NO_OUTPUT (-7)
 
-#define ARL_CAPTURE_STATE_CLOSED 0u
-#define ARL_CAPTURE_STATE_OPEN 1u
-#define ARL_CAPTURE_STATE_STARTING 2u
-#define ARL_CAPTURE_STATE_STARTED 3u
-#define ARL_CAPTURE_STATE_STOPPING 4u
-#define ARL_CAPTURE_STATE_STOPPED 5u
-#define ARL_CAPTURE_STATE_ERROR 6u
-#define ARL_CAPTURE_STATE_DISCONNECTED 7u
+#define OPENRELAY_CAPTURE_STATE_CLOSED 0u
+#define OPENRELAY_CAPTURE_STATE_OPEN 1u
+#define OPENRELAY_CAPTURE_STATE_STARTING 2u
+#define OPENRELAY_CAPTURE_STATE_STARTED 3u
+#define OPENRELAY_CAPTURE_STATE_STOPPING 4u
+#define OPENRELAY_CAPTURE_STATE_STOPPED 5u
+#define OPENRELAY_CAPTURE_STATE_ERROR 6u
+#define OPENRELAY_CAPTURE_STATE_DISCONNECTED 7u
 
 /* 0 en todo campo que el contrato no usa. Un valor distinto es ERR_ARGS. */
-typedef struct arl_capture_format {
+typedef struct openrelay_capture_format {
   uint32_t sample_rate_hz;
   uint16_t channels;
   uint16_t bytes_per_sample;
   uint16_t frame_samples;
   uint16_t reserved0;
-} arl_capture_format;
+} openrelay_capture_format;
 
 /* Seis contadores. Cada lectura copia los seis. Esa copia NO es
  * simultánea: dos campos pueden corresponder a instantes distintos y
  * no se relacionan con state ni con generation. */
-typedef struct arl_capture_counters {
+typedef struct openrelay_capture_counters {
   uint64_t samples_written;
   uint64_t samples_read;
   uint64_t samples_dropped;
   uint64_t underrun_samples;
   uint64_t callbacks;
   uint64_t generation;
-} arl_capture_counters;
+} openrelay_capture_counters;
 
-typedef struct arl_capture_status {
+typedef struct openrelay_capture_status {
   uint64_t generation;
   uint32_t state;
   int32_t last_error;
-  arl_capture_format requested;
-  arl_capture_format effective;
-} arl_capture_status;
+  openrelay_capture_format requested;
+  openrelay_capture_format effective;
+} openrelay_capture_status;
 
-/* Opaco. El dueño guarda arl_capture * y lo pasa como arl_capture **
+/* Opaco. El dueño guarda openrelay_capture * y lo pasa como openrelay_capture **
  * a destroy. Tras OK, ese puntero es null. */
-typedef struct arl_capture arl_capture;
+typedef struct openrelay_capture openrelay_capture;
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 /* Worker de control. Crea el objeto en OPEN y reserva cap_samples.
- * v1 acepta sólo ARL_CAPTURE_RING_SAMPLES; otro valor es ERR_ARGS y
+ * v1 acepta sólo OPENRELAY_CAPTURE_RING_SAMPLES; otro valor es ERR_ARGS y
  * *out queda null. out null es ERR_NULL y *out no se escribe.
  * No consulta RECORD_AUDIO: el permiso es de T13b. */
-int32_t arl_capture_open(arl_capture **out, uint32_t cap_samples);
+int32_t openrelay_capture_open(openrelay_capture **out, uint32_t cap_samples);
 
 /* Worker de control. Tabla normativa en acceptance.json/lifecycle.
  * start admite OPEN o STOPPED; STARTED de nuevo devuelve OK sin mutar.
@@ -109,14 +109,14 @@ int32_t arl_capture_open(arl_capture **out, uint32_t cap_samples);
  * start prepara una generación nueva antes de habilitar callbacks;
  * stop invalida esa generación y retira/espera accesos antes de STOPPED.
  * El host sólo puede simular el adapter, no observa permiso ni hardware. */
-int32_t arl_capture_start(arl_capture *cap);
-int32_t arl_capture_stop(arl_capture *cap);
+int32_t openrelay_capture_start(openrelay_capture *cap);
+int32_t openrelay_capture_stop(openrelay_capture *cap);
 
 /* Cierra el stream y deja el objeto vivo, en CLOSED, con la misma
  * generación. Origen: OPEN, STOPPED, ERROR o DISCONNECTED. Idempotente si
  * ya está CLOSED. ERR_STATE en otro origen. No libera. read y drain
  * siguen siendo válidos en CLOSED. */
-int32_t arl_capture_close(arl_capture *cap);
+int32_t openrelay_capture_close(openrelay_capture *cap);
 
 /* Única llamada que libera. owner null o *owner null es ERR_NULL y
  * no escribe nada.
@@ -132,7 +132,7 @@ int32_t arl_capture_close(arl_capture *cap);
  * Un alias copiado antes queda inválido. No se inspecciona y no hay
  * código de retorno para él: no existe tabla de handles.
  * La generación no se consulta. No decide la vida del objeto. */
-int32_t arl_capture_destroy(arl_capture **owner);
+int32_t openrelay_capture_destroy(openrelay_capture **owner);
 
 /* Consumidor, fuera de RT. *n es tope y resultado.
  * Copia min(*n, disponibles, muestras contiguas) y escribe esa cantidad
@@ -142,14 +142,14 @@ int32_t arl_capture_destroy(arl_capture **owner);
  * y devuelve OK. dst null con entrada positiva es ERR_NULL sin consumo.
  * cap null es ERR_NULL. OPEN/STARTED/STOPPED/CLOSED permiten read;
  * STARTING/STOPPING devuelven ERR_BUSY; ERROR/DISCONNECTED ERR_CLOSED. */
-int32_t arl_capture_read(arl_capture *cap, int16_t *dst, uint32_t *n);
+int32_t openrelay_capture_read(openrelay_capture *cap, int16_t *dst, uint32_t *n);
 
 /* Consumidor, fuera de RT. Descarta min(*dropped, disponibles) y
  * escribe cuántas descartó. No bloquea. No se llama desde el callback.
  * dropped null es ERR_NO_OUTPUT y no descarta. cap null es ERR_NULL.
  * Si dropped existe, en cualquier error *dropped=0. Mismos estados que read.
  * Sólo el consumidor modifica su cursor; stop/close no drenan desde control. */
-int32_t arl_capture_drain(arl_capture *cap, uint32_t *dropped);
+int32_t openrelay_capture_drain(openrelay_capture *cap, uint32_t *dropped);
 
 /* Sólo el worker de control, en serie con start/stop/close/destroy.
  * Copia state, generation, last_error, requested y effective de un
@@ -157,12 +157,12 @@ int32_t arl_capture_drain(arl_capture *cap, uint32_t *dropped);
  * ERR_NO_OUTPUT; cap null es ERR_NULL. En error no escribe el struct.
  * note_error/disconnect sólo publican un evento acotado; el control lo
  * aplica antes del snapshot. El hilo de error no muta este estado compuesto. */
-int32_t arl_capture_get_status(const arl_capture *cap, arl_capture_status *out);
+int32_t openrelay_capture_get_status(const openrelay_capture *cap, openrelay_capture_status *out);
 
 /* Copia los seis contadores. Los seis NO son simultáneos entre sí ni
  * con el status. out null es ERR_NO_OUTPUT. cap null es ERR_NULL. */
-int32_t arl_capture_get_counters(const arl_capture *cap,
-                                 arl_capture_counters *out);
+int32_t openrelay_capture_get_counters(const openrelay_capture *cap,
+                                 openrelay_capture_counters *out);
 
 /* Productor RT. Copia min(n, hueco) muestras y suma el resto a
  * samples_dropped. No rechaza n grande: un callback de 1024 con hueco
@@ -173,7 +173,7 @@ int32_t arl_capture_get_counters(const arl_capture *cap,
  * cap null -> ERR_NULL. n=0 y samples null es válido sin copia.
  * Eso sólo vale mientras el objeto sigue vivo. El caller garantiza n
  * muestras legibles cuando n>0: esta ABI no valida punteros arbitrarios. */
-int32_t arl_capture_push(arl_capture *cap, uint64_t generation,
+int32_t openrelay_capture_push(openrelay_capture *cap, uint64_t generation,
                          const int16_t *samples, uint32_t n);
 
 /* Hilo de error, nunca el callback de datos. Publica ERROR o
@@ -181,11 +181,11 @@ int32_t arl_capture_push(arl_capture *cap, uint64_t generation,
  * retira callbacks: quien cierra depende del camino (ver result.md). */
 /* Token del stream que originó el evento. Evento viejo -> ERR_CLOSED sin
  * mutar la sesión actual. Publicación acotada, sin alloc ni locks RT. */
-int32_t arl_capture_note_error(arl_capture *cap, uint64_t generation, int32_t code);
-int32_t arl_capture_note_disconnect(arl_capture *cap, uint64_t generation);
+int32_t openrelay_capture_note_error(openrelay_capture *cap, uint64_t generation, int32_t code);
+int32_t openrelay_capture_note_disconnect(openrelay_capture *cap, uint64_t generation);
 
 #if defined(__cplusplus)
 }
 #endif
 
-#endif /* ARL_CAPTURE_ABI_H */
+#endif /* OPENRELAY_CAPTURE_ABI_H */

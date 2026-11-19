@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{
     Acl, Capabilities, RejectReason, ServerEvent, SessionClient, SessionLimits, SessionServer,
 };
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JShortArray, JValue, JValueOwned};
@@ -153,7 +153,7 @@ fn raw_point(spki: &[u8]) -> Result<Vec<u8>, String> {
 
 fn ca_params() -> CertificateParams {
     let mut p = CertificateParams::new(Vec::<String>::new()).expect("params CA");
-    p.distinguished_name.push(DnType::CommonName, "arl-test-ca");
+    p.distinguished_name.push(DnType::CommonName, "openrelay-test-ca");
     p.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     p.key_usages = vec![
         KeyUsagePurpose::KeyCertSign,
@@ -246,7 +246,7 @@ fn run(env: &mut JNIEnv, signer: JObject) -> Result<String, String> {
         raw_point: raw_point(&spki)?,
     }))
     .map_err(text)?;
-    let client_leaf = leaf_params("arl-android-keystore", false)
+    let client_leaf = leaf_params("openrelay-android-keystore", false)
         .signed_by(&client_kp, &ca, &ca_kp)
         .map_err(text)?;
     let client_der = client_leaf.der().clone();
@@ -264,7 +264,7 @@ fn run(env: &mut JNIEnv, signer: JObject) -> Result<String, String> {
 
     // Servidor: clave software, pin del cliente sólo en la ACL.
     let server_kp = KeyPair::generate().map_err(text)?;
-    let server_cert = leaf_params("arl-daemon", true)
+    let server_cert = leaf_params("openrelay-daemon", true)
         .signed_by(&server_kp, &ca, &ca_kp)
         .map_err(text)?;
     let server_sk = any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
@@ -491,7 +491,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_KeystoreHandshakeTest_nativeHandshake(
+    pub extern "system" fn Java_dev_openrelay_app_KeystoreHandshakeTest_nativeHandshake(
         mut env: JNIEnv,
         _class: JClass,
         signer: JObject,
@@ -504,7 +504,7 @@ mod exports {
     /// Devuelve el handle (>0) o lanza con el texto del error vía el valor negativo codificado en el long alto: 0 y el mensaje por `lastError`.
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeOpen(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeOpen(
         mut env: JNIEnv,
         _class: JClass,
         signer: JObject,
@@ -548,7 +548,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeHello(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeHello(
         _env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -558,7 +558,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeConfigGet(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeConfigGet(
         mut env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -586,7 +586,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeConfigSetGain(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeConfigSetGain(
         mut env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -612,7 +612,7 @@ mod exports {
     /// 2,5 ms, `3` Opus 10 ms. `0` = aplicado.
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSetCodec(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeSetCodec(
         _env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -625,7 +625,7 @@ mod exports {
     /// o las del perfil Opus. `0` = enviado.
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSendAudio(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeSendAudio(
         env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -645,7 +645,7 @@ mod exports {
     /// Apagado por defecto: sin esta llamada la feature no viaja.
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSetReturnAudio(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeSetReturnAudio(
         _env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -663,7 +663,7 @@ mod exports {
     /// un frame.
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeReadReturn(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeReadReturn(
         env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -676,7 +676,7 @@ mod exports {
                 return -1;
             }
         };
-        if len < arl_audio_core::SAMPLE_COUNT {
+        if len < openrelay_audio_core::SAMPLE_COUNT {
             remember_error("dst de retorno más corto que un frame".into());
             return -1;
         }
@@ -700,7 +700,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativePoll(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativePoll(
         mut env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -718,7 +718,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeWaitAuthorized(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeWaitAuthorized(
         _env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -728,7 +728,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeWaitControl(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeWaitControl(
         mut env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -747,7 +747,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeClose(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeClose(
         _env: JNIEnv,
         _class: JClass,
         handle: jlong,
@@ -768,7 +768,7 @@ mod exports {
 
     #[allow(unsafe_code)]
     #[no_mangle]
-    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeLastError(
+    pub extern "system" fn Java_dev_openrelay_app_SessionClient_nativeLastError(
         mut env: JNIEnv,
         _class: JClass,
     ) -> jstring {

@@ -14,7 +14,7 @@
 
 ## 2. Flujo de enrolamiento
 
-1. **Apertura local.** El usuario ejecuta `arl pair open --ttl 120` en una TTY. El daemon crea una ventana de enrolamiento aislada con:
+1. **Apertura local.** El usuario ejecuta `openrelay pair open --ttl 120` en una TTY. El daemon crea una ventana de enrolamiento aislada con:
    - certificado de servidor efímero `S_e` y su pin SPKI;
    - token aleatorio de un solo uso (256 bits, codificado en el QR);
    - caducidad estricta (propuesta 120 s, máximo configurable acotado);
@@ -36,7 +36,7 @@
    `verify_peer(true)` por sí solo **no** acredita un cliente: la comprobación de `peer_cert == None` es obligatoria en el camino mTLS.
 3. El servidor responde con versión de protocolo, límites y snapshot de configuración (revisión incluida).
 4. Sólo entonces se abre la sesión de audio. El primer frame lleva `epoch` nuevo y `flags` de discontinuidad; el receptor descarta cualquier audio anterior a la autorización.
-5. La sesión termina por parada local Android, `arl session stop`, revocación o pérdida de conexión. Al terminar, el nodo de audio deja de producir y se invalidan los tickets de esa sesión.
+5. La sesión termina por parada local Android, `openrelay session stop`, revocación o pérdida de conexión. Al terminar, el nodo de audio deja de producir y se invalidan los tickets de esa sesión.
 
 ## 4. Rechazos obligatorios
 

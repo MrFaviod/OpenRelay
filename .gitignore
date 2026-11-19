@@ -21,7 +21,7 @@
 *.tmp
 .scratch/
 /tmp/
-/artifacts/tmp/
+/artifacts/
 
 # Release local (T26): artefactos pesados fuera de git; el manifiesto sí se versiona
 /dist/
@@ -50,5 +50,5 @@ __pycache__/
 *.keystore
 
 # Estado local del daemon / configuración de usuario
-/.arl/
+/.openrelay/
 config.toml

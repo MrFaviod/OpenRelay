@@ -18,7 +18,7 @@
 
 use super::*;
 use crate::quinn::{SessionId, SessionServer};
-use arl_proto::wire;
+use openrelay_proto::wire;
 use quinn_proto::{StreamId, VarInt};
 
 // ---------------------------------------------------------------------------
@@ -94,8 +94,8 @@ fn pong(request_id: &str) -> Vec<u8> {
 #[test]
 fn d1_fragmented_prefix_and_body_wait_then_deliver_once() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d1", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d1", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d1", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d1", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -225,8 +225,8 @@ fn d1_fragmented_prefix_and_body_wait_then_deliver_once() {
 #[test]
 fn d2_interleaved_streams_stay_isolated() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d2", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d2", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d2", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d2", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -322,8 +322,8 @@ fn d2_interleaved_streams_stay_isolated() {
 #[test]
 fn d3_partial_reset_closes_0x104_and_purges_state() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d3", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d3", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d3", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d3", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -409,8 +409,8 @@ fn d3_partial_reset_closes_0x104_and_purges_state() {
 #[test]
 fn d4_fin_with_partial_prefix_closes_0x104_without_residue() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d4a", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d4a", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d4a", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d4a", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -455,8 +455,8 @@ fn d4_fin_with_partial_prefix_closes_0x104_without_residue() {
 #[test]
 fn d4_fin_with_truncated_body_closes_0x104_without_residue() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d4b", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d4b", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d4b", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d4b", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -508,8 +508,8 @@ fn d4_fin_with_truncated_body_closes_0x104_without_residue() {
 #[test]
 fn d4_blocked_without_fin_keeps_waiting_and_preserves_prefix() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d4c", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d4c", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d4c", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d4c", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");
@@ -568,8 +568,8 @@ fn d4_blocked_without_fin_keeps_waiting_and_preserves_prefix() {
 #[test]
 fn d4_two_coalesced_frames_deliver_in_order_without_close() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10d-d4d", true);
-    let client_leaf = ca.leaf("arl-client-t10d-d4d", false);
+    let server_leaf = ca.leaf("openrelay-server-t10d-d4d", true);
+    let client_leaf = ca.leaf("openrelay-client-t10d-d4d", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
     exchange(&mut peer, &mut server, 24).expect("handshake mTLS");

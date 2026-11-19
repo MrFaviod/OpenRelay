@@ -6,7 +6,7 @@
 - **Decide:** («¿qué transporte se congela para audio/control?»), sólo en su
   parte de motor; el congelamiento sigue sujeto a –.
 - **Relacionado:** [ADR-0002](0002-identity.md), [protocolo v1](../protocol.md)
-  [emparejamiento](../security/pairing.md), [acta /](../plan/execution-f2-f3.md).
+  [emparejamiento](../security/pairing.md), [API de transporte](../transport-api.md).
 
 ## 1. Contexto
 
@@ -28,7 +28,7 @@ Tres restricciones mandan sobre la elección:
 ## 2. Decisión
 
 Se adopta **`quinn-proto` 0.11.12** con **`rustls` 0.23.22** y **`ring` 0.17.8**
-en modo **sans-IO**: `arl-transport` recibe y devuelve datagramas UDP y no abre
+en modo **sans-IO**: `openrelay-transport` recibe y devuelve datagramas UDP y no abre
 sockets ni hilos. El crate se declara en
 [`crates/transport/Cargo.toml`](..../crates/transport/Cargo.toml):
 
@@ -55,11 +55,11 @@ existe en esa versión y el primero es el que expone la API sans-IO con
   truncarse.
 - **Control:** stream bidireccional fiable con `u32` BE de longitud + JSON, con
   `MAX_CONTROL_FRAME = 16388` (16384 de payload + 4 de longitud) tomado de
-  `arl-proto`, no redeclarado aquí.
-- **ALPN:** `arl-enroll/1` y `arl-session/1` son constantes separadas en
+  `openrelay-proto`, no redeclarado aquí.
+- **ALPN:** `openrelay-enroll/1` y `openrelay-session/1` son constantes separadas en
   [`crates/transport/src/lib.rs`](..../crates/transport/src/lib.rs). El
   servidor de sesión rechaza con `RejectReason::Alpn` cualquier handshake que no
-  negocie `arl-session/1`, y esa comprobación ocurre **antes** de mirar la
+  negocie `openrelay-session/1`, y esa comprobación ocurre **antes** de mirar la
   identidad.
 
 ### 2.2 Límites explícitos
@@ -114,7 +114,7 @@ check no ejecutado no es PASS.
 
 | # | Requisito | Cómo se comprueba | Evidencia |
 |---|---|---|---|
-| R1 | Handshake QUIC real entre dos peers, no structs | `cargo test --locked -p arl-transport --test tls_identity_gate` | 7 pruebas, exit 0 (ejecutado por el padre) |
+| R1 | Handshake QUIC real entre dos peers, no structs | `cargo test --locked -p openrelay-transport --test tls_identity_gate` | 7 pruebas, exit 0 (ejecutado por el padre) |
 | R2 | Audio por DATAGRAM tras autorizar y roundtrip de `encode` | `authorized_session_delivers_real_audio_and_control` | Verde |
 | R3 | Control por stream fiable en ambos sentidos | misma prueba, `Ping` y `Event`/`session.state` | Verde |
 | R4 | ALPN separados: sesión no entra en enroll y viceversa | `enrollment_boundary`, pruebas `session_client_cannot_use_enrollment_endpoint` y `enrollment_client_cannot_use_session_endpoint` | Verde (8 pruebas en la suite) |
@@ -126,7 +126,8 @@ check no ejecutado no es PASS.
 | R10 | RTT/jitter/pérdida/CPU en LAN con `tc-netem` | medición en red real | **Pendiente — ** |
 
 R7/R8 ya no bloquean el uso de la API host: los cierres posteriores y su
-verificación están en el [acta /](../plan/execution-f2-f3.md).
+verificación están en [ADR-0002](0002-identity.md) y en la
+[API de transporte](../transport-api.md).
 Los pendiente y rondas históricas no son el estado vigente; D03/– y gate
 sí permanecen abiertos. No se reabre el motor aceptado por gaps de otra superficie.
 

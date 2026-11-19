@@ -3,7 +3,7 @@
 //! OpenSSL CLI, no con el código bajo prueba. Son certificados de test; no hay
 //! material de producción en el repo.
 
-use arl_transport::identity::{extract_spki_der, IdentityError, SpkiPin, MAX_CERT_DER};
+use openrelay_transport::identity::{extract_spki_der, IdentityError, SpkiPin, MAX_CERT_DER};
 
 fn hex(s: &str) -> Vec<u8> {
     assert!(s.len() % 2 == 0, "hex de longitud par");

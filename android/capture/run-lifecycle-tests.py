@@ -7,7 +7,7 @@ Uso: python3 run-lifecycle-tests.py [--out DIR]
 nunca borra nada existente. Rechaza DIR dentro del paquete o ancestro del paquete.
 
 - Rutas relativas al directorio de este script; sin rutas absolutas ni del workspace.
-- Binarios y logs van a DIR (por defecto <padre del paquete>/arl-t13a-final-gate-logs), fuera del arbol fuente.
+- Binarios y logs van a DIR (por defecto <padre del paquete>/openrelay-t13a-final-gate-logs), fuera del arbol fuente.
 - Argumentos de procesos como listas (sin shell): soporta rutas con espacios.
 - Exit 0 solo si TODOS los checks pasan. Build fallido, exit distinto del esperado,
   timeout, reporte de sanitizer, marcador ausente, FAIL/RED/SETUP o hash distinto => exit 1.
@@ -46,7 +46,7 @@ INC = ["-Iinclude", "-Itests/fixture", "-Itests/owner"]
 WARN = ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-pthread"] + INC
 SAN = ["-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-pthread",
        "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"] + INC
-WRAP = ["-Wl,--wrap=arl_spsc_read", "-Wl,--wrap=arl_spsc_drain"]
+WRAP = ["-Wl,--wrap=openrelay_spsc_read", "-Wl,--wrap=openrelay_spsc_drain"]
 FIX = "tests/fixture/backend_fixture.c"
 CAND_CORE = ["src/life.c", "src/spsc.c", "src/capture-owner.c", FIX]
 BASE_CORE = ["tests/lifecycle-base/src/life.c", "src/spsc.c", FIX]
@@ -170,10 +170,10 @@ def quiescence(tag, lib, san_owner):
                 ["cc"] + fl + ["tests/owner/owner_smoke.c"] + lib + ["-o", str(BIN / f"{tag}_owner{suf}")])
     LIFE_OK = ["LIFECYCLE_CASES_EXECUTED=6", "BACKEND_CONTRACT_CASES_EXECUTED=1", "180 checks, 0 failures"]
     INF_READ = ["WRAP_REACHED op=read consumer_inside_public_api=1", "DESTROY_WHILE_HELD rc=-5 owner_after=",
-                "POST_RELEASE_DESTROY rc=0 owner_after_null=1", "CONSUMER_API_CALLED=arl_capture_read rc=0 n=240",
+                "POST_RELEASE_DESTROY rc=0 owner_after_null=1", "CONSUMER_API_CALLED=openrelay_capture_read rc=0 n=240",
                 "RESULT=PASS destroy BUSY while consumer in flight"]
     INF_DRAIN = ["WRAP_REACHED op=drain consumer_inside_public_api=1", "DESTROY_WHILE_HELD rc=-5 owner_after=",
-                 "POST_RELEASE_DESTROY rc=0 owner_after_null=1", "CONSUMER_API_CALLED=arl_capture_drain rc=0 n=240",
+                 "POST_RELEASE_DESTROY rc=0 owner_after_null=1", "CONSUMER_API_CALLED=openrelay_capture_drain rc=0 n=240",
                  "RESULT=PASS destroy BUSY while consumer in flight"]
     INF_CTRL = ["CONTROL_DESTROY rc=0 owner_after_null=1", "RESULT=PASS control destroy OK when quiescent"]
     OWN = ["OWNER_SMOKE_CASES=10 fails=0", "RESULT=PASS owner smoke"]
@@ -208,22 +208,22 @@ def admission_instrument(src_life, dst, forced):
             raise SystemExit(f"ANCLA count={n} (want 1): {anchor.strip()[:60]}")
         return t.replace(anchor, repl)
 
-    decl = ("void arl_test_before_adm_cas(arl_capture *cap, uint64_t unit);\n"
-            "void arl_test_getter_window(arl_capture *cap);\n")
-    text = sub(text, "static int adm_enter(arl_capture *cap, uint64_t unit) {\n",
-               decl + "static int adm_enter(arl_capture *cap, uint64_t unit) {\n")
+    decl = ("void openrelay_test_before_adm_cas(openrelay_capture *cap, uint64_t unit);\n"
+            "void openrelay_test_getter_window(openrelay_capture *cap);\n")
+    text = sub(text, "static int adm_enter(openrelay_capture *cap, uint64_t unit) {\n",
+               decl + "static int adm_enter(openrelay_capture *cap, uint64_t unit) {\n")
     mode = "NOT_REQUESTED"
     if forced:
         cas = "    if (atomic_compare_exchange_strong(&cap->adm, &old, old + unit)) {\n"
         if text.count(cas) == 1:
-            text = text.replace(cas, "    arl_test_before_adm_cas(cap, unit);\n" + cas)
+            text = text.replace(cas, "    openrelay_test_before_adm_cas(cap, unit);\n" + cas)
             mode = "FORCED"
         else:
             mode = "UNFORCED_NO_CAS_ANCHOR"
         text = sub(text,
-                   "  if (!adm_enter(cap, ADM_OTHER)) {\n    return ARL_CAPTURE_ERR_BUSY; /* *out no se escribe */\n  }\n",
-                   "  if (!adm_enter(cap, ADM_OTHER)) {\n    return ARL_CAPTURE_ERR_BUSY; /* *out no se escribe */\n  }\n"
-                   "  arl_test_getter_window(cap);\n")
+                   "  if (!adm_enter(cap, ADM_OTHER)) {\n    return OPENRELAY_CAPTURE_ERR_BUSY; /* *out no se escribe */\n  }\n",
+                   "  if (!adm_enter(cap, ADM_OTHER)) {\n    return OPENRELAY_CAPTURE_ERR_BUSY; /* *out no se escribe */\n  }\n"
+                   "  openrelay_test_getter_window(cap);\n")
     dst.write_text(text, encoding="utf-8")
     return mode
 
@@ -394,7 +394,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
-    base = pathlib.Path(a.out).resolve() if a.out else (PKG.parent / "arl-t13a-lifecycle-gate-logs").resolve()
+    base = pathlib.Path(a.out).resolve() if a.out else (PKG.parent / "openrelay-t13a-lifecycle-gate-logs").resolve()
     if PKG == base or PKG in base.parents or base in PKG.parents:
         print("FAIL: --out dentro del paquete o ancestro del paquete (rechazado, nada borrado)", file=sys.stderr)
         return 1

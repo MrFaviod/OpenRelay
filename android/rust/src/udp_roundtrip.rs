@@ -11,10 +11,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::{BridgeEvent, ProductClient, Provision};
-use arl_proto::control::{AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction};
-use arl_proto::wire::ControlMessage;
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{
+use openrelay_proto::control::{AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction};
+use openrelay_proto::wire::ControlMessage;
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{
     Acl, Capabilities, ServerEvent, SessionId, SessionLimits, SessionServer,
 };
 use rcgen::{
@@ -280,8 +280,8 @@ fn run_fixture(
 ) {
     let mut tcp = std::net::TcpStream::connect(("127.0.0.1", port)).expect("tcp padre");
     let ca = test_ca();
-    let server_leaf = leaf(&ca, "arl-fixture", true);
-    let client_leaf = leaf(&ca, "arl-client", false);
+    let server_leaf = leaf(&ca, "openrelay-fixture", true);
+    let client_leaf = leaf(&ca, "openrelay-client", false);
     let server_identity = certified(&server_leaf, &ca);
     key_out
         .send(signing_key(&client_leaf))
@@ -406,7 +406,7 @@ fn test_ca() -> Ca {
     let mut params = CertificateParams::new(Vec::<String>::new()).expect("params");
     params
         .distinguished_name
-        .push(DnType::CommonName, "arl-fixture-ca");
+        .push(DnType::CommonName, "openrelay-fixture-ca");
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![
         KeyUsagePurpose::KeyCertSign,
@@ -448,16 +448,16 @@ fn certified(leaf: &Leaf, ca: &Ca) -> Arc<rustls::sign::CertifiedKey> {
 /// Política de fixture: `audio.gain_db` pedido por encima de 2.5 se fija en 2.5.
 struct ClampGain;
 
-impl arl_proto::control::EffectivePolicy for ClampGain {
+impl openrelay_proto::control::EffectivePolicy for ClampGain {
     fn effective(
         &self,
-        key: &arl_proto::control::ConfigKey,
-        requested: &arl_proto::control::ConfigValue,
-    ) -> Result<arl_proto::control::ConfigValue, arl_proto::control::ErrorCode> {
+        key: &openrelay_proto::control::ConfigKey,
+        requested: &openrelay_proto::control::ConfigValue,
+    ) -> Result<openrelay_proto::control::ConfigValue, openrelay_proto::control::ErrorCode> {
         if key.as_str() == "audio.gain_db" {
-            if let arl_proto::control::ConfigValue::Number(value) = requested {
+            if let openrelay_proto::control::ConfigValue::Number(value) = requested {
                 if *value > 2.5 {
-                    return Ok(arl_proto::control::ConfigValue::Number(2.5));
+                    return Ok(openrelay_proto::control::ConfigValue::Number(2.5));
                 }
             }
         }

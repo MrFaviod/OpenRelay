@@ -7,9 +7,11 @@
 //! ignore la implementación. No es evidencia física: no hay hardware, red ni
 //! PipeWire.
 
-use arl_audio_core::drift::{DriftConfig, DriftController, DriftError};
-use arl_audio_core::resample::{LinearResampler, ResampleError, RATIO_MAX, RATIO_MIN, RING_LEN};
-use arl_audio_core::{SAMPLE_COUNT, SAMPLE_RATE_HZ};
+use openrelay_audio_core::drift::{DriftConfig, DriftController, DriftError};
+use openrelay_audio_core::resample::{
+    LinearResampler, ResampleError, RATIO_MAX, RATIO_MIN, RING_LEN,
+};
+use openrelay_audio_core::{SAMPLE_COUNT, SAMPLE_RATE_HZ};
 
 const TICK_US: u64 = 5_000;
 const QUEUE_CAP: usize = 64;
@@ -270,8 +272,8 @@ fn run_simulation(producer_ppm: f64, consumer_ppm: f64, ticks: usize) -> Report 
     }
 }
 
-fn report_stub() -> arl_audio_core::drift::DriftUpdate {
-    arl_audio_core::drift::DriftUpdate {
+fn report_stub() -> openrelay_audio_core::drift::DriftUpdate {
+    openrelay_audio_core::drift::DriftUpdate {
         ratio: 1.0,
         measured_ppm: 0.0,
         fill_frames: 0,

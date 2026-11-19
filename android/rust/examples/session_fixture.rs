@@ -4,7 +4,7 @@
 //! `clientAuth` para el SPKI público que el test le entrega por archivo. La
 //! privada del dispositivo nunca llega: la CA de test firma el certificado y
 //! se tira al salir. El canal de preparación es un archivo de texto con vida
-//! acotada, fuera de `arl.control/v1`.
+//! acotada, fuera de `openrelay.control/v1`.
 //!
 //! Uso: `session_fixture <directorio>`
 //! Escribe `ready` (puerto, CA DER, pin del servidor, cadena del servidor) y
@@ -17,9 +17,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arl_proto::control::{AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction};
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{
+use openrelay_proto::control::{AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction};
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{
     Acl, Capabilities, ServerEvent, SessionId, SessionLimits, SessionServer,
 };
 use rcgen::{
@@ -72,7 +72,7 @@ fn self_check() {
 
 fn run(dir: &std::path::Path) -> Result<(), String> {
     let ca = test_ca()?;
-    let server_leaf = leaf(&ca, "arl-fixture", true)?;
+    let server_leaf = leaf(&ca, "openrelay-fixture", true)?;
     let server_identity = certified(&server_leaf, &ca)?;
     let server_pin = SpkiPin::from_certificate_der(server_leaf.cert.der()).map_err(show)?;
 
@@ -178,7 +178,7 @@ fn issue_client_leaf(ca: &Ca, spki: &[u8]) -> Result<rcgen::Certificate, String>
     let mut params = CertificateParams::new(Vec::<String>::new()).map_err(show)?;
     params
         .distinguished_name
-        .push(DnType::CommonName, "arl-device");
+        .push(DnType::CommonName, "openrelay-device");
     params.is_ca = IsCa::ExplicitNoCa;
     params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
@@ -235,16 +235,16 @@ impl RemoteKeyPair for PublicOnlyKey {
 /// no del hardware.
 struct ClampGain;
 
-impl arl_proto::control::EffectivePolicy for ClampGain {
+impl openrelay_proto::control::EffectivePolicy for ClampGain {
     fn effective(
         &self,
-        key: &arl_proto::control::ConfigKey,
-        requested: &arl_proto::control::ConfigValue,
-    ) -> Result<arl_proto::control::ConfigValue, arl_proto::control::ErrorCode> {
+        key: &openrelay_proto::control::ConfigKey,
+        requested: &openrelay_proto::control::ConfigValue,
+    ) -> Result<openrelay_proto::control::ConfigValue, openrelay_proto::control::ErrorCode> {
         if key.as_str() == "audio.gain_db" {
-            if let arl_proto::control::ConfigValue::Number(value) = requested {
+            if let openrelay_proto::control::ConfigValue::Number(value) = requested {
                 if *value > 2.5 {
-                    return Ok(arl_proto::control::ConfigValue::Number(2.5));
+                    return Ok(openrelay_proto::control::ConfigValue::Number(2.5));
                 }
             }
         }
@@ -266,7 +266,7 @@ fn test_ca() -> Result<Ca, String> {
     let mut params = CertificateParams::new(Vec::<String>::new()).map_err(show)?;
     params
         .distinguished_name
-        .push(DnType::CommonName, "arl-test-ca");
+        .push(DnType::CommonName, "openrelay-test-ca");
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![
         KeyUsagePurpose::KeyCertSign,

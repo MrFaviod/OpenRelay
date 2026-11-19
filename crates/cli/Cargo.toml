@@ -1,24 +1,24 @@
 [package]
-name = "arl-cli"
+name = "openrelay-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "CLI local de administración del daemon de arl (binario `arl`)"
+description = "CLI local de administración del daemon de openrelay (binario `openrelay`)"
 
 [[bin]]
-name = "arl"
+name = "openrelay"
 path = "src/main.rs"
 
 [dependencies]
-arl-proto = { path = "../proto" }
-arl-daemon = { path = "../daemon" }
+openrelay-proto = { path = "../proto" }
+openrelay-daemon = { path = "../daemon" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
 rustix = { version = "=1.1.6", default-features = false, features = ["std", "net", "process"] }
 
 [dev-dependencies]
-arl-transport = { path = "../transport" }
+openrelay-transport = { path = "../transport" }
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 

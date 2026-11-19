@@ -10,19 +10,19 @@
  * acquire: bounded attempt, contention/full/closed => ERR_BUSY, *out=NULL.
  * release: exactly once per successful acquire, no accesses to cap afterward.
  */
-#ifndef ARL_CAPTURE_OWNER_H
-#define ARL_CAPTURE_OWNER_H
+#ifndef OPENRELAY_CAPTURE_OWNER_H
+#define OPENRELAY_CAPTURE_OWNER_H
 #include <stdatomic.h>
 #include <stdint.h>
 #include "capture-abi.h"
-#define ARL_OWNER_CLOSED UINT32_C(0x80000000)
-#define ARL_OWNER_MAX_BORROWS UINT32_C(0x7fffffff)
-typedef struct arl_capture_owner {
+#define OPENRELAY_OWNER_CLOSED UINT32_C(0x80000000)
+#define OPENRELAY_OWNER_MAX_BORROWS UINT32_C(0x7fffffff)
+typedef struct openrelay_capture_owner {
   _Atomic uint32_t gate;
-  arl_capture *cap;
-} arl_capture_owner;
-int32_t arl_owner_init(arl_capture_owner *owner, arl_capture *cap);
-int32_t arl_owner_acquire(arl_capture_owner *owner, arl_capture **out);
-void arl_owner_release(arl_capture_owner *owner);
-int32_t arl_owner_try_destroy(arl_capture_owner *owner);
+  openrelay_capture *cap;
+} openrelay_capture_owner;
+int32_t openrelay_owner_init(openrelay_capture_owner *owner, openrelay_capture *cap);
+int32_t openrelay_owner_acquire(openrelay_capture_owner *owner, openrelay_capture **out);
+void openrelay_owner_release(openrelay_capture_owner *owner);
+int32_t openrelay_owner_try_destroy(openrelay_capture_owner *owner);
 #endif

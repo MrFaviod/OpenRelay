@@ -1,6 +1,6 @@
 //! Fallback PulseAudio por proceso, sin bindings de `libpulse`.
 //!
-//! Cuando el servidor de la sesión **no** es PipeWire, arl puede publicar una
+//! Cuando el servidor de la sesión **no** es PipeWire, openrelay puede publicar una
 //! fuente de captura con dos módulos de PulseAudio: un sink nulo propio y un
 //! `module-remap-source` que expone su monitor como micrófono. Este módulo
 //! ejecuta `pactl` como proceso hijo; no enlaza `libpulse` ni ninguna otra
@@ -19,12 +19,12 @@ use std::ffi::OsString;
 use std::fmt;
 use std::process::Command;
 
-use arl_audio_core::{CHANNELS, SAMPLE_RATE_HZ};
+use openrelay_audio_core::{CHANNELS, SAMPLE_RATE_HZ};
 
 /// Nombre del sink nulo que crea el fallback.
-pub const SINK_NAME: &str = "arl-fallback-sink";
+pub const SINK_NAME: &str = "openrelay-fallback-sink";
 /// Nombre de la fuente remapeada que expone el fallback.
-pub const SOURCE_NAME: &str = "arl-fallback-mic";
+pub const SOURCE_NAME: &str = "openrelay-fallback-mic";
 /// Módulo de PulseAudio que crea el sink nulo.
 pub const MODULE_NULL_SINK: &str = "module-null-sink";
 /// Módulo de PulseAudio que remapea el monitor del sink a una fuente.

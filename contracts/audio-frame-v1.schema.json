@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:arl:contract:audio-frame-v1",
-  "title": "arl audio datagram descriptor v1",
-  "description": "Descriptor logico de un datagrama de audio arl v1, con layout binario exacto. El datagrama real es binario: 28 bytes de cabecera big-endian + 480 bytes PCM16LE para type=1 (perfil base). La extension compatible type=2 transporta un paquete Opus variable (1..=1172 bytes) y se describe en $defs.audio_frame_opus; solo se usa si ambos extremos anuncian audio.opus-48k-mono. Este esquema valida el descriptor que produce el parser; no codifica el datagrama en JSON. Semantica en docs/protocol.md seccion 8.",
+  "$id": "urn:openrelay:contract:audio-frame-v1",
+  "title": "openrelay audio datagram descriptor v1",
+  "description": "Descriptor logico de un datagrama de audio openrelay v1, con layout binario exacto. El datagrama real es binario: 28 bytes de cabecera big-endian + 480 bytes PCM16LE para type=1 (perfil base). La extension compatible type=2 transporta un paquete Opus variable (1..=1172 bytes) y se describe en $defs.audio_frame_opus; solo se usa si ambos extremos anuncian audio.opus-48k-mono. Este esquema valida el descriptor que produce el parser; no codifica el datagrama en JSON. Semantica en docs/protocol.md seccion 8.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,7 +27,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "arl.audio-frame/v1"
+      "const": "openrelay.audio-frame/v1"
     },
     "type": {
       "const": 1,
@@ -305,7 +305,7 @@
   "$defs": {
     "audio_frame_opus": {
       "title": "Descriptor de un datagrama de audio Opus v1 (type=2)",
-      "description": "Extension compatible de arl.audio-frame/v1. Misma cabecera de 28 bytes que type=1, con sample_count 120/240/480, duration_us 2500/5000/10000 y payload variable de exactamente un paquete Opus. Solo se usa si ambos extremos anuncian audio.opus-48k-mono; en cualquier otro caso el emisor usa type=1 PCM16.",
+      "description": "Extension compatible de openrelay.audio-frame/v1. Misma cabecera de 28 bytes que type=1, con sample_count 120/240/480, duration_us 2500/5000/10000 y payload variable de exactamente un paquete Opus. Solo se usa si ambos extremos anuncian audio.opus-48k-mono; en cualquier otro caso el emisor usa type=1 PCM16.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -328,7 +328,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "arl.audio-frame/v1"
+          "const": "openrelay.audio-frame/v1"
         },
         "type": {
           "const": 2,

@@ -1,8 +1,8 @@
-//! Daemon mínimo de arl: sesión QUIC autorizada -> `AudioFrame` -> jitter ->
+//! Daemon mínimo de openrelay: sesión QUIC autorizada -> `AudioFrame` -> jitter ->
 //! SPSC de `PipeWireSource`.
 //!
 //! Una sola función (`serve`) conduce el socket UDP. La autorización la hace
-//! `SessionServer` (ACL default-deny de `arl-transport`): sólo se leen frames
+//! `SessionServer` (ACL default-deny de `openrelay-transport`): sólo se leen frames
 //! de sesiones que el propio servidor reportó como `Authorized`.
 //!
 //! Sólo se escriben frames `EmitKind::Network`; PLC y silencio del jitter no se
@@ -20,10 +20,10 @@ use std::fmt;
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
 
-use arl_audio_core::jitter::{EmitKind, JitterBuffer, JitterConfig, PopOutcome};
-use arl_audio_core::SAMPLE_COUNT;
-use arl_audio_linux::SampleProducer;
-use arl_transport::quinn::{ServerEvent, SessionId, SessionServer, TransportError};
+use openrelay_audio_core::jitter::{EmitKind, JitterBuffer, JitterConfig, PopOutcome};
+use openrelay_audio_core::SAMPLE_COUNT;
+use openrelay_audio_linux::SampleProducer;
+use openrelay_transport::quinn::{ServerEvent, SessionId, SessionServer, TransportError};
 
 /// Tick de lectura del socket: acota la latencia de bombeo del jitter.
 const READ_TICK: Duration = Duration::from_millis(1);

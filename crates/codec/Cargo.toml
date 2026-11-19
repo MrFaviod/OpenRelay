@@ -1,11 +1,11 @@
 [package]
-name = "arl-codec"
+name = "openrelay-codec"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Códec Opus restricted-lowdelay (2.5/5/10 ms) mono 48 kHz para arl"
+description = "Códec Opus restricted-lowdelay (2.5/5/10 ms) mono 48 kHz para openrelay"
 
 [dependencies]
 opus = "=0.3.0"

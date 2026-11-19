@@ -46,7 +46,7 @@ impl TestCa {
         let mut params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
         params
             .distinguished_name
-            .push(DnType::CommonName, "arl-test-ca-f9e");
+            .push(DnType::CommonName, "openrelay-test-ca-f9e");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -121,8 +121,8 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let ca = TestCa::new();
-        let server_leaf = ca.leaf("arl-server-f9e", true);
-        let client_leaf = ca.leaf("arl-client-f9e", false);
+        let server_leaf = ca.leaf("openrelay-server-f9e", true);
+        let client_leaf = ca.leaf("openrelay-client-f9e", false);
         Self {
             ca,
             server_leaf,
@@ -250,7 +250,7 @@ fn closed(client: &mut SessionClient) -> bool {
 fn per_ip_cap_refuses_the_fifth_connection_from_one_ip() {
     let fixture = Fixture::new();
     let leaves: Vec<TestLeaf> = (0..=MAX_SESSIONS_PER_IP)
-        .map(|index| fixture.leaf(&format!("arl-client-f9e-ip-{index}")))
+        .map(|index| fixture.leaf(&format!("openrelay-client-f9e-ip-{index}")))
         .collect();
     let pins: Vec<SpkiPin> = leaves.iter().map(|leaf| leaf.pin).collect();
     let mut server = fixture.server_allowing(&pins);
@@ -285,7 +285,7 @@ fn per_ip_cap_refuses_the_fifth_connection_from_one_ip() {
 fn per_ip_cap_does_not_apply_across_ips() {
     let fixture = Fixture::new();
     let leaves: Vec<TestLeaf> = (0..=MAX_SESSIONS_PER_IP)
-        .map(|index| fixture.leaf(&format!("arl-client-f9e-across-{index}")))
+        .map(|index| fixture.leaf(&format!("openrelay-client-f9e-across-{index}")))
         .collect();
     let pins: Vec<SpkiPin> = leaves.iter().map(|leaf| leaf.pin).collect();
     let mut server = fixture.server_allowing(&pins);
@@ -323,7 +323,7 @@ fn per_ip_cap_does_not_apply_across_ips() {
 fn per_ip_cap_refusal_does_not_spend_a_handshake_attempt() {
     let fixture = Fixture::new();
     let leaves: Vec<TestLeaf> = (0..MAX_SESSIONS_PER_IP + 3)
-        .map(|index| fixture.leaf(&format!("arl-client-f9e-attempt-{index}")))
+        .map(|index| fixture.leaf(&format!("openrelay-client-f9e-attempt-{index}")))
         .collect();
     let pins: Vec<SpkiPin> = leaves.iter().map(|leaf| leaf.pin).collect();
     let mut server = fixture.server_allowing(&pins);
@@ -387,7 +387,7 @@ fn identity_cap_refuses_the_third_session_of_one_identity() {
 #[test]
 fn identity_cap_does_not_apply_to_a_distinct_identity() {
     let fixture = Fixture::new();
-    let other = fixture.leaf("arl-client-f9e-other");
+    let other = fixture.leaf("openrelay-client-f9e-other");
     let mut server = fixture.server_allowing(&[fixture.client_leaf.pin, other.pin]);
     let mut clients: Vec<(SocketAddr, SessionClient)> = vec![
         (addr(7, 54_001), fixture.client()),

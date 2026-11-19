@@ -1,4 +1,4 @@
-//! Reducción de ruido opcional y bypass real para el audio de arl.
+//! Reducción de ruido opcional y bypass real para el audio de openrelay.
 //!
 //! El crate define el contrato [`NoiseSuppressor`] (procesar un bloque PCM16
 //! mono en sitio y declarar su retardo) para que una etapa RNNoise o
@@ -16,7 +16,7 @@
 //!
 //! Tras construir la cadena, `process` no asigna memoria: sólo recorre el
 //! bloque y llama al C. Está pensada para el worker del daemon, **nunca** para
-//! el callback de tiempo real. La integración en `arl-daemon` es una tarea
+//! el callback de tiempo real. La integración en `openrelay-daemon` es una tarea
 //! posterior; este crate no la adelanta.
 //!
 //! # Feature
@@ -28,7 +28,7 @@
 //! # Ejemplo
 //!
 //! ```
-//! use arl_dsp::NsChain;
+//! use openrelay_dsp::NsChain;
 //!
 //! let mut chain = NsChain::bypass();
 //! let mut block = [0i16; 240];
@@ -152,7 +152,7 @@ impl NsChain {
     /// Cadena con el NS clásico de SpeexDSP para tramas de `frame_samples`.
     ///
     /// Pensada para 120, 240 o 480 muestras (2.5, 5 y 10 ms a 48 kHz), que son
-    /// los perfiles de arl. Requiere la feature `speexdsp`.
+    /// los perfiles de openrelay. Requiere la feature `speexdsp`.
     #[cfg(feature = "speexdsp")]
     pub fn speexdsp(sample_rate: u32, frame_samples: usize) -> Result<Self, NsError> {
         let stage = speex::SpeexNs::new(sample_rate, frame_samples)?;

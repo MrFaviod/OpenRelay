@@ -5,7 +5,7 @@
 
 ```json
 {
-  "schema_version": "arl.control/v1"
+  "schema_version": "openrelay.control/v1"
   "type": "error"
   "request_id": "c-17"
   "payload": {

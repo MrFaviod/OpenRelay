@@ -36,10 +36,10 @@ SCEN="$ROOT/tests/capture_spsc_counter_scenarios.c"
 RES="$ROOT/tests/capture_spsc_residual.c"
 
 # frozen contract, from the durable baseline
-HASH_ABI=298f88c637bcf39f17690e6d61d265bd50eab75a576c0f035ae8d521dd8d96e4
-HASH_SPSC=b6a2a5dd954a6bd32da6c98bc10325bc7b2afc5345b7255403793ba9a4823d4c
+HASH_ABI=5bca6df782ba260955043952188d6b90d6297788a4f372c2d2557a4b066bcc77
+HASH_SPSC=b7b270d062de60a9ce7829b24856fbeb08a2435397078cc3a6f0cae98b97cdca
 # the 15 original cases as reviewed and confirmed by the parent
-HASH_TESTS=261912a3fa45fe58b84e23877110a1e5e65e3e44634934ffeff63c77022098ad
+HASH_TESTS=d30faf43102806c435917ba7832ccda570286acfbddf403b20cd313c5186e75d
 
 TMO=120          # compile / instrumented runs
 TMO_WRAP=45      # release wrap regression (public fast-forward)
@@ -121,7 +121,7 @@ for f in "$SRC" "$TST" "$WRAP" "$SCEN" "$RES"; do
     fi
 done
 
-say "== arl T13a SPSC host runner (strict) =="
+say "== openrelay T13a SPSC host runner (strict) =="
 say "root=$ROOT"
 say "cc=$($CC --version 2>/dev/null | head -1)"
 say "flags=$STD $INC"
@@ -130,7 +130,7 @@ say "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # ---------------------------------------------------------------- headers
 say ""
 say "-- phase 1: frozen headers (fails on any difference) --"
-BASE="${ARL_BASELINE:-$ROOT/contract-baseline}"
+BASE="${OPENRELAY_BASELINE:-$ROOT/contract-baseline}"
 HDR_OK=1
 for pair in "capture-abi.h:$HASH_ABI" "capture-spsc.h:$HASH_SPSC"; do
     h=${pair%:*}; want=${pair#*:}
@@ -179,12 +179,12 @@ say "-- phase 3: release -O2, 15 original cases --"
 run_limited "release-build" "$TMO" "$LOGS/build-release.log" \
     $CC $STD $INC \
     -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free \
-    -DARL_WRAP_ALLOC -o "$BUILD/spsc-tests" "$SRC" "$TST"
+    -DOPENRELAY_WRAP_ALLOC -o "$BUILD/spsc-tests" "$SRC" "$TST"
 BR=$?
 phase "release-build" "$BR" yes "$LOGS/build-release.log"
 if [ "$BR" -eq 0 ]; then
     run_limited "release-run" "$TMO" "$LOGS/run-release.log" \
-        env ARL_STRESS_SCALE=1 "$BUILD/spsc-tests"
+        env OPENRELAY_STRESS_SCALE=1 "$BUILD/spsc-tests"
     RR=$?
     say "  release-run exit=$RR"
     grep -E '^\[(PASS|FAIL)\]|^summary:|^phase A' "$LOGS/run-release.log" | tee -a "$LOG"

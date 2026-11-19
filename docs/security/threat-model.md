@@ -1,4 +1,4 @@
-# Modelo de amenaza — `arl` v1
+# Modelo de amenaza — `openrelay` v1
 
 
 Alcance: audio de micrófono Android → Linux por LAN, control bidireccional de configuración y estado, enrolamiento local y sesión autenticada. Quedan fuera: exposición a Internet, captura de audio de otras apps, retorno de audio (fase opt-in) y cualquier API administrativa remota.
@@ -66,11 +66,11 @@ Alcance: audio de micrófono Android → Linux por LAN, control bidireccional de
 | T-08 | App maliciosa en la LAN intenta conectar a `session` | B3 | Identidad de cliente obligatoria + ACL; rate limit por IP/identidad; rechazo sin filtrar si la identidad existe | Fuerza bruta de recursos; se acota con cuotas y se monitoriza. |
 | T-09 | Par emparejado malicioso pide más de lo permitido | B3 | Capacidades y ACL por operación; claves locales rechazadas; sin shell, archivos, HTTP ni elevación; el micrófono lo inicia sólo el usuario Android | El par puede saturar su propia cuota de control; se limita y se corta la sesión. |
 | T-10 | Ladrón usa un dispositivo ya emparejado | B1/B3 | Revocación por identidad cierra sesión e invalida tickets; tickets de vida corta; re-enrolamiento tras revocar; bloqueo del dispositivo es responsabilidad de Android | Ventana hasta que el usuario revoca; se documenta. |
-| T-11 | Usuario local sin privilegios controla el daemon | B4 | Socket en `$XDG_RUNTIME_DIR/arl/control.sock`, directorio `0700`, socket `0600`, `SO_PEERCRED` con UID propietario; sin TCP administrativo | Procesos del mismo UID; se acepta (mismo usuario). |
+| T-11 | Usuario local sin privilegios controla el daemon | B4 | Socket en `$XDG_RUNTIME_DIR/openrelay/control.sock`, directorio `0700`, socket `0600`, `SO_PEERCRED` con UID propietario; sin TCP administrativo | Procesos del mismo UID; se acepta (mismo usuario). |
 | T-12 | Flood de conexiones, mensajes o datagramas | B2/B3 | Límites antes y después del handshake: conexiones por IP, tasa de intentos, tamaño máximo, profundidad, strings, frames por datagrama, timeouts y cuotas por identidad; colas acotadas con descarte | DoS volumétrico en la red o el host; fuera del control de la aplicación. |
 | T-13 | Parser malicioso provoca pánico, OOM o consumo cuadrático | B2/B3 | Límites exactos de [`docs/protocol.md`](../protocol.md); rechazo sin asignación proporcional; fuzz de control y datagrama en | Bug desconocido; el fuzz es requisito de, no de. |
 | T-14 | Fuga de token, claves o audio en logs | A6/B6 | Token nunca persistido ni emitido por `--json`; logs sin secretos; material de identidad en estado protegido; revisión en | Logs de depuración de terceros; se prohíbe en código y se revisa. |
-| T-15 | QR observado por un tercero cercano | B2 | `arl pair open` sólo en TTY, TTL corto, token de un solo uso, aprobación local; el QR no se imprime con `--json` ni se escribe en disco | Cámara en el momento exacto; el código corto y la aprobación local lo acotan. |
+| T-15 | QR observado por un tercero cercano | B2 | `openrelay pair open` sólo en TTY, TTL corto, token de un solo uso, aprobación local; el QR no se imprime con `--json` ni se escribe en disco | Cámara en el momento exacto; el código corto y la aprobación local lo acotan. |
 | T-16 | Dependencia o artefacto de build comprometido | A8 | Ledger con pin/licencia/procedencia; builds reproducibles y SBOM; sin binarios opacos; revisión de licencias | Compromiso upstream no detectado; se reduce con pin y auditoría, no se elimina. |
 | T-17 | Micrófono activo sin conocimiento del usuario | B1/B5 | FGS con notificación y parada local; inicio desde UI visible; muerte de proceso no deja micrófono huérfano; el remoto no puede iniciarlo | Bug de OEM/OS; se prueba en API28/34/37 en. |
 | T-18 | Nodo PipeWire expuesto tras terminar la sesión | B5 | El nodo deja de producir al parar; no se publica Audio/Source sin sesión activa; parada local y por `session stop` | Nodo visible vacío durante la transición; se acepta y se documenta. |

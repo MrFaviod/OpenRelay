@@ -50,7 +50,7 @@ explícitamente.
 
 ### 2.1 Separación de superficies
 
-| | Enrolamiento (`arl-enroll/1`) | Sesión (`arl-session/1`) |
+| | Enrolamiento (`openrelay-enroll/1`) | Sesión (`openrelay-session/1`) |
 |---|---|---|
 | Certificado de cliente | **No se pide** (`with_no_client_auth`) | **Obligatorio** (`WebPkiClientVerifier`) |
 | Identidad de peer | Ausente por diseño | `peer_cert` + pin SPKI + ACL |
@@ -128,7 +128,7 @@ Por eso el estado es pendiente, y ninguna prueba de este corte puede presentarse
 | I15 | Clave de Keystore no exportable firmando el handshake en Android | ejecución en dispositivo con clave generada en Keystore | **Pendiente — ** |
 | I16 | Revocación de identidad cierra sesiones e invalida tickets | prueba de revocación | **Pendiente — ** |
 
-Las suites se ejecutaron con `cargo test --locked -p arl-transport`: 11 pruebas
+Las suites se ejecutaron con `cargo test --locked -p openrelay-transport`: 11 pruebas
 de `identity_pin`, 8 de `enrollment_boundary` y 7 de `tls_identity_gate`
 26 pasadas y exit 0 en el corte del padre.
 

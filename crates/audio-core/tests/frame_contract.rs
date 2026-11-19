@@ -1,12 +1,12 @@
 //! Contrato binario del frame de audio v1 (28 B de cabecera + 480 B PCM16LE).
 
-use arl_audio_core::frame::{
+use openrelay_audio_core::frame::{
     opus_duration_for, AudioFormat, AudioFrame, AudioPayload, Flags, FrameError, OpusFrame,
     CHANNELS, DATAGRAM_LEN, DURATION_US, FEATURE_AUDIO_OPUS, FEATURE_AUDIO_PCM16, HEADER_LEN,
     MAX_DATAGRAM_LEN, OPUS_MAX_PAYLOAD_LEN, PAYLOAD_LEN, SAMPLE_COUNT, SAMPLE_RATE_HZ, TYPE_AUDIO,
     TYPE_AUDIO_OPUS,
 };
-use arl_audio_core::pcm16::{self, Samples};
+use openrelay_audio_core::pcm16::{self, Samples};
 
 fn samples() -> Samples {
     let mut out = [0i16; SAMPLE_COUNT];

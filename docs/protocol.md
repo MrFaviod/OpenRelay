@@ -1,4 +1,4 @@
-# Protocolo `arl` v1 — control y audio
+# Protocolo `openrelay` v1 — control y audio
 
 
 Alcance: una sesión autorizada Android → Linux. El audio viaja en datagramas no fiables; el control viaja en un stream fiable. **No se define códec, handshake TLS, descubrimiento ni API administrativa remota.**
@@ -48,7 +48,7 @@ Reglas de codificación:
 - Sin claves duplicadas. Profundidad máxima de JSON: **8**. Máximo **64** claves por objeto y **64** elementos por array. Strings de hasta **1024** caracteres.
 - Enteros exactos en el rango `0..=9007199254740991` (2^53−1); no se usan números en punto flotante para revisiones, épocas, secuencias ni longitudes.
 - Un frame con `length` fuera de rango, JSON inválido, tipo desconocido o campo obligatorio ausente se rechaza con `invalid`; si el framing está corrupto, se cierra la conexión.
-- **v1 es estricto:** los objetos no admiten propiedades adicionales. Una extensión incompatible requiere `arl.control/v2` o un campo opcional declarado en una revisión posterior del esquema.
+- **v1 es estricto:** los objetos no admiten propiedades adicionales. Una extensión incompatible requiere `openrelay.control/v2` o un campo opcional declarado en una revisión posterior del esquema.
 
 ## 4. Envelope de control
 
@@ -56,7 +56,7 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 
 ```json
 {
-  "schema_version": "arl.control/v1"
+  "schema_version": "openrelay.control/v1"
   "type": "config.set"
   "request_id": "8f14e45fceea167a"
   "expected_revision": 7
@@ -66,7 +66,7 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 
 | Campo | Tipo | Obligatorio | Límite / regla |
 |---|---|---|---|
-| `schema_version` | string | sí | constante `arl.control/v1` |
+| `schema_version` | string | sí | constante `openrelay.control/v1` |
 | `type` | string | sí | uno de los tipos de §5 |
 | `request_id` | string | peticiones y respuestas | `^[A-Za-z0-9_-]{1,64}$`; único por cliente y sesión |
 | `expected_revision` | entero | sólo `config.set` | `0..=2^53−1`; debe igualar la revisión actual |
@@ -89,8 +89,8 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 ### 5.1 `hello`
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "hello", "request_id": "h1"
-  "payload": { "role": "android", "version": "0.1.0", "protocol_version": "arl.control/v1" } }
+{ "schema_version": "openrelay.control/v1", "type": "hello", "request_id": "h1"
+  "payload": { "role": "android", "version": "0.1.0", "protocol_version": "openrelay.control/v1" } }
 ```
 
 `role` ∈ `android`, `linux-cli`, `linux-daemon`. El daemon responde `capabilities`. Una versión de protocolo distinta se rechaza con `version_unsupported`.
@@ -102,7 +102,7 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 ### 5.3 `config.set`
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "config.set", "request_id": "c-17"
+{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17"
   "expected_revision": 7
   "payload": { "key": "audio.gain_db", "value": 3.0 } }
 ```
@@ -119,7 +119,7 @@ Reglas:
 ### 5.4 `ack`
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
+{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
   "payload": { "applied": true
                "requested": { "key": "audio.gain_db", "value": 3.0 }
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
@@ -130,7 +130,7 @@ Reglas:
 ### 5.5 `error`
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "error", "request_id": "c-17"
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-17"
   "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true
                "current_revision": 9 } }
 ```
@@ -144,7 +144,7 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 `config.changed` se emite tras un `config.set` aplicado, con la revisión nueva. `data.key` es la clave; `requested` y `effective` son los valores solicitado y efectivo, con las mismas restricciones por clave que `config.set` (pueden diferir por límites del dispositivo o del SO).
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "event", "revision": 8
+{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
   "payload": { "name": "config.changed"
                "data": { "key": "audio.gain_db", "requested": 3.0, "effective": 3.0 } } }
 ```
@@ -152,7 +152,7 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 `session.state` informa el cambio de estado de la sesión: `active` al autorizar y `closed` al cerrar. `detail` es opcional, texto corto (≤200) sin secretos ni rutas internas.
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "event", "revision": 8
+{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
   "payload": { "name": "session.state"
                "data": { "state": "closed", "detail": "client closed" } } }
 ```
@@ -181,7 +181,7 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 
 ```json
 {
-  "schema_version": "arl.capabilities/v1"
+  "schema_version": "openrelay.capabilities/v1"
   "device_id": "a1b2c3d4e5f60718"
   "role": "android"
   "features": ["control.v1", "audio.pcm16-48k-mono", "session.v1"]
@@ -267,9 +267,9 @@ Extensión compatible de v1 para transportar Opus sin cambiar el perfil base. La
 
 El esquema [`contracts/audio-frame-v1.schema.json`](../contracts/audio-frame-v1.schema.json) mantiene el descriptor raíz para type=1 y describe type=2 en `$defs.audio_frame_opus`; `x-audio-profiles` enumera ambos perfiles y su capacidad.
 
-### 8.4 Retorno Linux→Android (`type=1`, /)
+### 8.4 Retorno Linux→Android (`type=1`)
 
-Dirección inversa, opt-in y apagada por defecto (, U18 del 2026-11-19):
+Dirección inversa, opt-in y apagada por defecto (, 2026-11-19):
 
 - Reutiliza el frame `type=1` de §8 sin cambios: PCM16LE, 48 kHz, mono, 240 muestras y 480 bytes de payload. No hay perfil nuevo ni cabecera nueva.
 - Sólo se envía si **ambos** extremos anuncian `audio.return-pcm16-48k-mono` en `capabilities` **y** la clave local del daemon `audio.return_enabled` vale `true`. Si falta cualquiera de las dos condiciones, el daemon **no envía ni un datagrama** de retorno.
@@ -305,7 +305,7 @@ Estos límites son parte del contrato: y deben aplicarlos y probarlos. Un límit
 
 ## 10. Versionado y compatibilidad
 
-- El major vive en `schema_version` (`arl.control/v1`, `arl.capabilities/v1`, `arl.audio-frame/v1`). Un major desconocido se rechaza con `version_unsupported`; no se intenta interpretar.
+- El major vive en `schema_version` (`openrelay.control/v1`, `openrelay.capabilities/v1`, `openrelay.audio-frame/v1`). Un major desconocido se rechaza con `version_unsupported`; no se intenta interpretar.
 - v1 no acepta campos desconocidos. Cambios aditivos compatibles se declaran explícitamente en una revisión documentada del esquema; los incompatibles abren v2.
 - El perfil de audio base es PCM16LE mono 48 kHz fijo. La extensión compatible `type=2` (Opus) se negocia con la capacidad `audio.opus-48k-mono` (§8.3); si falta en cualquiera de los dos extremos se usa PCM16. Cualquier otro códec o parámetro de wire requiere una fase posterior y un contrato nuevo.
 - La sesión valida versión y límites **antes** de aceptar audio o control operativo.

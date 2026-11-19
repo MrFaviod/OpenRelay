@@ -1,4 +1,4 @@
-//! Contrato del binario `arl`: socket local, permisos, respuestas correlacionadas
+//! Contrato del binario `openrelay`: socket local, permisos, respuestas correlacionadas
 //! y ausencia de listeners TCP en el proceso del daemon.
 
 use std::fs;
@@ -10,14 +10,14 @@ use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-const ARL: &str = env!("CARGO_BIN_EXE_arl");
+const OPENRELAY: &str = env!("CARGO_BIN_EXE_openrelay");
 
 /// Directorio temporal propio del test; se borra al soltarlo.
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new(tag: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("arl-cli-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("openrelay-cli-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("crear tmpdir");
         TempDir(dir)
@@ -41,14 +41,14 @@ impl Drop for Daemon {
 }
 
 fn start_daemon(sock: &Path) -> Daemon {
-    let child = Command::new(ARL)
+    let child = Command::new(OPENRELAY)
         .args(["daemon", "--socket"])
         .arg(sock)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("arrancar arl daemon");
+        .expect("arrancar openrelay daemon");
     let daemon = Daemon(child);
     let deadline = Instant::now() + Duration::from_secs(10);
     while UnixStream::connect(sock).is_err() {
@@ -73,7 +73,7 @@ fn raw_request(sock: &Path, line: &str) -> serde_json::Value {
 #[test]
 fn socket_permissions_are_0700_dir_and_0600_socket() {
     let tmp = TempDir::new("perm");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     let dir_mode = fs::metadata(sock.parent().unwrap())
@@ -89,14 +89,14 @@ fn socket_permissions_are_0700_dir_and_0600_socket() {
 #[test]
 fn status_exits_zero_with_correlated_json() {
     let tmp = TempDir::new("status");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["status", "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl status");
+        .expect("ejecutar openrelay status");
     assert!(out.status.success(), "exit: {:?}", out.status);
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout JSON");
     assert_eq!(v["ok"], true);
@@ -108,7 +108,7 @@ fn status_exits_zero_with_correlated_json() {
 #[test]
 fn malformed_and_unknown_ops_return_errors_and_daemon_survives() {
     let tmp = TempDir::new("errors");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     let bad = raw_request(&sock, "esto no es json");
@@ -128,19 +128,19 @@ fn malformed_and_unknown_ops_return_errors_and_daemon_survives() {
 #[test]
 fn status_fails_nonzero_when_no_daemon() {
     let tmp = TempDir::new("nodaemon");
-    let sock = tmp.0.join("arl").join("control.sock");
-    let out = Command::new(ARL)
+    let sock = tmp.0.join("openrelay").join("control.sock");
+    let out = Command::new(OPENRELAY)
         .args(["status", "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl status");
+        .expect("ejecutar openrelay status");
     assert_eq!(out.status.code(), Some(1));
 }
 
 #[test]
 fn daemon_has_no_tcp_listeners() {
     let tmp = TempDir::new("tcp");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let d = start_daemon(&sock);
     let pid = d.0.id();
 
@@ -184,14 +184,14 @@ fn get_line(id: &str, key: Option<&str>) -> String {
 #[test]
 fn capabilities_reports_revision_and_declared_keys() {
     let tmp = TempDir::new("caps");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["capabilities", "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl capabilities");
+        .expect("ejecutar openrelay capabilities");
     assert_eq!(out.status.code(), Some(0));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout JSON");
     assert_eq!(v["ok"], true);
@@ -199,7 +199,7 @@ fn capabilities_reports_revision_and_declared_keys() {
     assert_eq!(v["result"]["revision"], 0);
     assert_eq!(
         v["result"]["payload"]["schema_version"],
-        "arl.capabilities/v1"
+        "openrelay.capabilities/v1"
     );
     assert!(
         v["result"]["payload"]["config_keys"]
@@ -213,7 +213,7 @@ fn capabilities_reports_revision_and_declared_keys() {
 #[test]
 fn config_set_without_applicator_is_unsupported_without_mutation() {
     let tmp = TempDir::new("set");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     // Sin aplicador de hardware el set no se aplica: error honesto, sin ACK.
@@ -227,24 +227,24 @@ fn config_set_without_applicator_is_unsupported_without_mutation() {
     assert_eq!(got["result"]["revision"], 0);
     assert_eq!(got["result"]["payload"]["effective"]["value"], 0.0);
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["config", "get", KEY, "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl config get");
+        .expect("ejecutar openrelay config get");
     assert_eq!(out.status.code(), Some(0));
 }
 #[test]
 fn config_set_cli_refusal_exits_one_without_mutation() {
     let tmp = TempDir::new("refuse");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["config", "set", KEY, "-6", "--rev", "0", "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl config set");
+        .expect("ejecutar openrelay config set");
     assert_eq!(
         out.status.code(),
         Some(1),
@@ -259,7 +259,7 @@ fn config_set_cli_refusal_exits_one_without_mutation() {
 #[test]
 fn repeated_request_id_replays_refusal_without_applying() {
     let tmp = TempDir::new("idem");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     let first = raw_request(&sock, &set_line("idem-1", 0, "3.5"));
@@ -272,7 +272,7 @@ fn repeated_request_id_replays_refusal_without_applying() {
 #[test]
 fn unknown_key_and_invalid_value_return_correlated_errors() {
     let tmp = TempDir::new("badkey");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     let unknown = raw_request(&sock, &get_line("nk-1", Some("no.existe")));
@@ -293,11 +293,11 @@ fn unknown_key_and_invalid_value_return_correlated_errors() {
     assert_eq!(bad["ok"], false);
     assert_eq!(bad["error"]["code"], "invalid");
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["config", "set", "no.existe", "1", "--rev", "0", "--socket"])
         .arg(&sock)
         .output()
-        .expect("ejecutar arl config set");
+        .expect("ejecutar openrelay config set");
     assert_eq!(out.status.code(), Some(1));
 
     // El daemon sigue vivo y la revisión no cambió.
@@ -307,16 +307,16 @@ fn unknown_key_and_invalid_value_return_correlated_errors() {
 
 #[test]
 fn config_usage_errors_exit_two() {
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["config", "set", KEY, "1", "--socket", "/tmp/x.sock"])
         .output()
-        .expect("ejecutar arl config set sin --rev");
+        .expect("ejecutar openrelay config set sin --rev");
     assert_eq!(out.status.code(), Some(2));
 
-    let out = Command::new(ARL)
+    let out = Command::new(OPENRELAY)
         .args(["config", "frob"])
         .output()
-        .expect("ejecutar arl config frob");
+        .expect("ejecutar openrelay config frob");
     assert_eq!(out.status.code(), Some(2));
 }
 
@@ -326,7 +326,7 @@ fn config_usage_errors_exit_two() {
 #[test]
 fn slow_unterminated_line_is_rejected_as_too_large() {
     let tmp = TempDir::new("slowline");
-    let sock = tmp.0.join("arl").join("control.sock");
+    let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
     let mut writer = UnixStream::connect(&sock).expect("conectar");

@@ -5,28 +5,30 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use arl_audio_core::{AudioPayload, Flags, OpusFrame};
-use arl_codec::{CodecProfile, OpusEncoder};
-use arl_daemon::control::{ControlRegistry, IdentityGrant, SharedControl};
-use arl_daemon::session::SessionAudio;
-use arl_proto::control::{Capabilities as ControlCapabilities, Feature, PeerRole, RemoteAction};
-use arl_proto::wire::{CapabilitiesMsg, ControlMessage, HelloMsg, SCHEMA_VERSION};
-use arl_transport::quinn::{ServerEvent, SessionId};
 use common::{exchange, session_setup, TestCa, TestLeaf, CLIENT_ADDR, SERVER_ADDR};
+use openrelay_audio_core::{AudioPayload, Flags, OpusFrame};
+use openrelay_codec::{CodecProfile, OpusEncoder};
+use openrelay_daemon::control::{ControlRegistry, IdentityGrant, SharedControl};
+use openrelay_daemon::session::SessionAudio;
+use openrelay_proto::control::{
+    Capabilities as ControlCapabilities, Feature, PeerRole, RemoteAction,
+};
+use openrelay_proto::wire::{CapabilitiesMsg, ControlMessage, HelloMsg, SCHEMA_VERSION};
+use openrelay_transport::quinn::{ServerEvent, SessionId};
 
 const ANDROID_DEVICE: &str = "android_test";
 
 /// Cliente autorizado y sesión de control compartida listos para hablar.
 fn setup() -> (
-    arl_transport::quinn::SessionClient,
-    arl_transport::quinn::SessionServer,
+    openrelay_transport::quinn::SessionClient,
+    openrelay_transport::quinn::SessionServer,
     SessionId,
     SharedControl,
-    arl_transport::identity::SpkiPin,
+    openrelay_transport::identity::SpkiPin,
 ) {
     let ca = TestCa::new();
-    let server_leaf: TestLeaf = ca.leaf("arl-opus-server", true, false);
-    let client_leaf: TestLeaf = ca.leaf("arl-opus-client", false, false);
+    let server_leaf: TestLeaf = ca.leaf("openrelay-opus-server", true, false);
+    let client_leaf: TestLeaf = ca.leaf("openrelay-opus-client", false, false);
     let (mut client, mut server) =
         session_setup(&client_leaf, &server_leaf, &ca, Some(&client_leaf)).expect("sesión");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake mTLS");

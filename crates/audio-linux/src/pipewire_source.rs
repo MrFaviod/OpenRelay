@@ -1,6 +1,6 @@
 //! Fuente de micrófono nativa de PipeWire.
 //!
-//! Publica un nodo `Audio/Source` (`node.name = arl-mic`) que entrega PCM16LE
+//! Publica un nodo `Audio/Source` (`node.name = openrelay-mic`) que entrega PCM16LE
 //! mono 48 kHz. El stream se crea **inactivo**: la fuente no aparece activa ni
 //! empuja muestras hasta que el propietario autorizado llame a
 //! [`PipeWireSource::activate`]. Sin esa llamada el stream queda conectado pero
@@ -13,7 +13,7 @@
 //! asigna, no registra, no toca el sistema de archivos ni la red, no duerme y
 //! no reconfigura el stream.
 
-use arl_audio_core::{BYTES_PER_SAMPLE, CHANNELS, SAMPLE_RATE_HZ};
+use openrelay_audio_core::{BYTES_PER_SAMPLE, CHANNELS, SAMPLE_RATE_HZ};
 use pipewire as pw;
 use pw::spa;
 use pw::spa::pod::Pod;
@@ -28,8 +28,8 @@ use std::sync::Arc;
 
 use crate::ring::{ring, RenderOutcome, SampleConsumer, SampleProducer};
 
-/// Nombre de nodo que arl publica en el grafo de PipeWire.
-pub const NODE_NAME: &str = "arl-mic";
+/// Nombre de nodo que openrelay publica en el grafo de PipeWire.
+pub const NODE_NAME: &str = "openrelay-mic";
 /// `media.class` de una fuente de audio (nodo del que otros consumen).
 pub const MEDIA_CLASS: &str = "Audio/Source";
 /// Canales del perfil v1.
@@ -290,10 +290,10 @@ impl PipeWireSource {
             *pw::keys::MEDIA_ROLE => "Communication",
             *pw::keys::MEDIA_CLASS => MEDIA_CLASS,
             *pw::keys::NODE_NAME => NODE_NAME,
-            *pw::keys::NODE_DESCRIPTION => "arl microphone",
+            *pw::keys::NODE_DESCRIPTION => "openrelay microphone",
         };
 
-        let stream = pw::stream::StreamRc::new(core.clone(), "arl-mic", properties)?;
+        let stream = pw::stream::StreamRc::new(core.clone(), "openrelay-mic", properties)?;
         let (producer, consumer) = ring(ring_capacity);
 
         let counters = Arc::new(Counters::default());

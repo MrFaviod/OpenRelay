@@ -9,40 +9,43 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use arl_daemon::acl::{self, TicketError, Tickets};
-use arl_daemon::pairing::{self, Pairing};
-use arl_proto::control::{
+use common::{exchange, roots, token, TestCa, CLIENT_ADDR, SERVER_ADDR};
+use openrelay_daemon::acl::{self, TicketError, Tickets};
+use openrelay_daemon::pairing::{self, Pairing};
+use openrelay_proto::control::{
     AuthorizedPeer, ConfigKey, ConfigState, ConfigValue, ControlSession, IdentityPolicy, PeerRole,
     RemoteAction,
 };
-use arl_proto::wire::{AckEffective, ConfigSetMsg, ControlMessage};
-use arl_transport::enrollment::{EnrollClient, EnrollServer, EnrollmentEvent};
-use arl_transport::identity::extract_spki_der;
-use arl_transport::quinn::{
+use openrelay_proto::wire::{AckEffective, ConfigSetMsg, ControlMessage};
+use openrelay_transport::enrollment::{EnrollClient, EnrollServer, EnrollmentEvent};
+use openrelay_transport::identity::extract_spki_der;
+use openrelay_transport::quinn::{
     Acl, Capabilities, ClientEvent, RejectReason, ServerEvent, SessionClient, SessionLimits,
     SessionServer,
 };
-use common::{exchange, roots, token, TestCa, CLIENT_ADDR, SERVER_ADDR};
 
 const TTL: Duration = Duration::from_secs(30);
 
 #[test]
 fn enroll_approve_session_control_ticket_revoke() {
-    let dir: PathBuf = std::env::temp_dir().join(format!("arl-f3-{}", std::process::id()));
+    let dir: PathBuf = std::env::temp_dir().join(format!("openrelay-f3-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("directorio de prueba");
     let path = dir.join("identities.json");
 
     let ca = TestCa::new();
-    let daemon = ca.leaf("arl-daemon", true, false);
-    let enroll_leaf = ca.leaf("arl-enroll-pairing", true, false);
-    let android = ca.leaf("arl-android", false, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
+    let enroll_leaf = ca.leaf("openrelay-enroll-pairing", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let now = Instant::now();
 
     // 1) Enrolar: QR con pin y token -> token -> SPKI del cliente.
     let window = token();
     let qr = Pairing::qr_payload(enroll_leaf.pin, SERVER_ADDR, &window);
-    assert!(qr.starts_with("arl://pair?v=1&"), "QR documentado: {qr}");
+    assert!(
+        qr.starts_with("openrelay://pair?v=1&"),
+        "QR documentado: {qr}"
+    );
     let mut enroll_server = EnrollServer::new(enroll_leaf.certified(&ca)).expect("enroll");
     enroll_server
         .open_window(window.clone(), Duration::from_secs(120), now)

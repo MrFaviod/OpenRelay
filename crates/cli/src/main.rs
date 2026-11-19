@@ -1,14 +1,14 @@
-//! `arl` — CLI local de administración del daemon de arl.
+//! `openrelay` — CLI local de administración del daemon de openrelay.
 //!
 //! Uso:
 //!
 //! ```text
-//! arl daemon [--socket PATH]            arranca el servidor de control en primer plano
-//! arl status [--socket PATH]            pide el estado al daemon y lo imprime (JSON)
-//! arl config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
-//! arl config set KEY VALUE --rev N      escribe una clave con revisión esperada
-//! arl capabilities [--socket PATH]      pide las capacidades y la revisión actual
-//! arl service print-unit                imprime la unidad systemd --user
+//! openrelay daemon [--socket PATH]            arranca el servidor de control en primer plano
+//! openrelay status [--socket PATH]            pide el estado al daemon y lo imprime (JSON)
+//! openrelay config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
+//! openrelay config set KEY VALUE --rev N      escribe una clave con revisión esperada
+//! openrelay capabilities [--socket PATH]      pide las capacidades y la revisión actual
+//! openrelay service print-unit                imprime la unidad systemd --user
 //! ```
 //!
 //! Códigos de salida: 0 correcto; 1 el daemon no responde o devuelve error;
@@ -21,26 +21,26 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use arl_daemon::runtime::{ProvisionFiles, RuntimeConfig};
+use openrelay_daemon::runtime::{ProvisionFiles, RuntimeConfig};
 use serde_json::{json, Value};
 
 const USAGE: &str = "\
-arl — CLI de administración del daemon de arl
+openrelay — CLI de administración del daemon de openrelay
 
 Uso:
-  arl daemon [--socket PATH]            arranca el servidor de control (primer plano)
-  arl status [--socket PATH]            muestra el estado del daemon (JSON)
-  arl config get [KEY] [--socket PATH]  lee una clave o todas (JSON)
-  arl config set KEY VALUE --rev N      escribe una clave (JSON)
-  arl capabilities [--socket PATH]      capacidades y revisión actual (JSON)
-  arl service print-unit                imprime la unidad systemd --user
-  arl --help | arl <subcomando> --help
+  openrelay daemon [--socket PATH]            arranca el servidor de control (primer plano)
+  openrelay status [--socket PATH]            muestra el estado del daemon (JSON)
+  openrelay config get [KEY] [--socket PATH]  lee una clave o todas (JSON)
+  openrelay config set KEY VALUE --rev N      escribe una clave (JSON)
+  openrelay capabilities [--socket PATH]      capacidades y revisión actual (JSON)
+  openrelay service print-unit                imprime la unidad systemd --user
+  openrelay --help | openrelay <subcomando> --help
 
-Socket por defecto: $XDG_RUNTIME_DIR/arl/control.sock (0700 dir, 0600 socket).
+Socket por defecto: $XDG_RUNTIME_DIR/openrelay/control.sock (0700 dir, 0600 socket).
 ";
 
 const DAEMON_USAGE: &str = "\
-Uso: arl daemon [--socket PATH]
+Uso: openrelay daemon [--socket PATH]
                  [--quic ADDR]
                  [--identity-der PATH --identity-key PATH]
                  [--client-ca PATH --identities PATH --control-grants PATH]
@@ -54,15 +54,15 @@ aprovisionados; este comando no genera claves ni certificados.
 ";
 
 const STATUS_USAGE: &str = "\
-Uso: arl status [--socket PATH]
+Uso: openrelay status [--socket PATH]
 
 Imprime la respuesta JSON completa del daemon. Sale con 1 si no responde.
 ";
 
 const CONFIG_USAGE: &str = "\
 Uso:
-  arl config get [KEY] [--socket PATH]
-  arl config set KEY VALUE --rev N [--socket PATH]
+  openrelay config get [KEY] [--socket PATH]
+  openrelay config set KEY VALUE --rev N [--socket PATH]
 
 get sin KEY devuelve el snapshot completo. set exige --rev con la revisión
 que leíste antes; si no coincide, sale con 1 y devuelve error `conflict` con
@@ -72,21 +72,21 @@ dos veces.
 ";
 
 const CAPABILITIES_USAGE: &str = "\
-Uso: arl capabilities [--socket PATH]
+Uso: openrelay capabilities [--socket PATH]
 
 Imprime el mensaje `capabilities` del daemon (revisión, claves y límites).
 ";
 
 const SERVICE_USAGE: &str = "\
-Uso: arl service print-unit
+Uso: openrelay service print-unit
 
-Imprime, sin instalarlo, el contenido de packaging/systemd/arl.service.
-La unidad es opcional: corre `arl daemon` bajo systemd --user.
+Imprime, sin instalarlo, el contenido de packaging/systemd/openrelay.service.
+La unidad es opcional: corre `openrelay daemon` bajo systemd --user.
 ";
 
 /// Unidad empaquetada. `include_str!` evita duplicar el archivo: lo que se
 /// imprime es exactamente lo que se distribuye.
-const SERVICE_UNIT: &str = include_str!("../../../packaging/systemd/arl.service");
+const SERVICE_UNIT: &str = include_str!("../../../packaging/systemd/openrelay.service");
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -106,7 +106,7 @@ fn main() -> ExitCode {
         "capabilities" => cmd_capabilities(rest),
         "service" => cmd_service(rest),
         other => {
-            eprintln!("arl: subcomando desconocido: {other}\n\n{USAGE}");
+            eprintln!("openrelay: subcomando desconocido: {other}\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
@@ -135,19 +135,19 @@ fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, E
             "--socket" => match it.next() {
                 Some(p) => socket = Some(PathBuf::from(p)),
                 None => {
-                    eprintln!("arl: --socket requiere una ruta");
+                    eprintln!("openrelay: --socket requiere una ruta");
                     return Err(ExitCode::from(2));
                 }
             },
             "--rev" if rev_allowed => match it.next().and_then(|n| n.parse::<u64>().ok()) {
                 Some(n) => rev = Some(n),
                 None => {
-                    eprintln!("arl: --rev requiere un entero no negativo");
+                    eprintln!("openrelay: --rev requiere un entero no negativo");
                     return Err(ExitCode::from(2));
                 }
             },
             other if other.starts_with('-') && other.len() > 1 && other.parse::<f64>().is_err() => {
-                eprintln!("arl: argumento desconocido: {other}\n\n{usage}");
+                eprintln!("openrelay: argumento desconocido: {other}\n\n{usage}");
                 return Err(ExitCode::from(2));
             }
             other => positional.push(other.to_owned()),
@@ -156,9 +156,11 @@ fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, E
     let socket = match socket {
         Some(p) => p,
         None => match env::var_os("XDG_RUNTIME_DIR") {
-            Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("arl").join("control.sock"),
+            Some(dir) if !dir.is_empty() => {
+                PathBuf::from(dir).join("openrelay").join("control.sock")
+            }
             _ => {
-                eprintln!("arl: define --socket o XDG_RUNTIME_DIR");
+                eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
                 return Err(ExitCode::from(2));
             }
         },
@@ -175,7 +177,7 @@ fn parse_plain(rest: &[String], usage: &str) -> Result<PathBuf, ExitCode> {
     let opts = parse_opts(rest, usage, false)?;
     if !opts.positional.is_empty() {
         eprintln!(
-            "arl: argumento desconocido: {}\n\n{usage}",
+            "openrelay: argumento desconocido: {}\n\n{usage}",
             opts.positional[0]
         );
         return Err(ExitCode::from(2));
@@ -188,22 +190,22 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
         Ok(parsed) => parsed,
         Err(code) => return code,
     };
-    let (mut runtime, ready) = match arl_daemon::runtime::start(&config) {
+    let (mut runtime, ready) = match openrelay_daemon::runtime::start(&config) {
         Ok(started) => started,
         Err(error) => {
-            eprintln!("arl: daemon: {error}");
+            eprintln!("openrelay: daemon: {error}");
             return ExitCode::from(1);
         }
     };
     if let Some(gap) = &ready.quic_gap {
-        eprintln!("arl: {gap}");
+        eprintln!("openrelay: {gap}");
     } else if let Some(addr) = ready.quic_addr {
         eprintln!(
-            "arl: QUIC en {addr} pin {}",
+            "openrelay: QUIC en {addr} pin {}",
             ready.server_pin.as_deref().unwrap_or("-")
         );
     }
-    eprintln!("arl: daemon escuchando en {}", path.display());
+    eprintln!("openrelay: daemon escuchando en {}", path.display());
     let served = socket::serve_interleaved(&path, |event| match event {
         socket::Interleave::Request {
             op,
@@ -212,7 +214,7 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
         } => runtime.local_op(op, request_id, args),
         socket::Interleave::Idle => {
             if let Err(error) = runtime.pump_quic() {
-                eprintln!("arl: quic: {error}");
+                eprintln!("openrelay: quic: {error}");
             }
             Ok(Value::Null)
         }
@@ -220,13 +222,13 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
     match served {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("arl: daemon: {error}");
+            eprintln!("openrelay: daemon: {error}");
             ExitCode::from(1)
         }
     }
 }
 
-/// Argumentos propios de `arl daemon`. El resto lo resuelve `parse_opts`.
+/// Argumentos propios de `openrelay daemon`. El resto lo resuelve `parse_opts`.
 struct DaemonOpts {
     quic: Option<SocketAddr>,
     identity_der: Option<PathBuf>,
@@ -250,7 +252,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
             match it.next() {
                 Some(path) => Ok(PathBuf::from(path)),
                 None => {
-                    eprintln!("arl: {name} requiere una ruta");
+                    eprintln!("openrelay: {name} requiere una ruta");
                     Err(ExitCode::from(2))
                 }
             }
@@ -269,12 +271,12 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
             "--quic" => match it.next().and_then(|text| text.parse::<SocketAddr>().ok()) {
                 Some(addr) => quic = Some(addr),
                 None => {
-                    eprintln!("arl: --quic requiere host:puerto");
+                    eprintln!("openrelay: --quic requiere host:puerto");
                     return Err(ExitCode::from(2));
                 }
             },
             other => {
-                eprintln!("arl: argumento desconocido: {other}\n\n{DAEMON_USAGE}");
+                eprintln!("openrelay: argumento desconocido: {other}\n\n{DAEMON_USAGE}");
                 return Err(ExitCode::from(2));
             }
         }
@@ -282,9 +284,11 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
     let socket = match socket {
         Some(path) => path,
         None => match env::var_os("XDG_RUNTIME_DIR") {
-            Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("arl").join("control.sock"),
+            Some(dir) if !dir.is_empty() => {
+                PathBuf::from(dir).join("openrelay").join("control.sock")
+            }
             _ => {
-                eprintln!("arl: define --socket o XDG_RUNTIME_DIR");
+                eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
                 return Err(ExitCode::from(2));
             }
         },
@@ -324,22 +328,24 @@ impl DaemonOpts {
                 control_grants,
             }),
             _ => {
-                eprintln!("arl: la provisión pide los cinco archivos o ninguno\n\n{DAEMON_USAGE}");
+                eprintln!(
+                    "openrelay: la provisión pide los cinco archivos o ninguno\n\n{DAEMON_USAGE}"
+                );
                 return Err(ExitCode::from(2));
             }
         };
         if self.quic.is_some() && provision.is_none() {
-            eprintln!("arl: --quic requiere la provisión completa\n\n{DAEMON_USAGE}");
+            eprintln!("openrelay: --quic requiere la provisión completa\n\n{DAEMON_USAGE}");
             return Err(ExitCode::from(2));
         }
         if self.quic.is_none() && provision.is_some() {
-            eprintln!("arl: la provisión no se usa sin --quic\n\n{DAEMON_USAGE}");
+            eprintln!("openrelay: la provisión no se usa sin --quic\n\n{DAEMON_USAGE}");
             return Err(ExitCode::from(2));
         }
         Ok(RuntimeConfig {
             quic_bind: self.quic,
             provision,
-            local_device_id: "arl-cli-local".to_owned(),
+            local_device_id: "openrelay-cli-local".to_owned(),
         })
     }
 }
@@ -358,7 +364,7 @@ fn cmd_capabilities(rest: &[String]) -> ExitCode {
     }
 }
 
-/// `arl service print-unit`: vuelca la unidad sin escribir ni instalar nada.
+/// `openrelay service print-unit`: vuelca la unidad sin escribir ni instalar nada.
 fn cmd_service(rest: &[String]) -> ExitCode {
     match rest {
         [arg] if arg == "print-unit" => {
@@ -370,11 +376,11 @@ fn cmd_service(rest: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         [] => {
-            eprintln!("arl: usa `arl service print-unit`\n\n{SERVICE_USAGE}");
+            eprintln!("openrelay: usa `openrelay service print-unit`\n\n{SERVICE_USAGE}");
             ExitCode::from(2)
         }
         [other, ..] => {
-            eprintln!("arl: subcomando de service desconocido: {other}\n\n{SERVICE_USAGE}");
+            eprintln!("openrelay: subcomando de service desconocido: {other}\n\n{SERVICE_USAGE}");
             ExitCode::from(2)
         }
     }
@@ -389,7 +395,7 @@ fn cmd_config(rest: &[String]) -> ExitCode {
         Some("get") => cmd_config_get(&rest[1..]),
         Some("set") => cmd_config_set(&rest[1..]),
         _ => {
-            eprintln!("arl: usa `arl config get|set`\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: usa `openrelay config get|set`\n\n{CONFIG_USAGE}");
             ExitCode::from(2)
         }
     }
@@ -404,7 +410,7 @@ fn cmd_config_get(rest: &[String]) -> ExitCode {
         [] => Value::Null,
         [k] => Value::String(k.clone()),
         _ => {
-            eprintln!("arl: config get admite como máximo una clave\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: config get admite como máximo una clave\n\n{CONFIG_USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -419,12 +425,12 @@ fn cmd_config_set(rest: &[String]) -> ExitCode {
     let (key, raw) = match opts.positional.as_slice() {
         [k, v] => (k.clone(), v.clone()),
         _ => {
-            eprintln!("arl: config set requiere KEY y VALUE\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: config set requiere KEY y VALUE\n\n{CONFIG_USAGE}");
             return ExitCode::from(2);
         }
     };
     let Some(expected_revision) = opts.rev else {
-        eprintln!("arl: config set requiere --rev N\n\n{CONFIG_USAGE}");
+        eprintln!("openrelay: config set requiere --rev N\n\n{CONFIG_USAGE}");
         return ExitCode::from(2);
     };
     let args = json!({
@@ -463,12 +469,12 @@ fn send(path: &Path, op: &str, args: &Value) -> ExitCode {
             if resp.get("ok") == Some(&Value::Bool(true)) {
                 ExitCode::SUCCESS
             } else {
-                eprintln!("arl: el daemon devolvió error");
+                eprintln!("openrelay: el daemon devolvió error");
                 ExitCode::from(1)
             }
         }
         Err(e) => {
-            eprintln!("arl: {e}");
+            eprintln!("openrelay: {e}");
             ExitCode::from(1)
         }
     }

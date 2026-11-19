@@ -14,7 +14,7 @@
 //! llame a [`MonitorSource::activate`]. Sin sesión de PipeWire en el host,
 //! [`MonitorSource::open`] devuelve error; no entra en pánico.
 
-use arl_audio_core::{BYTES_PER_SAMPLE, CHANNELS, SAMPLE_RATE_HZ};
+use openrelay_audio_core::{BYTES_PER_SAMPLE, CHANNELS, SAMPLE_RATE_HZ};
 use pipewire as pw;
 use pw::spa;
 use pw::spa::pod::Pod;
@@ -31,7 +31,7 @@ use std::time::Duration;
 use crate::ring::{ring, SampleConsumer, SampleProducer};
 
 /// Nombre de nodo del stream de captura del monitor.
-pub const NODE_NAME: &str = "arl-return";
+pub const NODE_NAME: &str = "openrelay-return";
 /// `media.class` de un stream de captura de audio.
 pub const MEDIA_CLASS: &str = "Stream/Input/Audio";
 /// Canales del perfil v1.
@@ -190,12 +190,12 @@ impl MonitorSource {
             *pw::keys::MEDIA_ROLE => "Music",
             *pw::keys::MEDIA_CLASS => MEDIA_CLASS,
             *pw::keys::NODE_NAME => NODE_NAME,
-            *pw::keys::NODE_DESCRIPTION => "arl return monitor",
+            *pw::keys::NODE_DESCRIPTION => "openrelay return monitor",
             // Captura el monitor del sink por defecto (no una fuente física).
             *pw::keys::STREAM_CAPTURE_SINK => "true",
         };
 
-        let stream = pw::stream::StreamRc::new(core.clone(), "arl-return", properties)?;
+        let stream = pw::stream::StreamRc::new(core.clone(), "openrelay-return", properties)?;
         let (producer, consumer) = ring(ring_capacity);
 
         let counters = Arc::new(Counters::default());

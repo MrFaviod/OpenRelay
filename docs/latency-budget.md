@@ -21,12 +21,11 @@ ambos son propuestas.
 | Resample + salida | 2 ms | 8 ms | resample adaptativo y entrega al sink; no medido |
 | **Total** | **25 ms** | **80 ms** | suma de etapas, no latencia observada |
 
-La fila Jitter usa el target por defecto de `arl-audio-core` (10 ms) y su máximo
+La fila Jitter usa el target por defecto de `openrelay-audio-core` (10 ms) y su máximo
 de contrato (40 ms); no es una espera medida. La fila LAN es la prioridad: si
 una medición futura incumple, el orden de ataque es red → jitter → captura.
 
-Bloque comprobado por `tools/verify.py --budget --phase f1`: el verificador
-recalcula sumas y coherencia, no mide latencia.
+El bloque siguiente es la suma de etapas del contrato; no mide latencia.
 
 <!-- verify:latency-budget -->
 ```json
@@ -57,26 +56,25 @@ arnés vive en `tools/measure/` y la evidencia en `artifacts/latency/`.
 - **RTT:** se mide y reporta en su propio campo `rtt_ms`, aparte de
   `latency_ms`. No se suma, resta ni promedia con la latencia; confundirlos
   invalida la evidencia.
-- **Drift de 1 h:** `cargo test -p arl-audio-core --test drift_1h -- --ignored`
+- **Drift de 1 h:** `cargo test -p openrelay-audio-core --test drift_1h -- --ignored`
   es la referencia simulada; la evidencia de hardware exige un stream real de
   60 min con `ppm` y `resyncs`.
 - **Soak de 8 h:** `python3 tools/measure/soak.py --hours 8...` reporta RSS
   CPU, xruns, drops y `plc_frames` desde `/proc`, log de PipeWire y snapshot
-  de contadores. Un smoke corto no cierra SC-029.
+  de contadores. Un smoke corto no acredita el soak.
 - **Evidencia:** `python3 tools/measure/latency.py --plan
-  docs/measurement-method.md --require-evidence artifacts/latency/` queda en
-  pendiente sin capturas físicas hasheadas. `--dry-run` es sólo preflight y nunca
-  cuenta como evidencia (SC-047).
+  docs/measurement-method.md --require-evidence artifacts/latency/` queda sin
+  resultado sin capturas físicas hasheadas. `--dry-run` es sólo preflight y nunca
+  cuenta como evidencia.
 
-Estado actual: **pendiente**. No hay baseline físico ni dispositivo de referencia
+Estado actual: **sin medición física**. No hay baseline físico ni dispositivo de referencia
 medido; estas cifras no se presentan como logradas. Cuando exista evidencia
-válida, el bloque `verify:latency-budget` se actualizará en coordinación con
-`tools/verify.py`; hasta entonces conserva `proposed_not_measured` para no
-declarar mediciones inexistentes.
+válida se actualizará el bloque `verify:latency-budget`; hasta entonces conserva
+`proposed_not_measured` para no declarar mediciones inexistentes.
 
 ## Contadores idle y streaming
 
-`arl_audio_core::budget` separa dos acumuladores que nunca se mezclan:
+`openrelay_audio_core::budget` separa dos acumuladores que nunca se mezclan:
 
 - **Idle**: proceso vivo sin audio en curso. Cuenta sólo lo que el consumidor
   observe mientras el modo está en idle.

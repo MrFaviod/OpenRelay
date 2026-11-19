@@ -1,6 +1,6 @@
-//! Pruebas de los perfiles Opus restricted-lowdelay de `arl-codec`.
+//! Pruebas de los perfiles Opus restricted-lowdelay de `openrelay-codec`.
 
-use arl_codec::{
+use openrelay_codec::{
     CodecError, CodecProfile, OpusDecoder, OpusEncoder, FRAME_HEADER_LEN, LOOKAHEAD_US,
     MAX_BITRATE_BPS, MAX_DATAGRAM_LEN, MAX_PACKET_LEN, MIN_BITRATE_BPS, SAMPLE_RATE_HZ,
 };

@@ -798,7 +798,7 @@ impl EffectivePolicy for UnsupportedPolicy {
     }
 }
 
-/// Payload de `capabilities` (esquema `arl.capabilities/v1`).
+/// Payload de `capabilities` (esquema `openrelay.capabilities/v1`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Capabilities {
     /// Identificador opaco del dispositivo.
@@ -908,7 +908,7 @@ impl Capabilities {
                 Feature::ControlV1,
                 Feature::AudioPcm16_48kMono,
                 // El códec va compilado en el daemon (dependencia obligatoria
-                // de `arl-codec`), así que la capacidad opcional siempre está
+                // de `openrelay-codec`), así que la capacidad opcional siempre está
                 // disponible y se anuncia. Un extremo sin el códec la ignora.
                 Feature::AudioOpus48kMono,
                 Feature::SessionV1,

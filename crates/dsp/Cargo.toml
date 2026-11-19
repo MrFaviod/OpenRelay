@@ -1,11 +1,11 @@
 [package]
-name = "arl-dsp"
+name = "openrelay-dsp"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Reducción de ruido opcional con SpeexDSP y bypass real para arl"
+description = "Reducción de ruido opcional con SpeexDSP y bypass real para openrelay"
 build = "build.rs"
 
 [features]

@@ -8,20 +8,23 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
-use arl_daemon::acl::{self, TicketError, Tickets};
-use arl_daemon::pairing;
-use arl_transport::identity::SpkiPin;
-use arl_transport::quinn::{
+use common::{exchange, roots, TestCa, CLIENT_ADDR, SERVER_ADDR};
+use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use openrelay_daemon::acl::{self, TicketError, Tickets};
+use openrelay_daemon::pairing;
+use openrelay_transport::identity::SpkiPin;
+use openrelay_transport::quinn::{
     Acl, Capabilities, ClientEvent, RejectReason, ServerEvent, SessionClient, SessionId,
     SessionLimits, SessionServer,
 };
-use common::{exchange, roots, TestCa, CLIENT_ADDR, SERVER_ADDR};
 
 const TTL: Duration = Duration::from_secs(30);
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("arl-revocation-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "openrelay-revocation-{}-{name}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("directorio de prueba");
     dir.join("identities.json")
@@ -75,8 +78,8 @@ fn acl_with(pin: SpkiPin, caps: Capabilities) -> Acl {
 #[test]
 fn a_capability_not_granted_blocks_audio() {
     let ca = TestCa::new();
-    let daemon = ca.leaf("arl-daemon", true, false);
-    let android = ca.leaf("arl-android", false, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
 
     // Sin `mic`: el audio enviado no llega a la cola de recepción.
     let mut server = server_for(
@@ -112,9 +115,9 @@ fn a_capability_not_granted_blocks_audio() {
 #[test]
 fn b_tickets_are_single_use_bound_and_short_lived() {
     let ca = TestCa::new();
-    let daemon = ca.leaf("arl-daemon", true, false);
-    let android = ca.leaf("arl-android", false, false);
-    let other = ca.leaf("arl-other", false, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
+    let other = ca.leaf("openrelay-other", false, false);
     let mut server = server_for(
         &daemon,
         &ca,
@@ -173,8 +176,8 @@ fn b_tickets_are_single_use_bound_and_short_lived() {
 #[test]
 fn c_revocation_closes_live_session_and_denies_reconnect() {
     let ca = TestCa::new();
-    let daemon = ca.leaf("arl-daemon", true, false);
-    let android = ca.leaf("arl-android", false, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let path = scratch("revoke");
     let doc = serde_json::json!({
         "version": 1,
@@ -236,7 +239,7 @@ fn c_revocation_closes_live_session_and_denies_reconnect() {
 #[test]
 fn d_audit_never_contains_the_ticket() {
     let ca = TestCa::new();
-    let android = ca.leaf("arl-android", false, false);
+    let android = ca.leaf("openrelay-android", false, false);
     let mut tickets = Tickets::new();
     let now = Instant::now();
     let session = session_from_pair_for_audit(&ca, &android);
@@ -259,7 +262,7 @@ fn d_audit_never_contains_the_ticket() {
 
 /// Sesión autorizada real para obtener un `SessionId` opaco.
 fn session_from_pair_for_audit(ca: &TestCa, android: &common::TestLeaf) -> SessionId {
-    let daemon = ca.leaf("arl-daemon", true, false);
+    let daemon = ca.leaf("openrelay-daemon", true, false);
     let mut server = server_for(&daemon, ca, acl_with(android.pin, Capabilities::none()));
     let mut client = client_for(android, &daemon, ca);
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="stream_channel_name">Captura del micrófono</string>
-    <string name="stream_channel_description">Muestra que the reference app está usando el micrófono y permite pararlo o silenciarlo.</string>
-    <string name="stream_notification_title">the reference app está usando el micrófono</string>
+    <string name="stream_channel_description">Muestra que la app está usando el micrófono y permite pararla o silenciarla.</string>
+    <string name="stream_notification_title">La app está usando el micrófono</string>
     <string name="stream_notification_capturing">Capturando en este dispositivo. Todavía no se envía a otro equipo.</string>
     <string name="stream_notification_muted">Silenciado. El micrófono sigue abierto y no se envía audio.</string>
     <string name="stream_notification_error">La captura se detuvo por un error.</string>

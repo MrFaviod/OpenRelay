@@ -1,4 +1,4 @@
-//! El proceso `arl daemon` con archivos aportados comparte una revisión entre
+//! El proceso `openrelay daemon` con archivos aportados comparte una revisión entre
 //! el socket Unix del CLI y un cliente QUIC real.
 //!
 //! La CA, las hojas y la clave PKCS#8 nacen en este test y se borran con el
@@ -14,23 +14,23 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use arl_proto::control::{ConfigKey, ConfigValue, ErrorCode, ErrorMsg};
-use arl_proto::wire::{ConfigSetMsg, ControlMessage};
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{SessionClient, SessionLimits};
+use openrelay_proto::control::{ConfigKey, ConfigValue, ErrorCode, ErrorMsg};
+use openrelay_proto::wire::{ConfigSetMsg, ControlMessage};
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{SessionClient, SessionLimits};
 use rcgen::{
     date_time_ymd, BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa,
     KeyPair, KeyUsagePurpose,
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 
-const ARL: &str = env!("CARGO_BIN_EXE_arl");
+const OPENRELAY: &str = env!("CARGO_BIN_EXE_openrelay");
 
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("arl-proc-{}\"", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("openrelay-proc-{}\"", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("tmpdir");
         TempDir(dir)
@@ -90,7 +90,7 @@ fn write_material(dir: &TempDir) -> (SpkiPin, SpkiPin) {
     let mut ca_params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
     ca_params
         .distinguished_name
-        .push(DnType::CommonName, "arl-process-test-ca");
+        .push(DnType::CommonName, "openrelay-process-test-ca");
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
     ca_params.not_before = date_time_ymd(2024, 1, 1);
@@ -98,8 +98,8 @@ fn write_material(dir: &TempDir) -> (SpkiPin, SpkiPin) {
     let ca_key = KeyPair::generate().expect("clave CA");
     let ca_cert = ca_params.self_signed(&ca_key).expect("CA");
 
-    let server = leaf(&ca_cert, &ca_key, "arl-process-server", true);
-    let client = leaf(&ca_cert, &ca_key, "arl-process-client", false);
+    let server = leaf(&ca_cert, &ca_key, "openrelay-process-server", true);
+    let client = leaf(&ca_cert, &ca_key, "openrelay-process-client", false);
 
     fs::write(dir.path("server.der"), &server.cert_der).unwrap();
     fs::write(dir.path("server.key"), &server.key_der).unwrap();
@@ -116,14 +116,14 @@ fn write_material(dir: &TempDir) -> (SpkiPin, SpkiPin) {
     .unwrap();
     fs::write(
         dir.path("grants.txt"),
-        format!("{}\tarl-android-test\twrite\n", client.pin.to_hex()),
+        format!("{}\topenrelay-android-test\twrite\n", client.pin.to_hex()),
     )
     .unwrap();
     (server.pin, client.pin)
 }
 
 fn start(dir: &TempDir, sock: &Path) -> (Daemon, String) {
-    let child = Command::new(ARL)
+    let child = Command::new(OPENRELAY)
         .args(["daemon", "--socket"])
         .arg(sock)
         .args(["--quic", "127.0.0.1:0"])
@@ -141,7 +141,7 @@ fn start(dir: &TempDir, sock: &Path) -> (Daemon, String) {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("arrancar arl");
+        .expect("arrancar openrelay");
     let mut daemon = Daemon(child);
     let deadline = Instant::now() + Duration::from_secs(10);
     while UnixStream::connect(sock).is_err() {
@@ -168,12 +168,12 @@ fn start(dir: &TempDir, sock: &Path) -> (Daemon, String) {
 }
 
 fn cli(sock: &Path, args: &[&str]) -> serde_json::Value {
-    let output = Command::new(ARL)
+    let output = Command::new(OPENRELAY)
         .args(args)
         .args(["--socket"])
         .arg(sock)
         .output()
-        .expect("arl");
+        .expect("openrelay");
     serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
         panic!(
             "salida no JSON ({}): {}",

@@ -4,14 +4,14 @@
 //! comprueban coherencia interna y que los contadores consumen las métricas
 //! reales de jitter y drift sin duplicar el pipeline.
 
-use arl_audio_core::budget::{
+use openrelay_audio_core::budget::{
     self, IdleStreamBudget, Mode, Resource, Stage, ThreadClass, Verdict, STAGE_BUDGETS,
 };
-use arl_audio_core::drift::{DriftConfig, DriftController};
-use arl_audio_core::frame::{AudioFrame, Flags, DATAGRAM_LEN};
-use arl_audio_core::jitter::{JitterBuffer, JitterConfig, PopOutcome, PushOutcome};
-use arl_audio_core::pcm16;
-use arl_audio_core::resample::LinearResampler;
+use openrelay_audio_core::drift::{DriftConfig, DriftController};
+use openrelay_audio_core::frame::{AudioFrame, Flags, DATAGRAM_LEN};
+use openrelay_audio_core::jitter::{JitterBuffer, JitterConfig, PopOutcome, PushOutcome};
+use openrelay_audio_core::pcm16;
+use openrelay_audio_core::resample::LinearResampler;
 
 fn frame(seq: u32) -> AudioFrame {
     AudioFrame::new(1, seq, Flags::NONE, pcm16::SILENCE).expect("frame válido")

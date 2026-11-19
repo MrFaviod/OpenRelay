@@ -21,7 +21,7 @@ mod pulse_fallback {
     use std::rc::Rc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use arl_audio_linux::pulse::{
+    use openrelay_audio_linux::pulse::{
         Pactl, PactlProcess, PulseError, PulseFallback, SINK_NAME, SOURCE_NAME,
     };
 
@@ -223,7 +223,7 @@ mod pulse_fallback {
             .duration_since(UNIX_EPOCH)
             .expect("reloj del sistema")
             .as_nanos();
-        std::env::temp_dir().join(format!("arl-f7-pulse-{}-{nanos}", std::process::id()))
+        std::env::temp_dir().join(format!("openrelay-f7-pulse-{}-{nanos}", std::process::id()))
     }
 
     fn wait_for_socket(path: &Path) -> bool {
@@ -336,7 +336,7 @@ mod pulse_fallback {
 
 #[cfg(feature = "alsa")]
 mod alsa_opt_in {
-    use arl_audio_linux::alsa::{open_from_config, AlsaConfig, AlsaError, AlsaHwSource};
+    use openrelay_audio_linux::alsa::{open_from_config, AlsaConfig, AlsaError, AlsaHwSource};
 
     #[test]
     fn stays_closed_without_opt_in() {

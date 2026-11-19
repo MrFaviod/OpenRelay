@@ -1,4 +1,4 @@
-//! Wire de control `arl.control/v1`: framing, JSON estricto y mensajes.
+//! Wire de control `openrelay.control/v1`: framing, JSON estricto y mensajes.
 //!
 //! Un frame de control es `u32` big-endian con la longitud del payload
 //! (1..=16384) seguido de exactamente ese número de bytes JSON UTF-8.
@@ -19,7 +19,7 @@ use crate::control::{
 };
 
 /// Versión mayor del contrato que esta crate implementa.
-pub const SCHEMA_VERSION: &str = "arl.control/v1";
+pub const SCHEMA_VERSION: &str = "openrelay.control/v1";
 /// Bytes del prefijo de longitud de control.
 pub const CONTROL_LENGTH_BYTES: usize = 4;
 /// Payload de control máximo, antes de asignar memoria proporcional.
@@ -468,7 +468,7 @@ pub struct HelloMsg {
     pub role: PeerRole,
     /// Versión de la aplicación.
     pub version: String,
-    /// Versión de protocolo; debe ser `arl.control/v1`.
+    /// Versión de protocolo; debe ser `openrelay.control/v1`.
     pub protocol_version: String,
 }
 
@@ -559,7 +559,7 @@ pub enum EventBody {
     },
 }
 
-/// Mensaje de control `arl.control/v1`.
+/// Mensaje de control `openrelay.control/v1`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ControlMessage {
     /// `hello` del cliente.
@@ -1010,7 +1010,7 @@ fn capabilities_to_json(
     Ok(JsonValue::Object(vec![
         (
             "schema_version".into(),
-            JsonValue::String("arl.capabilities/v1".into()),
+            JsonValue::String("openrelay.capabilities/v1".into()),
         ),
         (
             "device_id".into(),
@@ -1425,7 +1425,7 @@ fn capabilities_from_fields(
     request_id: Option<&str>,
 ) -> Result<Capabilities, WireError> {
     let schema_version = payload.require_string("schema_version", request_id)?;
-    if schema_version != "arl.capabilities/v1" {
+    if schema_version != "openrelay.capabilities/v1" {
         return Err(WireError::new(
             WireErrorKind::UnsupportedVersion,
             request_id.map(str::to_owned),

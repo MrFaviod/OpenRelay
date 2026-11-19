@@ -1,4 +1,4 @@
-# Política de dependencias de arl (cargo-deny, propuesta; no ejecutada en T05).
+# Política de dependencias de openrelay (cargo-deny, propuesta; no ejecutada en T05).
 # El core de F1 no tiene dependencias externas: este archivo fija el criterio
 # para cuando se incorporen candidatos del ledger.
 [graph]

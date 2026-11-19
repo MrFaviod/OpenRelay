@@ -1,4 +1,4 @@
-//! Cliente de sesión de producto (F4): UDP real, control `arl.control/v1`
+//! Cliente de sesión de producto (F4): UDP real, control `openrelay.control/v1`
 //! y cierre local. La clave privada no entra aquí: la firma la pide
 //! [`super::KeystoreKey`] al `KeystoreSigner` de Java.
 //!
@@ -14,17 +14,17 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use arl_audio_core::AudioPayload;
-use arl_proto::control::{
+use openrelay_audio_core::AudioPayload;
+use openrelay_proto::control::{
     Capabilities as PeerCapabilities, ConfigKey, ConfigValue, ErrorMsg, Feature, PeerRole,
     RemoteAction,
 };
-use arl_proto::wire::{
+use openrelay_proto::wire::{
     encode_message, AckEffective, AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg,
     ControlMessage, HelloMsg, SCHEMA_VERSION,
 };
-use arl_transport::identity::{self, SpkiPin};
-use arl_transport::quinn::{ClientEvent, SessionClient, SessionLimits};
+use openrelay_transport::identity::{self, SpkiPin};
+use openrelay_transport::quinn::{ClientEvent, SessionClient, SessionLimits};
 use rustls::pki_types::CertificateDer;
 
 use crate::audio::{local_features, selected_format, AudioSender, CodecChoice};
@@ -123,7 +123,7 @@ impl Shared {
         let mut features: Vec<Feature> = local_features(choice)
             .into_iter()
             .map(|name| match name {
-                arl_audio_core::FEATURE_AUDIO_OPUS => Feature::AudioOpus48kMono,
+                openrelay_audio_core::FEATURE_AUDIO_OPUS => Feature::AudioOpus48kMono,
                 _ => Feature::AudioPcm16_48kMono,
             })
             .collect();
@@ -199,7 +199,7 @@ impl ProductClient {
         drive(&shared, local)?;
         let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
-            .name("arl-session-io".into())
+            .name("openrelay-session-io".into())
             .spawn(move || io_loop(worker_shared, local))
             .map_err(show)?;
         Ok(Self {
@@ -726,7 +726,7 @@ fn request_id() -> String {
 }
 
 /// Codifica y descarta: red de seguridad para que un mensaje de producto
-/// que no pase el validador de `arl-proto` falle aquí y no en el socket.
+/// que no pase el validador de `openrelay-proto` falle aquí y no en el socket.
 #[allow(dead_code)]
 pub(crate) fn encode_checked(message: &ControlMessage) -> Result<Vec<u8>, String> {
     encode_message(message).map_err(|e| format!("{e:?}"))

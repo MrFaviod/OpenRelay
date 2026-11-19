@@ -1,7 +1,7 @@
 //! Superficie de sesión: QUIC mTLS con ACL *default deny*.
 //!
 //! El servidor exige certificado de cliente (cadena contra la CA local), ALPN
-//! `arl-session/1`, identidad de peer presente y una entrada explícita en la
+//! `openrelay-session/1`, identidad de peer presente y una entrada explícita en la
 //! [`Acl`]. Hasta que todo eso se cumple no se lee ni se entrega ningún
 //! DATAGRAM de audio, stream de control o ticket. El cliente exige cadena
 //! contra la CA local **y** pin SPKI del servidor antes de enviar datos.
@@ -16,9 +16,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use arl_audio_core::{AudioFrame, AudioPayload, FrameError};
-use arl_proto::wire::{self, ControlMessage, WireError, CONTROL_LENGTH_BYTES};
 use bytes::{Bytes, BytesMut};
+use openrelay_audio_core::{AudioFrame, AudioPayload, FrameError};
+use openrelay_proto::wire::{self, ControlMessage, WireError, CONTROL_LENGTH_BYTES};
 use quinn_proto::crypto::rustls::{HandshakeData, QuicClientConfig, QuicServerConfig};
 use quinn_proto::{
     ClientConfig as QuinnClientConfig, Connection, ConnectionHandle, DatagramEvent, Dir, Endpoint,
@@ -241,7 +241,7 @@ impl SessionId {
 pub enum RejectReason {
     /// El handshake TLS no terminó o no dejó datos.
     Tls,
-    /// ALPN distinto de `arl-session/1`.
+    /// ALPN distinto de `openrelay-session/1`.
     Alpn,
     /// El cliente no presentó certificado.
     NoPeerCertificate,
@@ -257,7 +257,7 @@ impl fmt::Display for RejectReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
             Self::Tls => "handshake TLS incompleto",
-            Self::Alpn => "ALPN distinto de arl-session/1",
+            Self::Alpn => "ALPN distinto de openrelay-session/1",
             Self::NoPeerCertificate => "cliente sin certificado",
             Self::MalformedIdentity => "identidad de peer malformada",
             Self::NoAclEntry => "identidad sin entrada en la ACL",
@@ -1670,8 +1670,8 @@ fn read_control(
                         // sale acotado, tras drenarlo.
                         if matches!(
                             error.code(),
-                            arl_proto::control::ErrorCode::VersionUnsupported
-                                | arl_proto::control::ErrorCode::TooLarge
+                            openrelay_proto::control::ErrorCode::VersionUnsupported
+                                | openrelay_proto::control::ErrorCode::TooLarge
                         ) {
                             close_with = error.to_error_message();
                         }
@@ -2307,7 +2307,7 @@ mod control_frame_limits {
     //! pública ni los tests externos del crate.
 
     use super::{control_prefix_fits, SessionLimits, MAX_CONTROL_FRAME};
-    use arl_proto::wire::CONTROL_LENGTH_BYTES;
+    use openrelay_proto::wire::CONTROL_LENGTH_BYTES;
 
     /// `MAX_CONTROL_FRAME` es total: payload máximo + prefijo.
     #[test]

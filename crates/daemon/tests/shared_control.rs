@@ -13,15 +13,17 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arl_audio_linux::ring;
-use arl_daemon::control::{ControlRegistry, IdentityGrant, SharedControl};
-use arl_daemon::serve_with_control;
-use arl_proto::control::{ConfigKey, ConfigValue, ErrorCode, PeerRole, RemoteAction};
-use arl_proto::wire::{self, ConfigGetMsg, ConfigSetMsg, ControlMessage, HelloMsg, SCHEMA_VERSION};
-use arl_transport::quinn::{
+use common::{roots, TestCa, TestLeaf};
+use openrelay_audio_linux::ring;
+use openrelay_daemon::control::{ControlRegistry, IdentityGrant, SharedControl};
+use openrelay_daemon::serve_with_control;
+use openrelay_proto::control::{ConfigKey, ConfigValue, ErrorCode, PeerRole, RemoteAction};
+use openrelay_proto::wire::{
+    self, ConfigGetMsg, ConfigSetMsg, ControlMessage, HelloMsg, SCHEMA_VERSION,
+};
+use openrelay_transport::quinn::{
     Acl, Capabilities, ClientEvent, SessionClient, SessionLimits, SessionServer,
 };
-use common::{roots, TestCa, TestLeaf};
 
 const WINDOW: Duration = Duration::from_millis(2500);
 
@@ -29,7 +31,7 @@ const WINDOW: Duration = Duration::from_millis(2500);
 /// fixture de software; no hay hardware ni límite inventado.
 struct FixtureApply;
 
-impl arl_proto::control::EffectivePolicy for FixtureApply {
+impl openrelay_proto::control::EffectivePolicy for FixtureApply {
     fn effective(
         &self,
         _key: &ConfigKey,
@@ -136,7 +138,7 @@ fn grant(id: &str, write: bool) -> IdentityGrant {
     }
 }
 
-fn find_ack<'a>(inbox: &'a [ControlMessage], request: &str) -> &'a arl_proto::wire::AckMsg {
+fn find_ack<'a>(inbox: &'a [ControlMessage], request: &str) -> &'a openrelay_proto::wire::AckMsg {
     inbox
         .iter()
         .find_map(|message| match message {
@@ -146,7 +148,10 @@ fn find_ack<'a>(inbox: &'a [ControlMessage], request: &str) -> &'a arl_proto::wi
         .unwrap_or_else(|| panic!("sin ack para {request}: {inbox:?}"))
 }
 
-fn find_error<'a>(inbox: &'a [ControlMessage], request: &str) -> &'a arl_proto::control::ErrorMsg {
+fn find_error<'a>(
+    inbox: &'a [ControlMessage],
+    request: &str,
+) -> &'a openrelay_proto::control::ErrorMsg {
     inbox
         .iter()
         .find_map(|message| match message {
@@ -159,9 +164,9 @@ fn find_error<'a>(inbox: &'a [ControlMessage], request: &str) -> &'a arl_proto::
 #[test]
 fn local_and_remote_share_one_revision_over_udp() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arlf4server", true, false);
-    let writer = ca.leaf("arlf4writer", false, false);
-    let reader = ca.leaf("arlf4reader", false, false);
+    let server_leaf = ca.leaf("openrelayf4server", true, false);
+    let writer = ca.leaf("openrelayf4writer", false, false);
+    let reader = ca.leaf("openrelayf4reader", false, false);
 
     let server_socket = UdpSocket::bind("127.0.0.1:0").expect("bind servidor");
     let server_addr = server_socket.local_addr().expect("addr");
@@ -392,7 +397,7 @@ fn gain_set(id: &str, expected: u64, db: f64) -> ControlMessage {
 /// así que el frame se arma a mano con `wire::encode_frame`.
 fn raw_bad_hello(id: &str) -> Vec<u8> {
     let payload = format!(
-        "{{\"schema_version\":\"arl.control/v1\",\"type\":\"hello\",\"request_id\":\"{id}\",\"payload\":{{\"role\":\"android\",\"version\":\"0.1.0\",\"protocol_version\":\"arl.control/v0\"}}}}"
+        "{{\"schema_version\":\"openrelay.control/v1\",\"type\":\"hello\",\"request_id\":\"{id}\",\"payload\":{{\"role\":\"android\",\"version\":\"0.1.0\",\"protocol_version\":\"openrelay.control/v0\"}}}}"
     );
     wire::encode_frame(payload.as_bytes()).expect("framing de prueba")
 }
@@ -444,8 +449,8 @@ fn run_bad_then_set(
 #[test]
 fn unsupported_version_closes_session_without_mutating() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arlf4server", true, false);
-    let peer = ca.leaf("arlf4badver", false, false);
+    let server_leaf = ca.leaf("openrelayf4server", true, false);
+    let peer = ca.leaf("openrelayf4badver", false, false);
 
     let server_socket = UdpSocket::bind("127.0.0.1:0").expect("bind servidor");
     let server_addr = server_socket.local_addr().expect("addr");
@@ -545,9 +550,9 @@ fn unsupported_version_closes_session_without_mutating() {
 #[test]
 fn stalled_peer_is_isolated_and_others_keep_serving() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arlf4server", true, false);
-    let stalled = ca.leaf("arlf4stalled", false, false);
-    let healthy = ca.leaf("arlf4healthy", false, false);
+    let server_leaf = ca.leaf("openrelayf4server", true, false);
+    let stalled = ca.leaf("openrelayf4stalled", false, false);
+    let healthy = ca.leaf("openrelayf4healthy", false, false);
 
     let server_socket = UdpSocket::bind("127.0.0.1:0").expect("bind servidor");
     let server_addr = server_socket.local_addr().expect("addr");

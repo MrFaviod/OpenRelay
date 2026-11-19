@@ -6,10 +6,10 @@ mod common;
 
 use std::time::{Duration, Instant};
 
-use arl_transport::enrollment::{
+use openrelay_transport::enrollment::{
     EnrollClient, EnrollReject, EnrollServer, EnrollmentEvent, EnrollmentToken,
 };
-use arl_transport::quinn::{Acl, Capabilities, SessionClient, SessionLimits, SessionServer};
+use openrelay_transport::quinn::{Acl, Capabilities, SessionClient, SessionLimits, SessionServer};
 use serde_json::json;
 
 use common::{
@@ -68,8 +68,8 @@ fn enrollment_accepts_valid_token_without_client_certificate() {
 #[test]
 fn wrong_pin_aborts_before_sending_token() {
     let ca = TestCa::new();
-    let leaf = ca.leaf("arl-enroll", true, false);
-    let impostor = ca.leaf("arl-impostor", true, false);
+    let leaf = ca.leaf("openrelay-enroll", true, false);
+    let impostor = ca.leaf("openrelay-impostor", true, false);
     let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
     server
         .open_window(token(), Duration::from_secs(120), Instant::now())
@@ -102,7 +102,7 @@ fn wrong_pin_aborts_before_sending_token() {
 #[test]
 fn expired_enrollment_certificate_is_rejected() {
     let ca = TestCa::new();
-    let expired = ca.leaf("arl-enroll-expired", true, true);
+    let expired = ca.leaf("openrelay-enroll-expired", true, true);
     let mut server = EnrollServer::new(expired.certified(&ca)).expect("servidor enroll");
     server
         .open_window(token(), Duration::from_secs(120), Instant::now())
@@ -124,7 +124,7 @@ fn expired_enrollment_certificate_is_rejected() {
 #[test]
 fn expired_window_is_rejected() {
     let ca = TestCa::new();
-    let leaf = ca.leaf("arl-enroll", true, false);
+    let leaf = ca.leaf("openrelay-enroll", true, false);
     let window_token = token();
     let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
     // TTL mínimo no nulo, ya vencido al llegar el mensaje.
@@ -212,8 +212,8 @@ fn audio_control_and_ticket_are_rejected_on_enroll() {
 #[test]
 fn session_client_cannot_use_enrollment_endpoint() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-enroll", true, false);
-    let client_leaf = ca.leaf("arl-android", false, false);
+    let server_leaf = ca.leaf("openrelay-enroll", true, false);
+    let client_leaf = ca.leaf("openrelay-android", false, false);
     let mut server = EnrollServer::new(server_leaf.certified(&ca)).expect("servidor enroll");
     server
         .open_window(token(), Duration::from_secs(120), Instant::now())
@@ -238,10 +238,10 @@ fn session_client_cannot_use_enrollment_endpoint() {
 #[test]
 fn enrollment_client_cannot_use_session_endpoint() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon", true, false);
+    let server_leaf = ca.leaf("openrelay-daemon", true, false);
     let mut acl = Acl::new();
     acl.allow(
-        ca.leaf("arl-android", false, false).spki_sha256(),
+        ca.leaf("openrelay-android", false, false).spki_sha256(),
         Capabilities::none().with_mic(),
     );
     let mut server = SessionServer::new(
@@ -267,7 +267,10 @@ fn enrollment_client_cannot_use_session_endpoint() {
     );
     let mut authorized = false;
     while let Some(event) = server.next_event() {
-        if matches!(event, arl_transport::quinn::ServerEvent::Authorized { .. }) {
+        if matches!(
+            event,
+            openrelay_transport::quinn::ServerEvent::Authorized { .. }
+        ) {
             authorized = true;
         }
     }

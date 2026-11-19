@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:arl:contract:control-v1",
-  "title": "arl control message v1",
-  "description": "Mensaje de control del protocolo arl v1. Un frame de control = u32 BE length (1..16384) + este objeto JSON UTF-8. Semantica en docs/protocol.md.",
+  "$id": "urn:openrelay:contract:control-v1",
+  "title": "openrelay control message v1",
+  "description": "Mensaje de control del protocolo openrelay v1. Un frame de control = u32 BE length (1..16384) + este objeto JSON UTF-8. Semantica en docs/protocol.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "type", "payload"],
   "properties": {
     "schema_version": {
-      "const": "arl.control/v1"
+      "const": "openrelay.control/v1"
     },
     "type": {
       "enum": [
@@ -531,7 +531,7 @@
           "pattern": "^[0-9A-Za-z.+-]{1,64}$"
         },
         "protocol_version": {
-          "const": "arl.control/v1"
+          "const": "openrelay.control/v1"
         }
       }
     },
@@ -926,7 +926,7 @@
       ],
       "properties": {
         "schema_version": {
-          "const": "arl.capabilities/v1"
+          "const": "openrelay.capabilities/v1"
         },
         "device_id": {
           "type": "string",

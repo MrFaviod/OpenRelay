@@ -23,18 +23,18 @@ case "\$cmd" in
   shell)
     line="\$*"
     case "\$line" in
-      "run-as dev.arl.audio rm -f "*)
+      "run-as dev.openrelay.app rm -f "*)
         f="\${line##* }"
         if [ "\$MODE" = keepstale ]; then exit 0; fi
         rm -f "\$DEV/\$f" ;;
-      "run-as dev.arl.audio cat "*)
+      "run-as dev.openrelay.app cat "*)
         f="\${line##* }"
         cat "\$DEV/\$f" ;;
       "getprop sys.boot_completed") echo "\$(state boot)" ;;
       "getprop ro.build.version.sdk") echo "\$(state sdk)" ;;
-      "pm path dev.arl.audio"|"pm path dev.arl.audio.test") echo "package:/fake.apk" ;;
+      "pm path dev.openrelay.app"|"pm path dev.openrelay.app.test") echo "package:/fake.apk" ;;
       "pm list instrumentation")
-        echo "instrumentation:dev.arl.audio.test/androidx.test.runner.AndroidJUnitRunner (target=dev.arl.audio)" ;;
+        echo "instrumentation:dev.openrelay.app.test/androidx.test.runner.AndroidJUnitRunner (target=dev.openrelay.app)" ;;
       dumpsys*)
         r=false; n=false
         [ "\$(state record)" = granted ] && r=true
@@ -63,8 +63,8 @@ case "\$cmd" in
         if [ "\$MODE" != noxml ]; then
           cat >"\$DEV/files/\${method}.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="dev.arl.audio.FgsLifecycleTest" tests="1" failures="0" errors="0" skipped="0">
-  <testcase classname="dev.arl.audio.FgsLifecycleTest" name="\${name}" time="0.1"></testcase>
+<testsuite name="dev.openrelay.app.FgsLifecycleTest" tests="1" failures="0" errors="0" skipped="0">
+  <testcase classname="dev.openrelay.app.FgsLifecycleTest" name="\${name}" time="0.1"></testcase>
 </testsuite>
 XML
         fi
@@ -74,11 +74,11 @@ XML
   exec-out)
     line="\$*"
     case "\$line" in
-      "run-as dev.arl.audio rm -f "*)
+      "run-as dev.openrelay.app rm -f "*)
         f="\${line##* }"
         if [ "\$MODE" = keepstale ]; then exit 0; fi
         rm -f "\$DEV/\$f" ;;
-      "run-as dev.arl.audio cat "*)
+      "run-as dev.openrelay.app cat "*)
         f="\${line##* }"
         cat "\$DEV/\$f" ;;
       *) echo "fake-adb: exec-out no simulado: \$line" >&2; exit 9 ;;
@@ -92,7 +92,7 @@ EOF
 expect_fail() {
   local mode="$1" needle="$2" rc="$3"
   local dev="$BASE/dev-$mode" home="$BASE/home-$mode" sdk="$BASE/sdk-$mode"
-  mkdir -p "$dev/files" "$home/.cache/arl-emu" "$sdk/platform-tools"
+  mkdir -p "$dev/files" "$home/.cache/openrelay-emu" "$sdk/platform-tools"
   cat >"$dev/state" <<EOF
 sdk=34
 boot=1
@@ -101,7 +101,7 @@ notif=denied
 instrument_rc=$rc
 EOF
   if [ "$mode" = keepstale ]; then
-    printf '%s\n' '<testsuite tests="1" failures="0" errors="0" skipped="0"><testcase classname="dev.arl.audio.FgsLifecycleTest" name="viejo" time="0"/></testsuite>' \
+    printf '%s\n' '<testsuite tests="1" failures="0" errors="0" skipped="0"><testcase classname="dev.openrelay.app.FgsLifecycleTest" name="viejo" time="0"/></testsuite>' \
       >"$dev/files/manifestDeclaresMicForegroundServiceAndNoLocalNetwork.xml"
   fi
   write_fake "$dev" "$mode"
@@ -126,5 +126,5 @@ EOF
 expect_fail keepstale "sigue presente tras borrarlo" 0
 expect_fail noxml "no dejó XML" 0
 expect_fail badexit "instrument exit=137" 137
-expect_fail wrongname "se esperaba dev.arl.audio.FgsLifecycleTest#" 0
+expect_fail wrongname "se esperaba dev.openrelay.app.FgsLifecycleTest#" 0
 echo "NEGATIVOS_OK"

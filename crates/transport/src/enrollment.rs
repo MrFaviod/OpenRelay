@@ -1,4 +1,4 @@
-//! Frontera de enrolamiento: ALPN `arl-enroll/1`, servidor efímero sin
+//! Frontera de enrolamiento: ALPN `openrelay-enroll/1`, servidor efímero sin
 //! certificado de cliente, sin DATAGRAM, sin tickets y sin 0-RTT.
 //!
 //! El cliente valida el pin SPKI del certificado efímero **antes** de enviar el
@@ -856,7 +856,7 @@ impl EnrollClient {
         Some((transmit.destination, self.scratch[..transmit.size].to_vec()))
     }
 
-    /// `true` cuando el handshake terminó y el ALPN es `arl-enroll/1`.
+    /// `true` cuando el handshake terminó y el ALPN es `openrelay-enroll/1`.
     pub fn is_ready(&self) -> bool {
         self.ready && !self.terminal
     }

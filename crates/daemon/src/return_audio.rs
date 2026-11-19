@@ -3,7 +3,7 @@
 //! Aquí vive la lógica pura y testeable del retorno: la decisión
 //! [`should_send`] y el emisor [`ReturnEmitter`], que toma bloques PCM16LE mono
 //! 48 kHz de una fuente [`PcmSource`] y arma frames `audio-frame/v1` con el
-//! encoder ya existente de `arl-audio-core`. Este módulo no reimplementa el
+//! encoder ya existente de `openrelay-audio-core`. Este módulo no reimplementa el
 //! wire: construye `AudioFrame` y deja que su `encode` ponga la cabecera.
 //!
 //! El retorno es un flujo aparte del micrófono Android→Linux: cada emisor
@@ -12,8 +12,8 @@
 //! `return-audio` deja este módulo fuera del binario y el comportamiento del
 //! proceso no cambia.
 
-use arl_audio_core::{AudioFrame, Flags, FrameError, Samples, SAMPLE_COUNT};
-use arl_proto::control::Feature;
+use openrelay_audio_core::{AudioFrame, Flags, FrameError, Samples, SAMPLE_COUNT};
+use openrelay_proto::control::Feature;
 
 /// Feature del contrato que habilita el retorno PCM16LE mono 48 kHz.
 pub const RETURN_FEATURE: Feature = Feature::AudioReturnPcm48kMono;
@@ -152,7 +152,7 @@ impl<S: PcmSource> ReturnEmitter<S> {
 
 /// Adaptador trivial al trait [`PcmSource`]: el monitor de PipeWire ya entrega
 /// S16LE mono 48 kHz desde su anillo interno.
-impl PcmSource for arl_audio_linux::MonitorSource {
+impl PcmSource for openrelay_audio_linux::MonitorSource {
     fn read(&mut self, out: &mut [i16]) -> usize {
         self.read_samples(out)
     }

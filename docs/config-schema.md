@@ -39,13 +39,13 @@ Reglas:
 ## 3. Ejemplo de intercambio
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "config.set", "request_id": "c-17"
+{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17"
   "expected_revision": 7
   "payload": { "key": "audio.gain_db", "value": 3.0 } }
 ```
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
+{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
   "payload": { "applied": true
                "requested": { "key": "audio.gain_db", "value": 3.0 }
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
@@ -54,7 +54,7 @@ Reglas:
 Conflicto de revisión:
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "error", "request_id": "c-18"
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-18"
   "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true
                "current_revision": 8 } }
 ```
@@ -62,13 +62,13 @@ Conflicto de revisión:
 Clave local:
 
 ```json
-{ "schema_version": "arl.control/v1", "type": "error", "request_id": "c-19"
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-19"
   "payload": { "code": "local_key", "message": "key is local to the device", "retryable": false } }
 ```
 
 ## 4. Archivo local
 
-Propuesta (la implementa): `$XDG_CONFIG_HOME/arl/config.toml`, sin secretos, escritura atómica y permisos del usuario.
+Propuesta (la implementa): `$XDG_CONFIG_HOME/openrelay/config.toml`, sin secretos, escritura atómica y permisos del usuario.
 
 ```toml
 # Sólo configuración compartida y preferencias locales del daemon Linux.

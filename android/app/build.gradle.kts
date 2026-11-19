@@ -1,4 +1,4 @@
-// Módulo app de the reference app (base T12). Sin audio, sin JNI y sin backend: sólo
+// Módulo app de openrelay (base T12). Sin audio, sin JNI y sin backend: sólo
 // una Activity Compose que muestra el placeholder. NDK/CMake/ABIs quedan
 // fijados para que T13 añada el puente nativo sin renegociar versiones.
 plugins {
@@ -8,13 +8,13 @@ plugins {
 }
 
 android {
-    namespace = "dev.arl.audio"
+    namespace = "dev.openrelay.app"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "dev.arl.audio"
+        applicationId = "dev.openrelay.app"
         minSdk = 28
         targetSdk = 35
         versionCode = 1

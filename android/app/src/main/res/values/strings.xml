@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">the reference app</string>
-    <string name="home_title">the reference app</string>
+    <string name="app_name">OpenRelay</string>
+    <string name="home_title">OpenRelay</string>
 
     <!-- Acción visible junto al micrófono. No describe la conexión. -->
     <string name="action_start_capture">Iniciar captura local</string>

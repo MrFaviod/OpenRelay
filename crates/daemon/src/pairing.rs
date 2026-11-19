@@ -10,9 +10,9 @@ use std::net::SocketAddr;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-use arl_transport::enrollment::{EnrollmentEvent, EnrollmentToken};
-use arl_transport::identity::SpkiPin;
-use arl_transport::quinn::{Acl, Capabilities};
+use openrelay_transport::enrollment::{EnrollmentEvent, EnrollmentToken};
+use openrelay_transport::identity::SpkiPin;
+use openrelay_transport::quinn::{Acl, Capabilities};
 use serde_json::{json, Value};
 
 const IDENTITIES_VERSION: u64 = 1;
@@ -28,10 +28,10 @@ impl Pairing {
         Self::default()
     }
 
-    /// Contenido del QR: `arl://pair?v=1&h=<host:port>&pin=<hex>&t=<hex>`.
+    /// Contenido del QR: `openrelay://pair?v=1&h=<host:port>&pin=<hex>&t=<hex>`.
     pub fn qr_payload(server_pin: SpkiPin, addr: SocketAddr, token: &EnrollmentToken) -> String {
         format!(
-            "arl://pair?v=1&h={addr}&pin={}&t={}",
+            "openrelay://pair?v=1&h={addr}&pin={}&t={}",
             server_pin.to_hex(),
             token.to_hex()
         )

@@ -105,7 +105,7 @@ impl TestCa {
         let mut params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
         params
             .distinguished_name
-            .push(DnType::CommonName, "arl-enroll-regression-ca");
+            .push(DnType::CommonName, "openrelay-enroll-regression-ca");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -243,10 +243,10 @@ fn exchange<A: WirePeer, B: WirePeer>(
     Ok(())
 }
 
-/// Handshake de enrolamiento real: pin SPKI + ALPN `arl-enroll/1`, sin
+/// Handshake de enrolamiento real: pin SPKI + ALPN `openrelay-enroll/1`, sin
 /// certificado de cliente (permitido por diseño en esta superficie).
 fn setup(ca: &TestCa, token: EnrollmentToken) -> Result<(EnrollClient, EnrollServer), String> {
-    let leaf = ca.leaf("arl-enroll-regression");
+    let leaf = ca.leaf("openrelay-enroll-regression");
     let mut server = EnrollServer::new(leaf.certified(ca)).map_err(|error| error.to_string())?;
     server
         .open_window(token, Duration::from_secs(120), Instant::now())

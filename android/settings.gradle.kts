@@ -1,4 +1,4 @@
-// Proyecto Android de the reference app (base T12). Sólo módulo app; el core Rust se
+// Proyecto Android de openrelay (base T12). Sólo módulo app; el core Rust se
 // integra por JNI en T13 y no se compila desde Gradle en esta fase.
 pluginManagement {
     repositories {
@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "arl-android"
+rootProject.name = "openrelay-android"
 include(":app")

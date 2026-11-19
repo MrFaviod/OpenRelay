@@ -13,9 +13,9 @@ mod common;
 
 use std::time::Instant;
 
-use arl_proto::wire::ControlMessage;
-use arl_transport::enrollment::EnrollmentEvent;
 use common::*;
+use openrelay_proto::wire::ControlMessage;
+use openrelay_transport::enrollment::EnrollmentEvent;
 
 /// Control: el primer `send_control` tras autorizar abre el stream y manda el
 /// frame en el mismo vuelo. Un solo `drain` basta para que el servidor tenga el
@@ -23,15 +23,15 @@ use common::*;
 #[test]
 fn fresh_control_stream_with_buffered_bytes_is_delivered() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server", true, false);
-    let client_leaf = ca.leaf("arl-client", false, false);
+    let server_leaf = ca.leaf("openrelay-server", true, false);
+    let client_leaf = ca.leaf("openrelay-client", false, false);
     let (mut client, mut server) =
         session_setup(&client_leaf, &server_leaf, &ca, Some(&client_leaf)).expect("sesión");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");
     let session = server
         .next_event()
         .and_then(|event| match event {
-            arl_transport::quinn::ServerEvent::Authorized { session, .. } => Some(session),
+            openrelay_transport::quinn::ServerEvent::Authorized { session, .. } => Some(session),
             _ => None,
         })
         .expect("sesión autorizada");

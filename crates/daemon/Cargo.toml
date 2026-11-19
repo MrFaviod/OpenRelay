@@ -1,26 +1,26 @@
 [package]
-name = "arl-daemon"
+name = "openrelay-daemon"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Daemon mínimo de arl: sesión QUIC autorizada -> frame -> jitter -> fuente PipeWire (sin unsafe)"
+description = "Daemon mínimo de openrelay: sesión QUIC autorizada -> frame -> jitter -> fuente PipeWire (sin unsafe)"
 
 [dependencies]
-arl-audio-core = { path = "../audio-core" }
-arl-audio-linux = { path = "../audio-linux" }
-arl-codec = { path = "../codec" }
-arl-dsp = { path = "../dsp", default-features = false }
-arl-transport = { path = "../transport" }
-arl-proto = { path = "../proto" }
+openrelay-audio-core = { path = "../audio-core" }
+openrelay-audio-linux = { path = "../audio-linux" }
+openrelay-codec = { path = "../codec" }
+openrelay-dsp = { path = "../dsp", default-features = false }
+openrelay-transport = { path = "../transport" }
+openrelay-proto = { path = "../proto" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
 ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 rustls-pki-types = "=1.16.0"
 
 [dev-dependencies]
-arl-proto = { path = "../proto" }
+openrelay-proto = { path = "../proto" }
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 time = "=0.3.36"
 
@@ -29,8 +29,8 @@ default = []
 # Retorno de audio Linux→Android (F8/T24, D-08). Apagado por defecto: sin esta
 # feature el módulo de retorno no existe en el binario.
 return-audio = []
-# Compila SpeexDSP dentro de arl-dsp y habilita el NS opcional de sesión.
-speexdsp = ["arl-dsp/speexdsp"]
+# Compila SpeexDSP dentro de openrelay-dsp y habilita el NS opcional de sesión.
+speexdsp = ["openrelay-dsp/speexdsp"]
 
 [lints]
 workspace = true

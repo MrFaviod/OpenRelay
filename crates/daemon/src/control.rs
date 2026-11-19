@@ -14,13 +14,13 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use arl_proto::control::{
+use openrelay_proto::control::{
     AuthorizedPeer, ConfigKey, ConfigValue, ControlSession, EffectivePolicy, ErrorCode, Feature,
     Outcome, PeerRole, RemoteAction, SharedConfig, UnsupportedPolicy,
 };
-use arl_proto::wire::ControlMessage;
-use arl_transport::identity::SpkiPin;
-use arl_transport::quinn::{SessionId, SessionServer, TransportError};
+use openrelay_proto::wire::ControlMessage;
+use openrelay_transport::identity::SpkiPin;
+use openrelay_transport::quinn::{SessionId, SessionServer, TransportError};
 
 /// Tope de identidades registradas. Pasado el tope, registrar otra falla
 /// en cerrado en vez de crecer sin límite.
@@ -332,14 +332,14 @@ impl SharedControl {
 
 fn denied(message: &ControlMessage) -> ControlMessage {
     let request_id = message.request_id().unwrap_or("unknown");
-    match arl_proto::control::ErrorMsg::new(
+    match openrelay_proto::control::ErrorMsg::new(
         request_id,
         ErrorCode::Denied,
         "identity not registered",
     ) {
         Ok(error) => ControlMessage::Error(error),
         Err(_) => ControlMessage::Error(
-            arl_proto::control::ErrorMsg::new(
+            openrelay_proto::control::ErrorMsg::new(
                 "unknown",
                 ErrorCode::Internal,
                 "denied response failed",

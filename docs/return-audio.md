@@ -1,5 +1,6 @@
-# Retorno de audio Linux→Android (/)
+# Retorno de audio Linux→Android
 
+**Estado: implementado en el daemon bajo la feature `return-audio`, apagado por defecto.** La lógica vive en `crates/daemon/src/return_audio.rs`, la captura del monitor en `crates/audio-linux/src/monitor.rs` y la puerta en el runtime del daemon.
 
 ## Qué es
 
@@ -31,7 +32,7 @@ Antes de activar el retorno, el extremo Android debe mostrar un aviso de eco/fee
 
 ## ACL `return_audio`: pending
 
-El transporte exige la capacidad ACL `return_audio` para `send_audio` (además de las dos condiciones de opt-in). Hoy **no existe un camino de producto que la conceda**: `pairing::approve` sabe persistir el flag `return_audio` en el archivo de identidades y `pairing::load` lo relee, pero el CLI `arl` no expone ningún comando de emparejamiento/aprobación que lo ponga a `true`. Queda en **pendiente**: hasta que exista ese camino, una identidad aprobada no puede recibir retorno y el daemon no debe considerarlo disponible en producción. No se inventa aquí un mensaje ni un flag nuevo; concederlo requiere llamar a `pairing::approve` con `Capabilities::with_return_audio` desde el flujo de aprobación que se implemente.
+El transporte exige la capacidad ACL `return_audio` para `send_audio` (además de las dos condiciones de opt-in). Hoy **no existe un camino de producto que la conceda**: `pairing::approve` sabe persistir el flag `return_audio` en el archivo de identidades y `pairing::load` lo relee, pero el CLI `openrelay` no expone ningún comando de emparejamiento/aprobación que lo ponga a `true`. Queda en **pendiente**: hasta que exista ese camino, una identidad aprobada no puede recibir retorno y el daemon no debe considerarlo disponible en producción. No se inventa aquí un mensaje ni un flag nuevo; concederlo requiere llamar a `pairing::approve` con `Capabilities::with_return_audio` desde el flujo de aprobación que se implemente.
 
 ## Fuera de alcance
 

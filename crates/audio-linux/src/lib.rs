@@ -1,4 +1,4 @@
-//! Backend de audio Linux de arl: fuente PipeWire nativa y SPSC de capacidad
+//! Backend de audio Linux de openrelay: fuente PipeWire nativa y SPSC de capacidad
 //! fija.
 //!
 //! Este crate no escribe `unsafe` propio: cero bloques `unsafe` en `src/`, así
@@ -9,7 +9,7 @@
 //! queda como red por si alguna revisión futura introduce un `unsafe fn`.
 //!
 //! Frontera del contrato: el perfil es PCM16LE mono 48 kHz de
-//! `arl-audio-core`. Aquí no se redefine el wire ni se añaden métricas de
+//! `openrelay-audio-core`. Aquí no se redefine el wire ni se añaden métricas de
 //! jitter/drift: eso pertenece al core.
 //!
 //! Estado de T11a: la fuente se construye y se conecta **inactiva**; activarla

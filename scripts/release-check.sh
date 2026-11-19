@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Verifica un release local de arl: manifiesto, artefactos, SBOM y una
+# Verifica un release local de openrelay: manifiesto, artefactos, SBOM y una
 # instalación real del tarball del daemon en un prefijo temporal.
 #
 # Uso:
-#   bash scripts/release-check.sh --manifest artifacts/release-manifest.json
+#   bash scripts/release-check.sh --manifest dist/release-manifest.json
 #   bash scripts/release-check.sh --manifest ... --dir /ruta/a/artefactos
-#   bash scripts/release-check.sh --emit-manifest artifacts/release-manifest.json \
+#   bash scripts/release-check.sh --emit-manifest dist/release-manifest.json \
 #       [--dir dist] [--origin HOST]
 #
-# `--dir` (o ARL_RELEASE_DIR) apunta al directorio de artefactos; por defecto
+# `--dir` (o OPENRELAY_RELEASE_DIR) apunta al directorio de artefactos; por defecto
 # `dist/`, que está gitignorado. Sale 1 ante cualquier fallo; no hay PASS
 # parcial. En este host el binario enlaza el PipeWire staged: exporta
-# LD_LIBRARY_PATH antes de ejecutar el check (ver docs/release.md).
+# LD_LIBRARY_PATH antes de ejecutar el check (ver docs/systemd.md).
 set -uo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-manifest="artifacts/release-manifest.json"
-dir="${ARL_RELEASE_DIR:-$root/dist}"
+manifest="dist/release-manifest.json"
+dir="${OPENRELAY_RELEASE_DIR:-$root/dist}"
 emit=""
 origin="local"
 
@@ -26,7 +26,7 @@ Uso: release-check.sh --manifest FILE [--dir DIR]
      release-check.sh --emit-manifest FILE [--dir DIR] [--origin HOST]
 
   --manifest FILE     manifiesto versionado que se verifica
-  --dir DIR           directorio de artefactos (default: dist/ o ARL_RELEASE_DIR)
+  --dir DIR           directorio de artefactos (default: dist/ o OPENRELAY_RELEASE_DIR)
   --emit-manifest F   escribe un manifiesto desde los artefactos presentes
   --origin HOST       origen para artefactos nuevos al emitir (default: local)
 EOF
@@ -115,7 +115,7 @@ if sbom is None:
     sys.exit("release-check.sh: no hay SBOM *.cdx.json en %s" % directorio)
 
 manifiesto = {
-    "schema": "arl-release-manifest/v1",
+    "schema": "openrelay-release-manifest/v1",
     "version": version,
     "commit": commit,
     "branch": subprocess.run(["git", "-C", str(root), "branch", "--show-current"],
@@ -139,7 +139,7 @@ fi
 
 [ -f "$manifest" ] || { printf 'release-check.sh: no existe el manifiesto: %s\n' "$manifest" >&2; exit 1; }
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/arl-release-check.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/openrelay-release-check.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 plan="$work/plan.tsv"
 : >"$plan"
@@ -301,48 +301,48 @@ else
     mkdir -p "$prefix/bin" "$prefix/lib/systemd/user"
     if tar -xzf "$tarball" -C "$work"; then
       inner=$(tar -tzf "$tarball" | sed -n '1s|/.*||p')
-      if [ -z "$inner" ] || [ ! -f "$work/$inner/arl" ]; then
-        err "el tarball no contiene $inner/arl"
+      if [ -z "$inner" ] || [ ! -f "$work/$inner/openrelay" ]; then
+        err "el tarball no contiene $inner/openrelay"
       else
-        install -m 0755 "$work/$inner/arl" "$prefix/bin/arl"
+        install -m 0755 "$work/$inner/openrelay" "$prefix/bin/openrelay"
         # Requisito de runtime: el daemon enlaza libpipewire-0.3.so.0. `ldd`
-        # distingue una librería ausente de un fallo del propio arl; sin este
+        # distingue una librería ausente de un fallo del propio openrelay; sin este
         # chequeo el síntoma era un 127 opaco. No se oculta el fallo: se nombra
         # la biblioteca que falta y se sale con código distinto de 0.
         if command -v ldd >/dev/null 2>&1; then
-          missing_libs=$(ldd "$prefix/bin/arl" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')
+          missing_libs=$(ldd "$prefix/bin/openrelay" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')
           if [ -n "$missing_libs" ]; then
             printf 'release-check.sh: el binario %s no puede arrancar: falta la biblioteca de runtime %s\n' \
-              "$prefix/bin/arl" "${missing_libs% }" >&2
+              "$prefix/bin/openrelay" "${missing_libs% }" >&2
             printf 'release-check.sh: requisito de runtime: libpipewire-0.3 (paquete libpipewire-0.3-0 del sistema) u otro directorio con la biblioteca vía LD_LIBRARY_PATH; ver docs/release.md, «Dependencia de runtime libpipewire-0.3»\n' >&2
             exit 1
           fi
         fi
-        if "$prefix/bin/arl" --help >"$work/help.out" 2>"$work/help.err"; then
-          grep -q '^arl' "$work/help.out" || err "arl --help no imprime el uso esperado"
-          printf 'release-check.sh: arl --help OK desde %s\n' "$prefix/bin/arl"
+        if "$prefix/bin/openrelay" --help >"$work/help.out" 2>"$work/help.err"; then
+          grep -q '^openrelay' "$work/help.out" || err "openrelay --help no imprime el uso esperado"
+          printf 'release-check.sh: openrelay --help OK desde %s\n' "$prefix/bin/openrelay"
         else
           rc=$?
-          err "arl --help falló con $rc: $(head -n 3 "$work/help.err" | tr '\n' ' ')"
+          err "openrelay --help falló con $rc: $(head -n 3 "$work/help.err" | tr '\n' ' ')"
         fi
 
         # La unidad empaquetada debe ser la misma que imprime el binario.
-        unit_src="$work/$inner/arl.service"
+        unit_src="$work/$inner/openrelay.service"
         if [ -f "$unit_src" ]; then
-          if "$prefix/bin/arl" service print-unit >"$work/print-unit.out" 2>"$work/print-unit.err"; then
+          if "$prefix/bin/openrelay" service print-unit >"$work/print-unit.out" 2>"$work/print-unit.err"; then
             cmp -s "$work/print-unit.out" "$unit_src" || err "service print-unit no coincide con la unidad del tarball"
           else
             rc=$?
-            err "arl service print-unit falló con $rc"
+            err "openrelay service print-unit falló con $rc"
           fi
-          if cmp -s "$unit_src" "$root/packaging/systemd/arl.service"; then
+          if cmp -s "$unit_src" "$root/packaging/systemd/openrelay.service"; then
             :
           else
-            err "la unidad del tarball no coincide con packaging/systemd/arl.service"
+            err "la unidad del tarball no coincide con packaging/systemd/openrelay.service"
           fi
-          install -m 0644 "$unit_src" "$prefix/lib/systemd/user/arl.service"
-          sed -i "s|^ExecStart=.*|ExecStart=$prefix/bin/arl daemon|" "$prefix/lib/systemd/user/arl.service"
-          if systemd-analyze --user verify "$prefix/lib/systemd/user/arl.service" >"$work/verify.out" 2>&1; then
+          install -m 0644 "$unit_src" "$prefix/lib/systemd/user/openrelay.service"
+          sed -i "s|^ExecStart=.*|ExecStart=$prefix/bin/openrelay daemon|" "$prefix/lib/systemd/user/openrelay.service"
+          if systemd-analyze --user verify "$prefix/lib/systemd/user/openrelay.service" >"$work/verify.out" 2>&1; then
             printf 'release-check.sh: systemd-analyze --user verify OK\n'
           else
             rc=$?

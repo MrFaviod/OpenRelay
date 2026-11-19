@@ -9,7 +9,7 @@ Licencia: **BSD-3-Clause** (ver `COPYING`). No se modifican los fuentes.
 No existe un crate de crates.io que compile SpeexDSP desde fuente:
 `speexdsp-sys` 0.1.x exige `pkg-config` y una `libspeexdsp` del sistema (no
 instalada en estas máquinas) y su feature `build` busca un directorio
-`speexdsp/` que el paquete no incluye. Por eso `arl-dsp` compila este
+`speexdsp/` que el paquete no incluye. Por eso `openrelay-dsp` compila este
 subconjunto con `cc` sólo cuando la feature `speexdsp` está activa.
 
 ## Qué se incluye
@@ -31,4 +31,4 @@ Sólo lo que necesita `speex_preprocess_state_init` / `speex_preprocess_run`:
 `<stdint.h>` que produce autotools en Linux/Android/macOS.
 
 No se incluyen `resample.c`, `jitter.c`, `buffer.c`, `scal.c` ni las pruebas:
-`arl-dsp` no los usa.
+`openrelay-dsp` no los usa.

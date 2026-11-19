@@ -1,5 +1,5 @@
 [package]
-name = "arl-fuzz"
+name = "openrelay-fuzz"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -12,8 +12,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-arl-proto = { path = "../crates/proto" }
-arl-audio-core = { path = "../crates/audio-core" }
+openrelay-proto = { path = "../crates/proto" }
+openrelay-audio-core = { path = "../crates/audio-core" }
 
 [profile.release]
 debug = 1

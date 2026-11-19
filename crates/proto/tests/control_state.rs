@@ -1,16 +1,16 @@
-//! Contrato de la máquina de control y del wire de control `arl.control/v1`.
+//! Contrato de la máquina de control y del wire de control `openrelay.control/v1`.
 //!
 //! Cada prueba usa el camino real: JSON de entrada → framing de 4 bytes BE →
 //! parser estricto → mensaje tipado → máquina de control → respuesta codificada.
 //! El audio no se implementa aquí: sólo se citan sus límites del contrato.
 
-use arl_proto::control::{
+use openrelay_proto::control::{
     classify_remote_action, config_keys, AuthorizedPeer, Capabilities, ConfigKey,
     ConfigKeyDeclaration, ConfigPair, ConfigScope, ConfigState, ConfigValue, ControlSession,
     EffectivePolicy, ErrorCode, ErrorMsg, Feature, IdentityPolicy, Limits, Outcome, PeerRole,
     RemoteAction, SessionState, Snapshot, UnsupportedPolicy, ValueType,
 };
-use arl_proto::wire::{
+use openrelay_proto::wire::{
     self, AckEffective, AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg, ControlMessage,
     EventBody, EventMsg, HelloMsg, MAX_REVISION,
 };
@@ -43,17 +43,17 @@ fn send(session: &mut ControlSession, json: &str, now: u64) -> Outcome {
 
 fn set_json(request_id: &str, revision: u64, k: &str, value: &str) -> String {
     format!(
-        r#"{{"schema_version":"arl.control/v1","type":"config.set","request_id":"{request_id}","expected_revision":{revision},"payload":{{"key":"{k}","value":{value}}}}}"#
+        r#"{{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"{request_id}","expected_revision":{revision},"payload":{{"key":"{k}","value":{value}}}}}"#
     )
 }
 
 fn get_json(request_id: &str, k: Option<&str>) -> String {
     match k {
         Some(name) => format!(
-            r#"{{"schema_version":"arl.control/v1","type":"config.get","request_id":"{request_id}","payload":{{"key":"{name}"}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"{request_id}","payload":{{"key":"{name}"}}}}"#
         ),
         None => format!(
-            r#"{{"schema_version":"arl.control/v1","type":"config.get","request_id":"{request_id}","payload":{{"key":null}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"{request_id}","payload":{{"key":null}}}}"#
         ),
     }
 }
@@ -131,7 +131,7 @@ fn oversized_frame_closes_and_reports_too_large() {
 
 #[test]
 fn json_rejects_duplicate_keys() {
-    let duplicate = br#"{"schema_version":"arl.control/v1","type":"ping","request_id":"a","payload":{},"payload":{}}"#;
+    let duplicate = br#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"a","payload":{},"payload":{}}"#;
     assert_eq!(
         wire::parse_json(duplicate).unwrap_err().code(),
         ErrorCode::Invalid
@@ -217,21 +217,22 @@ fn array_with_items(count: usize) -> String {
 #[test]
 fn envelope_requires_request_id_and_rejects_unknown_fields() {
     let missing =
-        br#"{"schema_version":"arl.control/v1","type":"config.get","payload":{"key":null}}"#;
+        br#"{"schema_version":"openrelay.control/v1","type":"config.get","payload":{"key":null}}"#;
     assert_eq!(
         wire::decode_message(&frame_len(missing))
             .unwrap_err()
             .code(),
         ErrorCode::Invalid
     );
-    let unknown = br#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p1","payload":{},"extra":1}"#;
+    let unknown = br#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p1","payload":{},"extra":1}"#;
     assert_eq!(
         wire::decode_message(&frame_len(unknown))
             .unwrap_err()
             .code(),
         ErrorCode::Invalid
     );
-    let missing_payload = br#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p1"}"#;
+    let missing_payload =
+        br#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p1"}"#;
     assert_eq!(
         wire::decode_message(&frame_len(missing_payload))
             .unwrap_err()
@@ -249,12 +250,12 @@ fn frame_len(payload: &[u8]) -> Vec<u8> {
 #[test]
 fn envelope_restricts_revision_fields_per_type() {
     for bad in [
-        r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g1","revision":1,"payload":{"key":null}}"#,
-        r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s1","expected_revision":0,"revision":1,"payload":{"key":"audio.mute","value":true}}"#,
-        r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p1","expected_revision":0,"payload":{}}"#,
-        r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p1","payload":{"x":1}}"#,
-        r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s1","payload":{"key":"audio.mute","value":true}}"#,
-        r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g1","payload":{"key":null,"x":1}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"g1","revision":1,"payload":{"key":null}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"s1","expected_revision":0,"revision":1,"payload":{"key":"audio.mute","value":true}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p1","expected_revision":0,"payload":{}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p1","payload":{"x":1}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"s1","payload":{"key":"audio.mute","value":true}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"g1","payload":{"key":null,"x":1}}"#,
     ] {
         assert_eq!(
             wire::decode_message(&frame_len(bad.as_bytes()))
@@ -270,13 +271,13 @@ fn envelope_restricts_revision_fields_per_type() {
 fn request_id_and_revision_ranges_are_exact() {
     for rid in ["a", "A-z_09", &"a".repeat(64)] {
         let json = format!(
-            r#"{{"schema_version":"arl.control/v1","type":"ping","request_id":"{rid}","payload":{{}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"ping","request_id":"{rid}","payload":{{}}}}"#
         );
         assert!(wire::decode_message(&frame_len(json.as_bytes())).is_ok());
     }
     for rid in ["", "bad id", &"a".repeat(65), "ñ"] {
         let json = format!(
-            r#"{{"schema_version":"arl.control/v1","type":"ping","request_id":"{rid}","payload":{{}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"ping","request_id":"{rid}","payload":{{}}}}"#
         );
         assert_eq!(
             wire::decode_message(&frame_len(json.as_bytes()))
@@ -286,12 +287,12 @@ fn request_id_and_revision_ranges_are_exact() {
         );
     }
     let max_ok = format!(
-        r#"{{"schema_version":"arl.control/v1","type":"ack","request_id":"a1","revision":{MAX_REVISION},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#
+        r#"{{"schema_version":"openrelay.control/v1","type":"ack","request_id":"a1","revision":{MAX_REVISION},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#
     );
     assert!(wire::decode_message(&frame_len(max_ok.as_bytes())).is_ok());
     for bad_revision in ["9007199254740992", "1.5", "-1"] {
         let json = format!(
-            r#"{{"schema_version":"arl.control/v1","type":"ack","request_id":"a1","revision":{bad_revision},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"ack","request_id":"a1","revision":{bad_revision},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#
         );
         assert_eq!(
             wire::decode_message(&frame_len(json.as_bytes()))
@@ -310,7 +311,7 @@ fn encode_decode_roundtrip_for_all_control_types() {
             request_id: "h-1".into(),
             role: PeerRole::Android,
             version: "0.1.0".into(),
-            protocol_version: "arl.control/v1".into(),
+            protocol_version: "openrelay.control/v1".into(),
         }),
         ControlMessage::Capabilities(CapabilitiesMsg {
             request_id: "c-1".into(),
@@ -411,7 +412,7 @@ fn encoded_messages_validate_against_contract_schema() {
             request_id: "h-1".into(),
             role: PeerRole::Android,
             version: "0.1.0".into(),
-            protocol_version: "arl.control/v1".into(),
+            protocol_version: "openrelay.control/v1".into(),
         }),
         ControlMessage::Capabilities(CapabilitiesMsg {
             request_id: "c-1".into(),
@@ -479,7 +480,10 @@ fn encoded_messages_validate_against_contract_schema() {
         .collect();
     let document = format!("[{}]", payloads.join(","));
     let dir = std::env::temp_dir();
-    let fixture = dir.join(format!("arl-proto-fixture-{}.json", std::process::id()));
+    let fixture = dir.join(format!(
+        "openrelay-proto-fixture-{}.json",
+        std::process::id()
+    ));
     std::fs::write(&fixture, document).expect("fixture");
     let script = r#"
 import json, sys
@@ -616,8 +620,8 @@ fn same_request_id_with_other_payload_is_request_id_reuse() {
 #[test]
 fn request_identity_is_independent_of_json_key_order() {
     let mut session = session();
-    let first = r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"c-9","expected_revision":0,"payload":{"key":"audio.mute","value":true}}"#;
-    let reordered = r#"{"payload":{"value":true,"key":"audio.mute"},"expected_revision":0,"request_id":"c-9","type":"config.set","schema_version":"arl.control/v1"}"#;
+    let first = r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"c-9","expected_revision":0,"payload":{"key":"audio.mute","value":true}}"#;
+    let reordered = r#"{"payload":{"value":true,"key":"audio.mute"},"expected_revision":0,"request_id":"c-9","type":"config.set","schema_version":"openrelay.control/v1"}"#;
     let a = send(&mut session, first, NOW);
     let b = send(&mut session, reordered, NOW + 1);
     assert_eq!(a.response, b.response);
@@ -1162,7 +1166,7 @@ fn microphone_and_permissions_have_no_remote_action() {
 #[test]
 fn hello_replies_capabilities_with_current_revision_and_rejects_other_major() {
     let mut session = session();
-    let hello = r#"{"schema_version":"arl.control/v1","type":"hello","request_id":"h-1","payload":{"role":"android","version":"0.1.0","protocol_version":"arl.control/v1"}}"#;
+    let hello = r#"{"schema_version":"openrelay.control/v1","type":"hello","request_id":"h-1","payload":{"role":"android","version":"0.1.0","protocol_version":"openrelay.control/v1"}}"#;
     let outcome = send(&mut session, hello, NOW);
     match outcome.response.as_ref() {
         Some(ControlMessage::Capabilities(capabilities)) => {
@@ -1176,7 +1180,7 @@ fn hello_replies_capabilities_with_current_revision_and_rejects_other_major() {
         other => panic!("se esperaba capabilities: {other:?}"),
     }
 
-    let wrong = r#"{"schema_version":"arl.control/v1","type":"hello","request_id":"h-2","payload":{"role":"android","version":"0.1.0","protocol_version":"arl.control/v2"}}"#;
+    let wrong = r#"{"schema_version":"openrelay.control/v1","type":"hello","request_id":"h-2","payload":{"role":"android","version":"0.1.0","protocol_version":"openrelay.control/v2"}}"#;
     let outcome = send(&mut session, wrong, NOW + 1);
     assert_eq!(error_code(&outcome), ErrorCode::VersionUnsupported);
     assert!(outcome.close);
@@ -1187,7 +1191,7 @@ fn ping_replies_pong_and_never_changes_revision() {
     let mut session = session();
     let outcome = send(
         &mut session,
-        r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p-1","payload":{}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p-1","payload":{}}"#,
         NOW,
     );
     assert_eq!(
@@ -1202,7 +1206,7 @@ fn ping_replies_pong_and_never_changes_revision() {
 #[test]
 fn wrong_schema_version_is_rejected_with_request_id_echo() {
     let raw =
-        br#"{"schema_version":"arl.control/v2","type":"ping","request_id":"p-1","payload":{}}"#;
+        br#"{"schema_version":"openrelay.control/v2","type":"ping","request_id":"p-1","payload":{}}"#;
     let error = wire::decode_message(&frame_len(raw)).unwrap_err();
     assert_eq!(error.code(), ErrorCode::VersionUnsupported);
     assert_eq!(error.request_id(), Some("p-1"));
@@ -1211,8 +1215,7 @@ fn wrong_schema_version_is_rejected_with_request_id_echo() {
 #[test]
 fn unknown_type_is_invalid_without_closing() {
     let mut session = session();
-    let raw =
-        r#"{"schema_version":"arl.control/v1","type":"mic.start","request_id":"m-1","payload":{}}"#;
+    let raw = r#"{"schema_version":"openrelay.control/v1","type":"mic.start","request_id":"m-1","payload":{}}"#;
     let outcome = send(&mut session, raw, NOW);
     assert_eq!(error_code(&outcome), ErrorCode::Invalid);
     assert!(!outcome.close);
@@ -1274,7 +1277,7 @@ fn audio_return_feature_parses_serializes_and_rejects_unknown_wire_string() {
     // Parseo: el string de wire conocido se acepta.
     let base = |features: &str| {
         format!(
-            r#"{{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":["config.read"],"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":[]}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"openrelay.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":["config.read"],"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":[]}}}}"#
         )
     };
     let valid = base(r#"["audio.return-pcm16-48k-mono"]"#);
@@ -1320,7 +1323,7 @@ fn audio_return_enabled_is_off_by_default_and_local_only() {
 fn capabilities_reject_unknown_features_actions_ids_and_extra_keys() {
     let base = |features: &str, actions: &str, device: &str| {
         format!(
-            r#"{{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"arl.capabilities/v1","device_id":"{device}","role":"android","features":{features},"remote_actions":{actions},"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":[]}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"openrelay.capabilities/v1","device_id":"{device}","role":"android","features":{features},"remote_actions":{actions},"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":[]}}}}"#
         )
     };
     let good = base(r#"["control.v1"]"#, r#"["config.read"]"#, "device-0001");
@@ -1352,7 +1355,7 @@ fn capabilities_reject_unknown_features_actions_ids_and_extra_keys() {
 fn capabilities_reject_duplicate_features_and_actions_but_keep_valid_arrays() {
     let base = |features: &str, actions: &str, config_keys: &str| {
         format!(
-            r#"{{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":{actions},"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":{config_keys}}}}}"#
+            r#"{{"schema_version":"openrelay.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"openrelay.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":{actions},"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":{config_keys}}}}}"#
         )
     };
     // Arrays válidos y clave desconocida sintácticamente válida: el decoder no
@@ -1408,14 +1411,14 @@ fn error_catalog_matches_contract_retryable_and_close_flags() {
     assert!(!ErrorCode::Conflict.closes_connection());
     let long = "x".repeat(201);
     assert!(ErrorMsg::new("e-1", ErrorCode::Invalid, &long).is_err());
-    let retryable_lie = br#"{"schema_version":"arl.control/v1","type":"error","request_id":"e-1","payload":{"code":"conflict","message":"x","retryable":false}}"#;
+    let retryable_lie = br#"{"schema_version":"openrelay.control/v1","type":"error","request_id":"e-1","payload":{"code":"conflict","message":"x","retryable":false}}"#;
     assert_eq!(
         wire::decode_message(&frame_len(retryable_lie))
             .unwrap_err()
             .code(),
         ErrorCode::Invalid
     );
-    let current_on_non_conflict = br#"{"schema_version":"arl.control/v1","type":"error","request_id":"e-1","payload":{"code":"invalid","message":"x","retryable":false,"current_revision":3}}"#;
+    let current_on_non_conflict = br#"{"schema_version":"openrelay.control/v1","type":"error","request_id":"e-1","payload":{"code":"invalid","message":"x","retryable":false,"current_revision":3}}"#;
     assert_eq!(
         wire::decode_message(&frame_len(current_on_non_conflict))
             .unwrap_err()
@@ -1440,20 +1443,20 @@ fn one_worker_applies_interleaved_sets_in_order() {
 
 #[test]
 fn events_are_closed_and_session_state_detail_is_bounded() {
-    let good = br#"{"schema_version":"arl.control/v1","type":"event","revision":1,"payload":{"name":"session.state","data":{"state":"closed","detail":"client closed"}}}"#;
+    let good = br#"{"schema_version":"openrelay.control/v1","type":"event","revision":1,"payload":{"name":"session.state","data":{"state":"closed","detail":"client closed"}}}"#;
     assert!(wire::decode_message(&frame_len(good)).is_ok());
-    let extra = br#"{"schema_version":"arl.control/v1","type":"event","revision":1,"payload":{"name":"session.state","data":{"state":"closed","extra":1}}}"#;
+    let extra = br#"{"schema_version":"openrelay.control/v1","type":"event","revision":1,"payload":{"name":"session.state","data":{"state":"closed","extra":1}}}"#;
     assert_eq!(
         wire::decode_message(&frame_len(extra)).unwrap_err().code(),
         ErrorCode::Invalid
     );
-    let nested = br#"{"schema_version":"arl.control/v1","type":"event","revision":1,"payload":{"name":"config.changed","data":{"key":"audio.mute","requested":true,"effective":true,"x":{}}}}"#;
+    let nested = br#"{"schema_version":"openrelay.control/v1","type":"event","revision":1,"payload":{"name":"config.changed","data":{"key":"audio.mute","requested":true,"effective":true,"x":{}}}}"#;
     assert_eq!(
         wire::decode_message(&frame_len(nested)).unwrap_err().code(),
         ErrorCode::Invalid
     );
     let long_detail = format!(
-        r#"{{"schema_version":"arl.control/v1","type":"event","revision":1,"payload":{{"name":"session.state","data":{{"state":"closed","detail":"{}"}}}}}}"#,
+        r#"{{"schema_version":"openrelay.control/v1","type":"event","revision":1,"payload":{{"name":"session.state","data":{{"state":"closed","detail":"{}"}}}}}}"#,
         "x".repeat(201)
     );
     assert_eq!(
@@ -1525,15 +1528,15 @@ fn ack_pair(request_id: &str, revision: u64, key_name: &str, value: ConfigValue)
 
 #[test]
 fn encode_rejects_hello_with_invalid_version_or_protocol() {
-    let good = hello("0.1.0", "arl.control/v1");
+    let good = hello("0.1.0", "openrelay.control/v1");
     assert!(wire::encode_message(&good).is_ok());
     for bad in ["", &"a".repeat(65), "0.1 beta", "ñ-1"] {
         assert!(
-            wire::encode_message(&hello(bad, "arl.control/v1")).is_err(),
+            wire::encode_message(&hello(bad, "openrelay.control/v1")).is_err(),
             "version {bad:?}"
         );
     }
-    let other_major = wire::encode_message(&hello("0.1.0", "arl.control/v2")).unwrap_err();
+    let other_major = wire::encode_message(&hello("0.1.0", "openrelay.control/v2")).unwrap_err();
     assert_eq!(other_major.kind(), wire::WireErrorKind::UnsupportedVersion);
     assert_eq!(other_major.request_id(), Some("h-1"));
 }
@@ -1788,7 +1791,7 @@ fn encode_rejects_error_retryable_and_current_revision_mismatch() {
 #[test]
 fn every_encoded_variant_decodes_back_to_the_same_message() {
     let messages = vec![
-        hello("0.1.0", "arl.control/v1"),
+        hello("0.1.0", "openrelay.control/v1"),
         capabilities_message(
             MAX_REVISION,
             Capabilities::from_peer(
@@ -1859,46 +1862,46 @@ fn semantic_errors_keep_request_id_and_do_not_close_or_apply() {
             "s-over",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-frac","expected_revision":1.5,"payload":{"key":"audio.mute","value":true}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"s-frac","expected_revision":1.5,"payload":{"key":"audio.mute","value":true}}"#.to_string(),
             "s-frac",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-str","expected_revision":"5","payload":{"key":"audio.mute","value":true}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"s-str","expected_revision":"5","payload":{"key":"audio.mute","value":true}}"#.to_string(),
             "s-str",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"config.set","request_id":"s-nopayload","expected_revision":0}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"s-nopayload","expected_revision":0}"#.to_string(),
             "s-nopayload",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g-extra","payload":{"key":null},"extra":1}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"g-extra","payload":{"key":null},"extra":1}"#.to_string(),
             "g-extra",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"g-pextra","payload":{"key":null,"extra":1}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"g-pextra","payload":{"key":null,"extra":1}}"#.to_string(),
             "g-pextra",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p-extra","expected_revision":0,"payload":{}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p-extra","expected_revision":0,"payload":{}}"#.to_string(),
             "p-extra",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"ping","request_id":"p-pextra","payload":{"extra":1}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"p-pextra","payload":{"extra":1}}"#.to_string(),
             "p-pextra",
         ),
         (
             format!(
-                r#"{{"schema_version":"arl.control/v1","type":"ack","request_id":"a-over","revision":{},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#,
+                r#"{{"schema_version":"openrelay.control/v1","type":"ack","request_id":"a-over","revision":{},"payload":{{"applied":false,"requested":null,"effective":{{}}}}}}"#,
                 MAX_REVISION + 1
             ),
             "a-over",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"ack","request_id":"a-frac","revision":1.5,"payload":{"applied":false,"requested":null,"effective":{}}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"ack","request_id":"a-frac","revision":1.5,"payload":{"applied":false,"requested":null,"effective":{}}}"#.to_string(),
             "a-frac",
         ),
         (
-            r#"{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-badfeat","revision":0,"payload":{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":["mic.start"],"remote_actions":["config.read"],"limits":{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64},"config_keys":[]}}"#.to_string(),
+            r#"{"schema_version":"openrelay.control/v1","type":"capabilities","request_id":"c-badfeat","revision":0,"payload":{"schema_version":"openrelay.capabilities/v1","device_id":"device-0001","role":"android","features":["mic.start"],"remote_actions":["config.read"],"limits":{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64},"config_keys":[]}}"#.to_string(),
             "c-badfeat",
         ),
     ];
@@ -1924,10 +1927,10 @@ fn semantic_errors_keep_request_id_and_do_not_close_or_apply() {
 #[test]
 fn framing_without_recoverable_id_closes_without_response() {
     let raw_frames = vec![
-        frame_len(br#"{"schema_version":"arl.control/v1","type":"ping""#),
+        frame_len(br#"{"schema_version":"openrelay.control/v1","type":"ping""#),
         frame_len(br#"not json"#),
         frame_len(
-            br#"{"schema_version":"arl.control/v1","type":"ping","request_id":"bad id","payload":{}}"#,
+            br#"{"schema_version":"openrelay.control/v1","type":"ping","request_id":"bad id","payload":{}}"#,
         ),
     ];
     for raw in raw_frames {

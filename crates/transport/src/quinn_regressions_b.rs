@@ -5,11 +5,11 @@
 //! hojas ECDSA P-256, ACL, enlace en memoria con datagramas QUIC reales) y
 //! añade un peer crudo con `TransportConfig` propio, para poder anunciar una
 //! ventana de recepción pequeña de verdad. No hay mocks: el peer hace el
-//! handshake mTLS con ALPN `arl-session/1` y pin SPKI, igual que el cliente
+//! handshake mTLS con ALPN `openrelay-session/1` y pin SPKI, igual que el cliente
 //! real.
 //!
 //! Los casos describen el contrato de `docs/protocol.md` §3 y de
-//! `arl_proto::wire`: un frame con framing íntegro y `request_id` recuperable
+//! `openrelay_proto::wire`: un frame con framing íntegro y `request_id` recuperable
 //! se responde con `error` en el mismo stream y la sesión sigue viva; un frame
 //! con framing corrupto o `request_id` irrecuperable cierra la conexión; un
 //! `error` inválido se descarta sin responder con otro `error`.
@@ -18,8 +18,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 
-use arl_proto::control::{ErrorCode, ErrorMsg};
-use arl_proto::wire::{self, ControlMessage};
+use openrelay_proto::control::{ErrorCode, ErrorMsg};
+use openrelay_proto::wire::{self, ControlMessage};
 use quinn_proto::crypto::rustls::QuicClientConfig;
 use quinn_proto::{
     ClientConfig as QuinnClientConfig, Connection, Dir, Endpoint, EndpointConfig, ReadError,
@@ -177,8 +177,8 @@ fn assert_single_invalid_error(bytes: &[u8], request_id: &str) {
 #[test]
 fn b1_invalid_type_with_valid_id_gets_error_on_same_stream() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-1a", true);
-    let client_leaf = ca.leaf("arl-client-t10b-1a", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-1a", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-1a", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -192,7 +192,7 @@ fn b1_invalid_type_with_valid_id_gets_error_on_same_stream() {
         .open(Dir::Bi)
         .expect("stream bidireccional");
     let frame = raw_frame(
-        r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"b1a-tipo"}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"b1a-tipo"}"#,
     );
     write_frame(&mut peer.conn, stream, &frame);
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");
@@ -235,8 +235,8 @@ fn b1_invalid_type_with_valid_id_gets_error_on_same_stream() {
 #[test]
 fn b1_missing_required_field_gets_error_on_same_stream() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-1b", true);
-    let client_leaf = ca.leaf("arl-client-t10b-1b", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-1b", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-1b", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -249,7 +249,7 @@ fn b1_missing_required_field_gets_error_on_same_stream() {
         .open(Dir::Bi)
         .expect("stream bidireccional");
     let frame = raw_frame(
-        r#"{"schema_version":"arl.control/v1","type":"config.get","request_id":"b1b-campo"}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.get","request_id":"b1b-campo"}"#,
     );
     write_frame(&mut peer.conn, stream, &frame);
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame incompleto");
@@ -302,8 +302,8 @@ fn b1_missing_required_field_gets_error_on_same_stream() {
 #[test]
 fn b2_corrupt_json_closes_without_inventing_request_id() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-2a", true);
-    let client_leaf = ca.leaf("arl-client-t10b-2a", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-2a", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-2a", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -340,8 +340,8 @@ fn b2_corrupt_json_closes_without_inventing_request_id() {
 #[test]
 fn b2_unrecoverable_request_id_closes_without_inventing_request_id() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-2b", true);
-    let client_leaf = ca.leaf("arl-client-t10b-2b", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-2b", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-2b", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -354,7 +354,7 @@ fn b2_unrecoverable_request_id_closes_without_inventing_request_id() {
         .open(Dir::Bi)
         .expect("stream bidireccional");
     let frame = raw_frame(
-        r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"id con espacios"}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"id con espacios"}"#,
     );
     write_frame(&mut peer.conn, stream, &frame);
     exchange(&mut peer, &mut server, 32).expect("bombeo del id irrecuperable");
@@ -389,8 +389,8 @@ fn b2_unrecoverable_request_id_closes_without_inventing_request_id() {
 #[test]
 fn b3_real_flow_control_accepts_partial_write_then_blocks() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-3p", true);
-    let client_leaf = ca.leaf("arl-client-t10b-3p", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-3p", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-3p", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -438,8 +438,8 @@ fn b3_real_flow_control_accepts_partial_write_then_blocks() {
 #[test]
 fn b3_control_wide_window_delivers_error_reply_whole() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-3c", true);
-    let client_leaf = ca.leaf("arl-client-t10b-3c", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-3c", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-3c", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer =
         raw_peer_with_stream_window(&client_leaf, &server_leaf, &ca, Instant::now(), 65_536);
@@ -457,7 +457,7 @@ fn b3_control_wide_window_delivers_error_reply_whole() {
         &mut peer.conn,
         stream,
         &raw_frame(
-            r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"b3-control"}"#,
+            r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"b3-control"}"#,
         ),
     );
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");
@@ -491,8 +491,8 @@ fn b3_control_wide_window_delivers_error_reply_whole() {
 #[test]
 fn b3_small_window_reply_waits_for_credit_instead_of_closing_0x104() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-3", true);
-    let client_leaf = ca.leaf("arl-client-t10b-3", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-3", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-3", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = raw_peer_with_stream_window(
         &client_leaf,
@@ -523,7 +523,7 @@ fn b3_small_window_reply_waits_for_credit_instead_of_closing_0x104() {
         &mut peer.conn,
         stream,
         &raw_frame(
-            r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"b3-ventana"}"#,
+            r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"b3-ventana"}"#,
         ),
     );
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");
@@ -577,8 +577,8 @@ fn b3_small_window_reply_waits_for_credit_instead_of_closing_0x104() {
 #[test]
 fn b4_invalid_error_frame_is_discarded_without_error_loop() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-4", true);
-    let client_leaf = ca.leaf("arl-client-t10b-4", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-4", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-4", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = RawPeer::connect(&client_leaf, &server_leaf, &ca, Instant::now());
 
@@ -592,7 +592,7 @@ fn b4_invalid_error_frame_is_discarded_without_error_loop() {
         .expect("stream bidireccional");
     // `invalid` no es retryable: `retryable: true` es una forma inválida.
     let frame = raw_frame(
-        r#"{"schema_version":"arl.control/v1","type":"error","request_id":"b4-bucle","payload":{"code":"invalid","message":"x","retryable":true}}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"error","request_id":"b4-bucle","payload":{"code":"invalid","message":"x","retryable":true}}"#,
     );
     write_frame(&mut peer.conn, stream, &frame);
     exchange(&mut peer, &mut server, 8).expect("bombeo del error inválido");
@@ -634,8 +634,8 @@ mod lifecycle;
 #[test]
 fn b4_queue_full_is_reached_under_real_backpressure() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-4q", true);
-    let client_leaf = ca.leaf("arl-client-t10b-4q", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-4q", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-4q", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let mut peer = raw_peer_with_stream_window(
         &client_leaf,
@@ -656,7 +656,7 @@ fn b4_queue_full_is_reached_under_real_backpressure() {
         .open(Dir::Bi)
         .expect("stream bidireccional");
     let frame = raw_frame(
-        r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"b4-tipo"}"#,
+        r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"b4-tipo"}"#,
     );
     write_frame(&mut peer.conn, stream, &frame);
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Compila libarl_bridge.so para arm64-v8a y x86_64 con el NDK 27.2 y la deja en
+# Compila libopenrelay_bridge.so para arm64-v8a y x86_64 con el NDK 27.2 y la deja en
 # android/rust/target/jniLibs/<abi>/ (la consume app/build.gradle.kts).
-# Uso: ./build.sh   (en homechy; variables NDK y RUST_TOOLCHAIN sobrescribibles)
+# Uso: ./build.sh   (NDK y RUST_TOOLCHAIN sobrescribibles por entorno)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-NDK="${NDK:-$HOME/.local/share/arl-toolchains/android-sdk/ndk/27.2.12479018}"
+NDK="${NDK:-${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk/27.2.12479018}}"
+[ -d "$NDK" ] || { echo "NDK no encontrado: $NDK (exporta NDK=/ruta/al/ndk)" >&2; exit 1; }
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 TOOLCHAIN="${RUST_TOOLCHAIN:-1.80.1}"
 CARGO=(rustup run "$TOOLCHAIN" cargo)
@@ -26,8 +27,8 @@ build_abi() {
     export "CARGO_TARGET_${upper}_RUSTFLAGS=-C link-arg=-Wl,-z,max-page-size=16384"
     (cd "$here" && "${CARGO[@]}" build --release --locked --target "$triple")
     mkdir -p "$here/target/jniLibs/$abi"
-    cp "$here/target/$triple/release/libarl_bridge.so" "$here/target/jniLibs/$abi/"
-    echo "OK $abi -> target/jniLibs/$abi/libarl_bridge.so"
+    cp "$here/target/$triple/release/libopenrelay_bridge.so" "$here/target/jniLibs/$abi/"
+    echo "OK $abi -> target/jniLibs/$abi/libopenrelay_bridge.so"
 }
 
 build_abi aarch64-linux-android arm64-v8a aarch64-linux-android

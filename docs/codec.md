@@ -2,7 +2,7 @@
 
 **Estado: implementado a nivel de crate, no integrado en la sesión.** El camino
 PCM16 fijo de sigue siendo el contrato por defecto y no se modifica. Este
-documento describe `arl-codec`, sus perfiles y sus límites; no afirma calidad
+documento describe `openrelay-codec`, sus perfiles y sus límites; no afirma calidad
 por escucha ni latencia extremo a extremo medida.
 
 ## Perfiles
@@ -62,7 +62,7 @@ libopus sólo acepta 8, 12, 16, 24 o 48 kHz; 44.1 kHz no es una tasa válida de
 entrada. Una fuente a 44.1 kHz debe remuestrearse a 48 kHz **antes** del
 codificador:
 
-- `arl_audio_core::LinearResampler` es un corrector de drift: su ratio está
+- `openrelay_audio_core::LinearResampler` es un corrector de drift: su ratio está
   clampado a `[0.98, 1.02]`, por lo que no sirve para 44.1 → 48 (ratio 1.088).
 - El remuestreo 44.1 → 48 corresponde a la etapa de captura/adaptación previa
   fuera de este crate. `OpusEncoder::encode` rechaza cualquier buffer que no
@@ -72,8 +72,8 @@ codificador:
 
 El códec es **opcional**:
 
-- El frame v1 y el pipeline PCM16 no dependen de `arl-codec`; el crate no toca
-  `arl-audio-core`, el transporte ni la sesión.
+- El frame v1 y el pipeline PCM16 no dependen de `openrelay-codec`; el crate no toca
+  `openrelay-audio-core`, el transporte ni la sesión.
 - La elección de perfil y el anuncio de que se usa Opus pertenecen a la capa de
   sesión/negociación (fuera del alcance de este crate). En v1 no hay
   autodetección: el receptor debe saber si el payload es PCM16 u Opus.
@@ -107,9 +107,9 @@ El build requiere CMake y un compilador de C. Nuestro crate mantiene
 ## Verificación
 
 ```sh
-cargo test --locked -p arl-codec --test codec_profiles
-cargo clippy -p arl-codec -- -D warnings
-cargo fmt -p arl-codec -- --check
+cargo test --locked -p openrelay-codec --test codec_profiles
+cargo clippy -p openrelay-codec -- -D warnings
+cargo fmt -p openrelay-codec -- --check
 ```
 
 `codec_profiles` cubre: roundtrip en 2.5/5/10 ms y bitrates 64/80/96 kbps

@@ -6,11 +6,11 @@
 
 #![cfg(feature = "return-audio")]
 
-use arl_audio_core::{AudioFrame, SAMPLE_COUNT, TYPE_AUDIO};
-use arl_daemon::return_audio::{
+use openrelay_audio_core::{AudioFrame, SAMPLE_COUNT, TYPE_AUDIO};
+use openrelay_daemon::return_audio::{
     effective_local_features, should_send, PcmSource, ReturnEmitter, RETURN_EPOCH,
 };
-use arl_proto::control::Feature;
+use openrelay_proto::control::Feature;
 
 /// Fuente de prueba con bloque de lectura acotado, para forzar el ensamblado
 /// de un frame a partir de varias lecturas parciales.

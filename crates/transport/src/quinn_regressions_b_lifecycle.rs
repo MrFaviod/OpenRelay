@@ -1,7 +1,7 @@
 //! Regresiones B de ciclo de vida y envío público (corte T10 tests-B).
 //!
 //! Dos mecanismos, sin mocks: peer QUIC crudo con handshake mTLS real, ALPN
-//! `arl-session/1` y pin SPKI, igual que el cliente de `quinn_regressions`.
+//! `openrelay-session/1` y pin SPKI, igual que el cliente de `quinn_regressions`.
 //!
 //! 1. **Pérdida remota de la conexión** (`Event::ConnectionLost`): tras el
 //!    evento no debe quedar estado autorizado ni residuo observable — ni
@@ -20,11 +20,11 @@
 
 use std::time::Instant;
 
-use arl_audio_core::pcm16::SILENCE;
-use arl_audio_core::{AudioFrame, Flags};
-use arl_proto::control::{ErrorCode, ErrorMsg};
-use arl_proto::wire::{self, ControlMessage};
 use bytes::Bytes;
+use openrelay_audio_core::pcm16::SILENCE;
+use openrelay_audio_core::{AudioFrame, Flags};
+use openrelay_proto::control::{ErrorCode, ErrorMsg};
+use openrelay_proto::wire::{self, ControlMessage};
 use quinn_proto::{Dir, VarInt};
 
 use super::super::{authorized_session, exchange, roots, TestCa, TestLeaf};
@@ -140,8 +140,8 @@ fn accept_server_stream(peer: &mut RawPeer) -> quinn_proto::StreamId {
 #[test]
 fn b_lifecycle_connection_lost_clears_state_and_residue() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-life", true);
-    let client_leaf = ca.leaf("arl-client-t10b-life", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-life", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-life", false);
     let mut server = server_with_full_caps(&server_leaf, &client_leaf, &ca);
     let mut peer = raw_peer_with_stream_window(
         &client_leaf,
@@ -208,7 +208,7 @@ fn b_lifecycle_connection_lost_clears_state_and_residue() {
         &mut peer.conn,
         stream,
         &raw_frame(
-            r#"{"schema_version":"arl.control/v1","type":"config.nope","request_id":"life-pend"}"#,
+            r#"{"schema_version":"openrelay.control/v1","type":"config.nope","request_id":"life-pend"}"#,
         ),
     );
     exchange(&mut peer, &mut server, 8).expect("bombeo del frame inválido");
@@ -319,8 +319,8 @@ fn b_lifecycle_connection_lost_clears_state_and_residue() {
 #[test]
 fn b_lifecycle_control_public_send_wide_window_is_whole_and_ordered() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-wide", true);
-    let client_leaf = ca.leaf("arl-client-t10b-wide", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-wide", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-wide", false);
     let mut server = server_with_full_caps(&server_leaf, &client_leaf, &ca);
     let mut peer = raw_peer_with_stream_window(
         &client_leaf,
@@ -382,8 +382,8 @@ fn b_lifecycle_control_public_send_wide_window_is_whole_and_ordered() {
 #[test]
 fn b_lifecycle_public_send_blocked_is_whole_or_cleanly_rejected() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-server-t10b-prefix", true);
-    let client_leaf = ca.leaf("arl-client-t10b-prefix", false);
+    let server_leaf = ca.leaf("openrelay-server-t10b-prefix", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-prefix", false);
     let mut server = server_with_full_caps(&server_leaf, &client_leaf, &ca);
     let mut peer = raw_peer_with_stream_window(
         &client_leaf,

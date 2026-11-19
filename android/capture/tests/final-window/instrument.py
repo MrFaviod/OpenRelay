@@ -3,10 +3,10 @@
 
 Uso: instrument.py <life.c fuente> <salida life_instr.c>
 Inserta tres lineas en anclas unicas (si no hay exactamente una, sale con 3):
-  1. Tras atomic_store(&cap->gate_token, tok) en arl_capture_start: pausa el control
+  1. Tras atomic_store(&cap->gate_token, tok) en openrelay_capture_start: pausa el control
      entre gate abierto y set_state(STARTED).
   2. Declaraciones de ambos hooks tras el include del SPSC.
-  3. Rama de token rechazado en arl_capture_push, con adm ya admitido (ADM_PUSH
+  3. Rama de token rechazado en openrelay_capture_push, con adm ya admitido (ADM_PUSH
      pendiente) antes de adm_leave.
 No cambia ninguna otra linea.
 """
@@ -24,7 +24,7 @@ reject_anchor = (
 # Variante candidata (life-final-candidate): el rechazo tambien mira el estado.
 reject_anchor_v2 = (
     "  if (generation == 0u || atomic_load(&cap->gate_token) != generation ||\n"
-    "      state_of(cap) != ARL_CAPTURE_STATE_STARTED) {\n"
+    "      state_of(cap) != OPENRELAY_CAPTURE_STATE_STARTED) {\n"
     "    adm_leave(cap, ADM_PUSH);\n"
 )
 
@@ -43,16 +43,16 @@ if n_v2 == 1:
 decl = (
     decl_anchor
     + "/* T13a final-window hooks: solo en la copia instrumentada de test. */\n"
-    + "void arl_t13a_hook_start_gate_open(arl_capture *cap, uint64_t tok);\n"
-    + "void arl_t13a_hook_push_reject(arl_capture *cap, uint64_t generation);\n"
+    + "void openrelay_t13a_hook_start_gate_open(openrelay_capture *cap, uint64_t tok);\n"
+    + "void openrelay_t13a_hook_push_reject(openrelay_capture *cap, uint64_t generation);\n"
 )
 out = src.replace(decl_anchor, decl, 1)
 out = out.replace(
-    gate_anchor, gate_anchor + "  arl_t13a_hook_start_gate_open(cap, tok);\n", 1)
+    gate_anchor, gate_anchor + "  openrelay_t13a_hook_start_gate_open(cap, tok);\n", 1)
 out = out.replace(
     reject_anchor,
     reject_anchor.replace("    adm_leave(cap, ADM_PUSH);\n",
-                          "    arl_t13a_hook_push_reject(cap, generation);\n    adm_leave(cap, ADM_PUSH);\n"),
+                          "    openrelay_t13a_hook_push_reject(cap, generation);\n    adm_leave(cap, ADM_PUSH);\n"),
     1,
 )
 open(out_path, "w", encoding="utf-8").write(out)

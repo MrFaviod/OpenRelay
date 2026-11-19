@@ -21,9 +21,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
-use arl_proto::wire::ControlMessage;
 use bytes::BytesMut;
+use openrelay_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
+use openrelay_proto::wire::ControlMessage;
 use quinn_proto::crypto::rustls::QuicClientConfig;
 use quinn_proto::{
     ClientConfig as QuinnClientConfig, Connection, ConnectionHandle, DatagramEvent, Endpoint,
@@ -63,7 +63,7 @@ impl TestCa {
         let mut params = CertificateParams::new(Vec::<String>::new()).expect("params CA");
         params
             .distinguished_name
-            .push(DnType::CommonName, "arl-test-ca-t10b");
+            .push(DnType::CommonName, "openrelay-test-ca-t10b");
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![
             KeyUsagePurpose::KeyCertSign,
@@ -448,8 +448,8 @@ fn authorized_session(server: &mut SessionServer) -> Option<super::SessionId> {
 #[test]
 fn production_server_sends_no_session_ticket_to_early_data_client() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-t10b-tickets", true);
-    let client_leaf = ca.leaf("arl-client-t10b-tickets", false);
+    let server_leaf = ca.leaf("openrelay-daemon-t10b-tickets", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-tickets", false);
     let mut server = server_for(&server_leaf, &client_leaf, &ca);
     let store = Arc::new(CountingStore::default());
     let mut peer = EarlyDataPeer::connect(
@@ -494,8 +494,8 @@ fn production_server_sends_no_session_ticket_to_early_data_client() {
 #[test]
 fn early_data_client_cannot_offer_0rtt_on_reconnect() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-t10b-reconnect", true);
-    let client_leaf = ca.leaf("arl-client-t10b-reconnect", false);
+    let server_leaf = ca.leaf("openrelay-daemon-t10b-reconnect", true);
+    let client_leaf = ca.leaf("openrelay-client-t10b-reconnect", false);
     let store = Arc::new(CountingStore::default());
 
     // Primera conexión: handshake completo contra el servidor real.
@@ -737,8 +737,8 @@ fn session_pair(
 fn valid_audio_without_mic_is_not_queued_for_the_application() {
     // Caso denegado: `return_audio` pero no `mic`.
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-res-audio", true);
-    let client_leaf = ca.leaf("arl-client-res-audio", false);
+    let server_leaf = ca.leaf("openrelay-daemon-res-audio", true);
+    let client_leaf = ca.leaf("openrelay-client-res-audio", false);
     let (mut client, mut server) = session_pair(
         &server_leaf,
         &client_leaf,
@@ -798,8 +798,8 @@ fn valid_audio_without_mic_is_not_queued_for_the_application() {
 #[test]
 fn audio_with_mic_is_queued_for_the_application() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-res-audio-pos", true);
-    let client_leaf = ca.leaf("arl-client-res-audio-pos", false);
+    let server_leaf = ca.leaf("openrelay-daemon-res-audio-pos", true);
+    let client_leaf = ca.leaf("openrelay-client-res-audio-pos", false);
     let (mut client, mut server) = session_pair(
         &server_leaf,
         &client_leaf,
@@ -834,8 +834,8 @@ fn audio_with_mic_is_queued_for_the_application() {
 fn valid_control_without_control_write_is_not_queued_for_the_application() {
     // Caso denegado: `control_read` (servidor→cliente) pero no `control_write`.
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-res-control", true);
-    let client_leaf = ca.leaf("arl-client-res-control", false);
+    let server_leaf = ca.leaf("openrelay-daemon-res-control", true);
+    let client_leaf = ca.leaf("openrelay-client-res-control", false);
     let (mut client, mut server) = session_pair(
         &server_leaf,
         &client_leaf,
@@ -884,8 +884,8 @@ fn valid_control_without_control_write_is_not_queued_for_the_application() {
 #[test]
 fn control_with_control_write_is_queued_for_the_application() {
     let ca = TestCa::new();
-    let server_leaf = ca.leaf("arl-daemon-res-control-pos", true);
-    let client_leaf = ca.leaf("arl-client-res-control-pos", false);
+    let server_leaf = ca.leaf("openrelay-daemon-res-control-pos", true);
+    let client_leaf = ca.leaf("openrelay-client-res-control-pos", false);
     let (mut client, mut server) = session_pair(
         &server_leaf,
         &client_leaf,
