@@ -3,13 +3,16 @@
 One binary does two jobs. It is the **daemon** (`openrelay daemon`) and the **client** that talks to it over a local Unix socket. Every command that talks to the daemon prints JSON on stdout, so it pipes cleanly into `jq`.
 
 ```text
-openrelay daemon [--socket PATH] run the daemon in the foreground
-                        [--quic ADDR --identity-der PATH --identity-key PATH
-                         --client-ca PATH --identities PATH --control-grants PATH]
+openrelay daemon [--socket PATH] [--quic ADDR | --no-quic] [--state-dir PATH]
+                        [--identity-der PATH --identity-key PATH --client-ca PATH
+                         --client-ca-key PATH --identities PATH --control-grants PATH]
 openrelay status [--socket PATH] daemon state
 openrelay capabilities [--socket PATH] keys, ranges, current revision
 openrelay config get [KEY] [--socket PATH] read one key, or all of them
 openrelay config set KEY VALUE --rev N [--socket PATH] write one key
+openrelay pair [--ttl 120] [--advertise IP] [--yes] [--socket PATH]
+                                                           QR + local approval of a phone
+openrelay devices [--state-dir PATH] list approved identities
 openrelay service print-unit print the systemd --user unit
 openrelay --help | openrelay <command> --help
 ```
@@ -26,7 +29,20 @@ It stays in the foreground until Ctrl-C or SIGTERM, and never forks; there is no
 systemctl --user enable --now openrelay.service
 ```
 
+On first start the default daemon **provisions its own identity** in `${XDG_CONFIG_HOME:-~.config}/openrelay/` and opens the session endpoint on `0.0.0.0:47000` (UDP). `--state-dir DIR` moves the state directory; `--no-quic` starts only the local control socket and creates no identity or files; `--quic ADDR` changes the bind address/port. Passing the six `--identity-*` / `--client-ca*` / `--identities` / `--control-grants` flags uses an existing provision instead of generating one (all six are required together).
+
+| File | Contents | Mode |
+|---|---|---|
+| `server.der` | daemon session certificate (also used for enrollment) | `0600` |
+| `server.key.der` | its PKCS#8 private key | `0600` |
+| `client-ca.der` | CA that signs per-device client certificates | `0600` |
+| `client-ca.key.der` | CA private key, used at approval time | `0600` |
+| `identities.json` | approved devices and capabilities | `0600` |
+| `grants.txt` | control grants per pin | `0600` |
+
 The control socket lives at `$XDG_RUNTIME_DIR/openrelay/control.sock`. Its directory is mode 0700 and the socket is 0600. It only accepts clients with the **same UID** (`SO_PEERCRED`), and it never listens on TCP.
+
+The daemon needs inbound UDP **47000** (sessions) and, while a pairing window is open, **47001** (enrollment). Open both in the host firewall; see [INSTALL.md](../INSTALL.md#firewall).
 
 ## 2. Check it
 
@@ -35,7 +51,80 @@ openrelay status
 openrelay status | jq.
 ```
 
-## 3. Discover the settings
+```json
+{"ok":true,"request_id":"cli-1234-…","result":{
+  "version":"0.2.0","uptime_s":42,"sessions":1
+  "quic":"0.0.0.0:47000"
+  "pipewire":{"ok":true}
+  "pair":{"open":false,"pending":0,"expires_at":null}}}
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | daemon version (`0.2.0` in this release) |
+| `uptime_s` | seconds since the daemon started |
+| `sessions` | authorized sessions alive right now (one per streaming phone) |
+| `quic` | session bind address, or `null` when `--no-quic` |
+| `pipewire.ok` | `true` when the `openrelay-mic` source exists; otherwise `error` says why |
+| `pair.open` | a pairing window is open |
+| `pair.pending` | devices waiting for local approval |
+| `pair.expires_at` | window expiry as a Unix timestamp, or `null` |
+
+## 3. Pair a phone
+
+```sh
+openrelay pair
+```
+
+The daemon opens a single enrollment window, prints the one-time `openrelay://pair?v=1&h=…&pin=…&t=…` URI and a QR in the terminal, then polls for the phone. When a device enrolls, the CLI prints its fingerprint and asks:
+
+```text
+Dispositivo: 9f2c…
+¿Aprobar este dispositivo? [y/N]
+```
+
+`y` signs a `clientAuth` leaf for the device key and hands it back over the enrollment stream; the phone then connects to the session endpoint. `n` rejects it. Flags:
+
+| Flag | Effect |
+|---|---|
+| `--ttl N` | window length in seconds, `1`–`300` (default `120`) |
+| `--advertise IP` | address written into the QR; an IP literal, not a hostname. Defaults to the PC's primary LAN IPv4 |
+| `--yes` | approve the first device without prompting |
+
+The window closes on rejection, expiry, Ctrl-C, EOF on stdin or a QR failure, so the next `openrelay pair` is never blocked by a stale window; the daemon also drops a window whose CLI process died. After approval it stays open for a few seconds so the phone can receive its certificate. Only one window can exist at a time; a second attempt answers `busy`.
+
+List what is approved without talking to the daemon:
+
+```sh
+openrelay devices
+# 9f2c… mic=sí control_read=sí control_write=sí return_audio=no
+```
+
+With no approved device it prints `openrelay: no hay dispositivos aprobados` on stderr and exits 0.
+
+The list is read from `identities.json`. A device absent from it is denied by the ACL, even if it completed enrollment.
+
+## 4. `audio.stats`
+
+`audio.stats` is a daemon operation, not a subcommand: it reports per-session counters and is meant for scripts. Send one JSON line over the control socket (any same-UID client works):
+
+```sh
+printf '%s\n' '{"request_id":"stats-1","op":"audio.stats"}' |
+  socat - UNIX-CONNECT:"$XDG_RUNTIME_DIR/openrelay/control.sock"
+```
+
+```json
+{"ok":true,"request_id":"stats-1","result":{"sessions":[
+  {"session":1,"pin":"9f2c…","pcm16_frames":2880,"opus_frames":0
+   "plc_frames":0,"dropped_duplicates":0,"dropped_reordered":0
+   "dropped_cadence":0,"discontinuities":1,"epoch_resets":1
+   "decode_errors":0,"ns_stages":0,"ns_frames_processed":0
+   "ns_frames_bypassed":2880,"ns_added_latency_samples":0}]}}
+```
+
+`pcm16_frames` climbing while `decode_errors` and `dropped_*` stay at zero is the quickest proof that audio is arriving. `sessions: ` means no phone is connected. The full socket protocol is in [cli.md](cli.md).
+
+## 5. Discover the settings
 
 ```sh
 openrelay capabilities | jq.
@@ -56,11 +145,11 @@ This lists every key with its type, range and scope, plus the current `revision`
 | `device.local_volume` | number | 0.0 … 1.0 | local | device playback volume, not stream gain |
 | `device.model` | string | ≤ 64 characters | readonly | reported model, informational |
 
-Only `shared` keys accept `config set`. A `local` key answers `local_key` and a `readonly` key answers `denied`; the daemon and the app own those. In v0.1.0 the daemon also has no hardware applicator, so even a valid write to a `shared` key answers `unsupported` and leaves the revision untouched. Reads work for every key.
+Only `shared` keys accept `config set`. A `local` key answers `local_key` and a `readonly` key answers `denied`; the daemon and the app own those. In v0.2.0 the daemon also has no hardware applicator, so even a valid write to a `shared` key answers `unsupported` and leaves the revision untouched. Reads work for every key.
 
 Defaults and ownership are in [config-schema.md](config-schema.md).
 
-## 4. Read and write configuration
+## 6. Read and write configuration
 
 ```sh
 openrelay config get # full snapshot
@@ -91,53 +180,38 @@ openrelay: el daemon devolvió error # stderr
 
 `VALUE` is parsed as `true`/`false`, an integer, a decimal, or text, in that order. The key decides whether the value is valid. For example, `0.5` is not an integer.
 
-## 5. Exit codes
+## 7. Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0` | success (`ok: true`) |
-| `1` | the daemon is unreachable, or it answered with an error (`conflict`, `unsupported`, `not_found`, `invalid`, `local_key`, `denied`, …) |
+| `1` | the daemon is unreachable, or it answered with an error (`conflict`, `unsupported`, `not_found`, `invalid`, `local_key`, `denied`, `busy`, …) |
 | `2` | usage error: missing `--rev`, missing argument, unknown option, unset `XDG_RUNTIME_DIR` without `--socket` |
 
 Running `openrelay` with no subcommand prints the usage text and exits 2; `openrelay --help` exits 0.
 
 On an error, the JSON response still goes to stdout and a short reason goes to stderr, so scripts can always parse stdout. CLI messages are currently in Spanish.
 
-## 6. Use another socket
+## 8. Use another socket
 
 ```sh
-openrelay daemon --socket /tmp/openrelay-test.sock &
+openrelay daemon --socket /tmp/openrelay-test.sock --no-quic &
 openrelay status --socket /tmp/openrelay-test.sock
 ```
 
 This is handy for testing a second instance, or when `XDG_RUNTIME_DIR` is not set (cron or a bare SSH session).
 
-## 7. Accept phones on the network (advanced)
-
-The session endpoint is **off by default**. To open it, give the daemon a UDP address and the five provisioned identity files:
-
-```sh
-openrelay daemon --quic 0.0.0.0:47000 \
-  --identity-der server.der --identity-key server.key.der \
-  --client-ca client-ca.der --identities identities.json \
-  --control-grants grants.json
-```
-
-The daemon never generates keys or certificates on its own. In v0.1.0 the in-app QR pairing flow is not exposed yet, so this mode is meant for development and testing. See [security/pairing.md](security/pairing.md) and [transport-api.md](transport-api.md).
-
-## 8. Everyday recipes
+## 9. Everyday recipes
 
 ```sh
 # Follow the logs of the service
 journalctl --user -u openrelay.service -f
 
-# Mute and unmute from a hotkey script
-# (v0.1.0 refuses the write with `unsupported`; the command shape is final)
-rev=$(openrelay config get | jq -r '.result.revision')
-openrelay config set audio.mute true --rev "$rev"
+# Pair a phone from a desktop shortcut with a longer window
+openrelay pair --ttl 300
 
 # Check that the installed unit matches the one the binary ships with
 diff <(openrelay service print-unit) ~.config/systemd/user/openrelay.service && echo "unit up to date"
 ```
 
-The full socket protocol (one JSON line per request) is documented in [cli.md](cli.md).
+The full socket protocol (one JSON line per request) is documented in [cli.md](cli.md). Pairing security is covered in [security/pairing.md](security/pairing.md).

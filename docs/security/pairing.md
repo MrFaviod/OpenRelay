@@ -1,86 +1,109 @@
-# Emparejamiento y sesión — requisitos de diseño
+# Pairing and session security
 
+**Status: implemented in v0.2.0.** This document describes what the daemon, the CLI and the Android app actually do. Where the implementation is weaker than the original design, it says so.
 
-## 1. Dos superficies, no una
+## 1. Two surfaces
 
-| Superficie | Certificado de servidor | Certificado de cliente | Acepta | Nunca acepta |
+| Surface | Server certificate | Client certificate | Accepts | Never accepts |
 |---|---|---|---|---|
-| **Enrolamiento** (`enroll`) | Efímero de la ventana, pin SPKI en el QR | No | Mensajes de enrolamiento, token y prueba de pin | Audio, control operativo, tickets, ACL persistente |
-| **Sesión** (`session`) | Identidad persistente del daemon | Sí: mTLS con `peer_cert` + ACL, o app-layer aprobado con binding TLS | Audio, control, tickets y sesión | Cliente sin identidad válida o sin autorización |
+| **Enrollment** (`47001/udp`, only while `openrelay pair` runs) | The daemon's persistent session certificate, pinned by SPKI in the QR | None | `enroll.request` with token and client SPKI, then `enroll.result` | Audio, control, tickets |
+| **Session** (`47000/udp`) | The same persistent certificate, validated against the local CA and the pinned SPKI | Yes: `clientAuth` leaf signed by the local CA, plus ACL | Audio and control | A client without a valid identity or grant |
 
-- Son **endpoints distintos**, con certificado de servidor distinto y conjuntos de mensajes disjuntos. El cliente reconecta a `session` después de la aprobación; no hay transición in-band de `enroll` a `session`.
-- El pin del QR pertenece **sólo** al certificado efímero de enrolamiento. **No se reutiliza** como ancla de las sesiones siguientes.
-- El enrolamiento puede aceptar un cliente sin certificado; la ausencia de certificado no es una sesión y no habilita audio ni control.
+- The surfaces use different ALPNs (`openrelay-enroll/1`, `openrelay-session/1`) and disjoint message sets. The phone connects to the session endpoint after approval; there is no in-band transition from enrollment to session.
+- Enrollment accepts clients without a certificate. Such a connection is not a session and grants no audio or control.
+- The enrollment endpoint is bound to `0.0.0.0:47001` and exists only while a window is open. It is not a long-running listener.
 
-## 2. Flujo de enrolamiento
+### Deliberate simplification: one certificate, not one per window
 
-1. **Apertura local.** El usuario ejecuta `openrelay pair open --ttl 120` en una TTY. El daemon crea una ventana de enrolamiento aislada con:
-   - certificado de servidor efímero `S_e` y su pin SPKI;
-   - token aleatorio de un solo uso (256 bits, codificado en el QR);
-   - caducidad estricta (propuesta 120 s, máximo configurable acotado);
-   - endpoint de enrolamiento anunciado en el QR.
-   El token **no** se escribe en disco, no se emite con `--json` y no se registra en logs.
-2. **Descubrimiento.** El QR es el canal principal. mDNS, si se usa, es **sólo descubrimiento**: un nombre anunciado no aporta confianza. También es válido introducir el endpoint a mano.
-3. **Conexión y validación de pin.** Android conecta a `enroll` y valida el pin SPKI de `S_e` **antes de enviar el token**. Si el pin no coincide, aborta sin revelar el token.
-4. **Token.** Sólo tras validar el pin, Android envía el token de un solo uso. El servidor lo compara en tiempo constante, comprueba vigencia y ventana, y lo invalida al usarlo.
-5. **Aprobación local.** La terminal muestra identidad/fingerprint del cliente y un código corto. El usuario aprueba o rechaza. Sin aprobación no se provisiona nada.
-6. **Provisión.** Sólo tras aprobar se crea la identidad persistente del cliente y se escribe la ACL (default deny, capacidades mínimas). El cliente reconecta al endpoint `session`.
-7. **Cierre de ventana.** Aprobar, cancelar o expirar destruye la ventana, el certificado efímero, el token y cualquier estado temporal.
+The original design called for an ephemeral enrollment certificate per pairing window. The implementation reuses the daemon's **persistent** server certificate for enrollment and for sessions:
 
-## 3. Flujo de sesión
+- fewer moving parts and no second key lifecycle in the daemon;
+- the QR pin is `SHA-256(SubjectPublicKeyInfo)` of that persistent certificate;
+- the session client trusts the same local CA and additionally pins the server SPKI.
 
-1. Android conecta al endpoint `session` con su identidad persistente.
-2. El servidor valida la cadena/ancla de confianza y exige identidad de cliente:
-   - **camino mTLS:** certificado de cliente válido, `peer_cert` presente y ACL por identidad;
-   - **camino app-layer:** challenge-response estándar revisado y binding al canal TLS, según ADR-0002.
-   `verify_peer(true)` por sí solo **no** acredita un cliente: la comprobación de `peer_cert == None` es obligatoria en el camino mTLS.
-3. El servidor responde con versión de protocolo, límites y snapshot de configuración (revisión incluida).
-4. Sólo entonces se abre la sesión de audio. El primer frame lleva `epoch` nuevo y `flags` de discontinuidad; el receptor descarta cualquier audio anterior a la autorización.
-5. La sesión termina por parada local Android, `openrelay session stop`, revocación o pérdida de conexión. Al terminar, el nodo de audio deja de producir y se invalidan los tickets de esa sesión.
+The cost is real: the pin is not fresh per window, so a pin captured from an old QR still identifies the same server, and compromise of the server key affects enrollment and sessions alike. It does **not** let an attacker enroll: that still requires the one-time token, a client key, and a human `y` on the PC. A future version may move to a per-window certificate; until then this is the documented trade-off.
 
-## 4. Rechazos obligatorios
+## 2. Window and QR
 
-| Caso | Resultado |
+`openrelay pair` calls `pair.open` over the local Unix socket. The daemon:
+
+1. takes the single enrollment slot (a second call answers `busy`);
+2. binds `0.0.0.0:47001` and creates a fresh 32-byte **single-use token**, valid for `--ttl` seconds (1-300, default 120);
+3. builds the URI:
+
+```text
+openrelay://pair?v=1&h=<ip>:47001&pin=<64 hex>&t=<64 hex>
+```
+
+`h` is the advertised address: the primary LAN IPv4 by default, or the literal IP from `--advertise`. `pin` is the SPKI pin of the server certificate. `t` is the token. The URI is printed to the terminal together with a QR; it is never written to disk, logged, or sent anywhere else.
+
+The token lives in memory only. It is compared in constant time and invalidated on first use, on expiry, or when the window closes.
+
+## 3. Enrollment exchange
+
+1. The phone scans the QR (or pastes the URI) and connects to `h` over QUIC with ALPN `openrelay-enroll/1`, **without** a client certificate.
+2. It validates the server's SPKI pin **before** sending anything. A mismatch aborts the connection without revealing the token; there is no `verify=false` path.
+3. It sends:
+
+```json
+{"type":"enroll.request","version":1,"token":"<64 hex>","spki":"<client public key, hex DER>"}
+```
+
+4. The server checks the token, window and message limits, computes `SHA-256(spki)` — the device fingerprint — and queues the device as **pending**. Nothing is persisted yet. The phone shows *Esperando aprobación en la PC…*.
+5. The CLI polls `pair.pending`, prints `Dispositivo: <fingerprint>` and asks `¿Aprobar este dispositivo? [y/N]`. `--yes` answers the first prompt automatically.
+6. On `y`, the daemon signs a `clientAuth` leaf for the device key with the local CA, adds the pin to the transport ACL and to `identities.json`/`grants.txt`, and sends the result back over the enrollment stream:
+
+```json
+{"type":"enroll.result","version":1,"status":"accepted"
+ "client_leaf":"<hex DER>","session_ca":"<hex DER>","session_port":47000}
+```
+
+7. The phone stores the leaf, the CA, the server pin and the host, then connects to the session endpoint. The window stays open a few seconds so the result survives packet loss, then closes.
+8. On `n`, EOF, Ctrl-C, expiry or a QR failure the window closes without writing anything. A pending phone receives `denied` when the close is orderly.
+
+The QR is not persisted and carries no identity, private key or configuration. The token is the only secret in it, and it is useful only while the window is open and only from the LAN.
+
+## 4. Session
+
+1. The app opens QUIC to `h:47000` with ALPN `openrelay-session/1`, presenting its `clientAuth` leaf.
+2. The server requires a client certificate, validates it against the local CA, and looks up the device pin in the ACL. Default deny: a certificate that is valid but absent from `identities.json` is rejected before any audio or control.
+3. TLS is validated by the app against the stored CA **and** the pinned server SPKI, using the fixed server name `openrelay` (not the QR IP). The server name is stable across address changes.
+4. Only then does the audio path open: the phone sends encrypted QUIC datagrams and the daemon decodes them into `openrelay-mic`. Audio before authorization is discarded.
+
+Session grants are per device: `mic`, `control_read`, `control_write` (and optionally `return_audio`). `openrelay devices` prints them.
+
+## 5. Rejections
+
+| Case | Result |
 |---|---|
-| Token reutilizado, vencido o de otra ventana | Rechazo; no se provisiona identidad; se registra el intento sin el token. |
-| Pin SPKI distinto o certificado caducado | El cliente aborta antes de enviar el token. |
-| Cliente sin identidad válida en `session` (mTLS) | Rechazo antes de control/audio. |
-| Audio, control o ticket en `enroll` | Rechazo explícito y cierre; se cuenta el intento. |
-| Aprobación local denegada | Se destruye la ventana; no queda identidad ni ACL. |
-| Estado local perdido | El cliente debe re-enrolar; **nunca** se acepta un servidor o cliente nuevo en silencio (sin TOFU). |
-| Repetición de un mensaje de enrolamiento fuera de orden | Rechazo; la ventana es de un solo uso y un solo cliente. |
-| Flood o mensajes sobredimensionados | Rechazo por límites antes del parseo profundo; cuotas por IP/identidad. |
+| Token reused, expired, or from another window | Rejected; no identity is written; the attempt is counted without the token |
+| SPKI pin mismatch | The client aborts before sending the token |
+| Client with no certificate or unknown identity on the session endpoint | Rejected before control or audio |
+| Audio, control or tickets on the enrollment surface | Rejected and the connection is closed |
+| Local approval denied | Window destroyed; no identity, no ACL entry |
+| Lost local state | The device must enroll again; there is no TOFU and no silent re-enrollment |
+| Oversized or malformed enrollment message | Rejected by size limits before deep parsing |
+| Second `pair.open` while a window is open | `busy`; the first window is untouched |
 
-## 5. Identidad, ACL y revocación
+## 6. Identity, ACL, revocation
 
-- **Identidad por dispositivo**, no por conexión. La ACL se indexa por identidad y por capacidad: `mic`, `control.read`, `control.write`, `return` (futuro). Default deny.
-- **Tickets** de vida corta ligados a identidad y sesión; no sustituyen la autenticación de la conexión.
-- **Revocación** elimina la identidad, cierra sus sesiones activas e invalida sus tickets. No borra evidencia ni el historial de la decisión.
-- **Rotación** de identidad del servidor: si cambia, el cliente debe volver a validar el nuevo ancla; no se acepta un cambio silencioso.
-- **Límite de confianza:** la aprobación local es humana. El código corto y el fingerprint reducen el error; no lo eliminan.
+- Identity is per device, not per connection. The ACL is indexed by SPKI pin and capability. Default deny.
+- `identities.json` is the persisted approval list; `grants.txt` mirrors the control grants. Both are mode 0600 in the state directory, as are the CA and server keys.
+- Removing a device means removing its entry from `identities.json` and its pin from the running ACL, then restarting the daemon. Removal closes that device's future sessions; it does not erase the audit trail of the approval.
+- If the daemon state is regenerated, the server pin changes and every phone must pair again. There is no silent anchor rotation.
+- **Trust limit:** local approval is human. The fingerprint reduces operator error; it does not eliminate it.
 
-## 6. Requisitos del QR (propuestos, formato final en)
+## 7. Limits and assumptions
 
-El QR debe contener, como mínimo:
+- One window per daemon, one enrolled client per window, TTL ≤ 300 s.
+- Enrollment carries no audio and no control: there is nothing to protect with a session before approval.
+- The LAN is assumed hostile: the flow does not rely on the network being trustworthy, only on the QR channel and the local approval.
+- The Android app keeps the client key in its own keystore-backed signer; the private key never leaves the phone. The leaf is public and is stored with the pairing.
+- Message names and encodings are fixed by `contracts/` and exercised by the enrollment and pairing tests.
 
-- versión del formato de enrolamiento;
-- endpoint de enrolamiento (host/puerto o equivalente);
-- pin SPKI del certificado efímero `S_e`;
-- token de un solo uso;
-- caducidad absoluta.
+## 8. Related documents
 
-No debe contener: identidad persistente, clave privada, token de sesión, configuración ni datos personales. El QR se muestra sólo en la terminal local; no se persiste ni se envía a terceros.
-
-## 7. Límites y supuestos
-
-- Ventana de enrolamiento: TTL propuesto 120 s; una sola ventana activa por daemon; un solo cliente por ventana.
-- El enrolamiento no transporta audio ni control: no hay nada que proteger con una sesión antes de aprobar.
-- La LAN es hostil; el flujo no depende de que la red sea confiable.
-- El puente Keystore/mTLS en Android es un **pendiente bloqueante de ** (/ADR-0002). Si no hay bridge de firma, se elige app-layer estándar revisado o se declara la limitación; no se copia un PEM desde Keystore ni se inventa criptografía.
-- Los nombres exactos de mensajes, su codificación y el handshake se fijan en / con tests negativos (`tls_identity_gate`, `enrollment_boundary`, `pairing_flow`).
-
-## 8. Relación con otros documentos
-
-- Activos, adversarios y riesgos residuales: [`threat-model.md`](threat-model.md).
-- Contrato de control/audio y límites: [`../protocol.md`](../protocol.md).
-- Configuración compartida y claves locales: [`../config-schema.md`](../config-schema.md).
+- Assets, adversaries and residual risk: [`threat-model.md`](threat-model.md).
+- Control/audio contract and limits: [`../protocol.md`](../protocol.md).
+- Shared configuration and local keys: [`../config-schema.md`](../config-schema.md).
+- CLI flow: [`../cli-quickstart.md`](../cli-quickstart.md).

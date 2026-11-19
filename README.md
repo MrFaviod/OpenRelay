@@ -43,7 +43,7 @@ You have a good microphone in your pocket and a Linux box with a bad one, or non
 - **Secure by construction.** Pairing uses a one-time QR token, an SPKI pin and explicit approval on the PC. Every session after that is mutual TLS. There is no cleartext fallback and no `verify=false`.
 - **Local only.** The daemon accepts inbound connections from paired devices and nothing else. No HTTP API, no remote shell, no outbound connections.
 - **Small.** A single Rust binary, about 3.5 MB (2.8 MB stripped), for the daemon and CLI, an optional `systemd --user` unit, and a native Kotlin app. Linux has no GUI.
-- **Shared control.** Phone and CLI speak one configuration contract: revisions, conflict detection, idempotent retries. v0.1.0 has no hardware applicator yet, so a write is refused with `unsupported` instead of faked.
+- **Shared control.** Phone and CLI speak one configuration contract: revisions, conflict detection, idempotent retries. v0.2.0 still has no hardware applicator, so a write is refused with `unsupported` instead of faked.
 
 ## Screenshots
 
@@ -56,20 +56,62 @@ You have a good microphone in your pocket and a Linux box with a bad one, or non
 </p>
 <p align="center"><sub>Idle · capturing, with mute and input level · advanced settings, showing requested vs. effective gain</sub></p>
 
-## Status: early preview
+<p align="center">
+  <img src="docs/assets/app-pair.png" alt="Pairing card with QR scan and pasted URI" width="30%">
+  &nbsp;
+  <img src="docs/assets/app-streaming.png" alt="Streaming the microphone to the paired PC" width="30%">
+</p>
+<p align="center"><sub>Pairing with a PC by QR · sending the microphone to the PC, with the paired host on screen</sub></p>
+
+## Quick start
+
+**1. Install both halves.** On Linux (x86_64 or aarch64, glibc 2.34+, PipeWire 0.3.65+):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh
+```
+
+On Android 9 or newer, install `openrelay-0.2.0-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest). It is a debug-signed preview build; allow installation from that source when Android asks.
+
+**2. Start the daemon.** Foreground for a first run, or enable the user unit:
+
+```sh
+openrelay daemon
+# or, after the installer put the unit in place:
+systemctl --user enable --now openrelay.service
+```
+
+The first start provisions `${XDG_CONFIG_HOME:-~.config}/openrelay/` (server and client CA, empty `identities.json`, `grants.txt`, all `0600`) and listens for sessions on UDP **47000**. Allow both UDP ports through your host firewall:
+
+```sh
+sudo ufw allow 47000:47001/udp
+# firewalld: sudo firewall-cmd --add-port=47000-47001/udp
+```
+
+**3. Pair the phone, then stream.** Run:
+
+```sh
+openrelay pair
+```
+
+It opens a 120-second window, prints an `openrelay://pair?...` URI and a terminal QR, and waits. In the app tap **Emparejar con PC**, scan the QR (or paste the URI), then confirm the fingerprint the CLI shows. When the app reports **Emparejado con** the PC name, start capture: audio arrives in the PipeWire source node **`openrelay-mic`**, and the app shows **Enviando a** the host. Pick `openrelay-mic` as the microphone in your conferencing or recording app.
+
+## Status: v0.2.0
 
 > [!IMPORTANT]
-> **v0.1.0 is a developer preview, not a finished product.** The building blocks are implemented and tested, but the phone app **cannot pair with a PC from its UI yet**, so you can't stream your voice end to end from a fresh install. If you want a daily-driver mic today, this release isn't it yet. If you want to test, review or hack on it, welcome.
+> **Pairing and streaming work end to end in v0.2.0.** Verified on an Android 16 emulator: the app pairs by QR, capture starts, and the daemon receives PCM16 frames in `openrelay-mic` while `openrelay status` reports `pipewire: ok`. Real phones, real LANs and other distros still need testers — reports welcome.
 
 | Piece | State |
 |---|---|
 | Control protocol v1: revisions, conflicts, idempotency | ✅ implemented, JSON-Schema checked |
 | QUIC transport, mTLS sessions, rate limiting | ✅ implemented, regression and fuzz tested |
-| Pairing core: one-time token, SPKI pin, local approval, ACL | ✅ in the daemon · ⏳ not exposed in the CLI or app yet |
-| PipeWire virtual source `openrelay-mic` | ✅ loopback verified at 100/100 frames on a private PipeWire |
+| Pairing: QR, one-time token, SPKI pin, local approval, ACL | ✅ `openrelay pair` + **Emparejar con PC** in the app |
+| Session audio: phone mic → QUIC → PipeWire `openrelay-mic` | ✅ verified end to end, Android 16 emulator, PCM16 frames received |
+| `openrelay devices` and persisted identities | ✅ `identities.json`, default deny, capabilities per device |
+| PipeWire virtual source `openrelay-mic` | ✅ needs a running PipeWire session with WirePlumber to link it to apps |
 | PulseAudio and ALSA backends | ✅ implemented · ⏳ untested on real hardware |
 | Opus codec, with PCM16 fallback | ✅ implemented |
-| Android app: capture, foreground service, mute, gain request | ✅ capture and controls work locally · ⏳ FGS lifecycle verified on API 28/34/37 emulators, no audio input |
+| Android app: capture, foreground service, mute, gain request, pairing | ✅ works on API 28/34/37 emulators; real-device reports needed |
 | Noise suppression (SpeexDSP) | 🧪 optional feature, off by default |
 | Audio back to the phone | 🧪 opt-in, off by default |
 | Real phones, real LANs, other distros | ⏳ [needs testers](https://github.com/MrFaviod/OpenRelay/issues) |
@@ -84,9 +126,9 @@ The [compatibility matrix](docs/compatibility-matrix.md) lists exactly what has 
 curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh
 ```
 
-The script detects your architecture, downloads the release tarball, **verifies it against `SHA256SUMS`** before installing anything, and puts the optional user unit in `~.config/systemd/user/` without enabling it. Pin a version with `OPENRELAY_VERSION=v0.1.0`, or uninstall with `OPENRELAY_UNINSTALL=1`.
+The script detects your architecture, downloads the release tarball, **verifies it against `SHA256SUMS`** before installing anything, and puts the optional user unit in `~.config/systemd/user/` without enabling it. Pin a version with `OPENRELAY_VERSION=v0.2.0`, or uninstall with `OPENRELAY_UNINSTALL=1`.
 
-**Android** 9 or newer: download `openrelay-0.1.0-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it. It is a debug-signed preview build.
+**Android** 9 or newer: download `openrelay-0.2.0-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it. It is a debug-signed preview build; allow install from unknown sources for your browser or file manager.
 
 Rather read before you pipe? The [install guide](INSTALL.md) covers manual installation, per-distro libraries and building from source.
 
@@ -94,21 +136,17 @@ Rather read before you pipe? The [install guide](INSTALL.md) covers manual insta
 
 ```sh
 openrelay daemon & # start it in the background for this tour (or use the unit)
-openrelay status # alive? prints JSON: version, uptime, sessions, QUIC address
+openrelay status # version, uptime, sessions, QUIC address, pipewire:{ok}, pair:{...}
+openrelay pair # QR + one-time URI; approve the phone here
+openrelay devices # paired identities and their capabilities
 openrelay capabilities # every key with type, range and the current revision
 openrelay config get # full configuration snapshot
 openrelay config get audio.mute # read one key
 ```
 
-Writes look like `openrelay config set audio.mute true --rev 0`. The revisioned write path is implemented, but v0.1.0 has no hardware applicator: the daemon answers `unsupported` and leaves the revision untouched rather than claiming a change it did not make.
+A healthy stream shows up in `status` as `"sessions": 1`, `"pipewire": {"ok": true}` and a `pair` block naming whether a window is open. The daemon's `audio.stats` operation reports per-session counters (`pcm16_frames`, `opus_frames`, drops, discontinuities) over the control socket — the quickest way to confirm that frames are actually arriving.
 
-As a user service:
-
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now openrelay.service
-journalctl --user -u openrelay.service -f
-```
+Writes look like `openrelay config set audio.mute true --rev 0`. The revisioned write path is implemented, but v0.2.0 still has no hardware applicator: the daemon answers `unsupported` and leaves the revision untouched rather than claiming a change it did not make.
 
 Everything else is in the **[CLI quick guide](docs/cli-quickstart.md)**.
 
@@ -136,14 +174,15 @@ docs/ protocol, security, ADRs, config keys, latency budget
 | | |
 |---|---|
 | 🚀 [Install guide](INSTALL.md) | curl, manual tarball, source build, Android |
-| ⌨️ [CLI quick guide](docs/cli-quickstart.md) | everyday commands, config keys, exit codes |
+| ⌨️ [CLI quick guide](docs/cli-quickstart.md) | pairing, everyday commands, config keys, exit codes |
 | 📡 [Protocol v1](docs/protocol.md) | control stream, audio datagrams, limits |
 | 🔐 [Threat model](docs/security/threat-model.md) · [Pairing](docs/security/pairing.md) · [Hardening](docs/security/hardening.md) | what is defended, and how |
 | ⚙️ [Configuration keys](docs/config-schema.md) | every key with range, default and owner |
 | 🧭 [Architecture decisions](docs/adr/) | transport, identity, noise suppression, enrollment |
 | ⏱️ [Latency budget](docs/latency-budget.md) · [Measuring it](docs/measurement-method.md) | per-stage targets and the measurement method |
+| 📝 [Changelog](CHANGELOG.md) | what changed in 0.2.0 and 0.1.0 |
 
-The README, install guide and CLI quick guide are in English. Most deep-dive documents are in Spanish.
+The README, install guide, CLI quick guide and pairing document are in English. Most protocol deep-dives are in Spanish.
 
 ## Building from source
 
