@@ -8,6 +8,7 @@
 //! arl config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
 //! arl config set KEY VALUE --rev N      escribe una clave con revisión esperada
 //! arl capabilities [--socket PATH]      pide las capacidades y la revisión actual
+//! arl service print-unit                imprime la unidad systemd --user
 //! ```
 //!
 //! Códigos de salida: 0 correcto; 1 el daemon no responde o devuelve error;
@@ -32,6 +33,7 @@ Uso:
   arl config get [KEY] [--socket PATH]  lee una clave o todas (JSON)
   arl config set KEY VALUE --rev N      escribe una clave (JSON)
   arl capabilities [--socket PATH]      capacidades y revisión actual (JSON)
+  arl service print-unit                imprime la unidad systemd --user
   arl --help | arl <subcomando> --help
 
 Socket por defecto: $XDG_RUNTIME_DIR/arl/control.sock (0700 dir, 0600 socket).
@@ -75,6 +77,17 @@ Uso: arl capabilities [--socket PATH]
 Imprime el mensaje `capabilities` del daemon (revisión, claves y límites).
 ";
 
+const SERVICE_USAGE: &str = "\
+Uso: arl service print-unit
+
+Imprime, sin instalarlo, el contenido de packaging/systemd/arl.service.
+La unidad es opcional: corre `arl daemon` bajo systemd --user.
+";
+
+/// Unidad empaquetada. `include_str!` evita duplicar el archivo: lo que se
+/// imprime es exactamente lo que se distribuye.
+const SERVICE_UNIT: &str = include_str!("../../../packaging/systemd/arl.service");
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let sub = match args.first().map(String::as_str) {
@@ -91,6 +104,7 @@ fn main() -> ExitCode {
         "status" => cmd_status(rest),
         "config" => cmd_config(rest),
         "capabilities" => cmd_capabilities(rest),
+        "service" => cmd_service(rest),
         other => {
             eprintln!("arl: subcomando desconocido: {other}\n\n{USAGE}");
             ExitCode::from(2)
@@ -341,6 +355,28 @@ fn cmd_capabilities(rest: &[String]) -> ExitCode {
     match parse_plain(rest, CAPABILITIES_USAGE) {
         Ok(path) => send(&path, "capabilities", &Value::Null),
         Err(code) => code,
+    }
+}
+
+/// `arl service print-unit`: vuelca la unidad sin escribir ni instalar nada.
+fn cmd_service(rest: &[String]) -> ExitCode {
+    match rest {
+        [arg] if arg == "print-unit" => {
+            print!("{SERVICE_UNIT}");
+            ExitCode::SUCCESS
+        }
+        [arg] if arg == "--help" || arg == "-h" => {
+            print!("{SERVICE_USAGE}");
+            ExitCode::SUCCESS
+        }
+        [] => {
+            eprintln!("arl: usa `arl service print-unit`\n\n{SERVICE_USAGE}");
+            ExitCode::from(2)
+        }
+        [other, ..] => {
+            eprintln!("arl: subcomando de service desconocido: {other}\n\n{SERVICE_USAGE}");
+            ExitCode::from(2)
+        }
     }
 }
 
