@@ -7,10 +7,18 @@ license.workspace = true
 publish.workspace = true
 description = "Fuente PipeWire nativa y SPSC fija de arl (unico unsafe confinado al FFI de PipeWire)"
 
+[features]
+default = []
+# Fallback PulseAudio por `pactl` (proceso externo, sin bindings de libpulse).
+pulse = []
+# Apertura opt-in de un dispositivo ALSA `hw:` (libasound dinámica).
+alsa = ["dep:alsa"]
+
 [dependencies]
 arl-audio-core = { path = "../audio-core" }
 pipewire = { version = "=0.10.1", default-features = false, features = ["v0_3_65"] }
 rtrb = "=0.3.2"
+alsa = { version = "=0.9.1", optional = true }
 
 [dev-dependencies]
 
