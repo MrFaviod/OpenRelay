@@ -12,9 +12,25 @@
 //! del perfil (2.5, 5 o 10 ms); se conserva uno por perfil porque la cabecera
 //! Opus puede cambiar de `sample_count` y el wrapper exige que la salida mida
 //! exactamente una trama del perfil.
+//!
+//! # Reducción de ruido
+//!
+//! La cadena de NS es opcional y vive en esta ruta de decodificación: se aplica
+//! al bloque ya decodificado, en el hilo que llama a [`SessionAudio::handle`]
+//! (el worker del daemon), justo antes de escribir el anillo. El callback de
+//! tiempo real de PipeWire sólo consume ese anillo: nunca ejecuta DSP.
+//!
+//! Por defecto, y sin la feature `speexdsp`, la sesión es bypass puro: no hay
+//! etapa ni cola de NS y las muestras salen intactas. Los contadores de
+//! [`SessionAudioStats`] permiten demostrar ese bypass.
 
 use arl_audio_core::{AudioPayload, OpusFrame};
 use arl_codec::{CodecError, CodecProfile, OpusDecoder};
+use arl_dsp::NsChain;
+
+/// Frecuencia del perfil de audio de arl, en Hz.
+#[cfg(feature = "speexdsp")]
+const NATIVE_SAMPLE_RATE: u32 = 48_000;
 
 /// Ventana de reordenamiento del contrato (§9): 20 ms.
 pub const REORDER_WINDOW_US: u32 = 20_000;
@@ -51,29 +67,55 @@ pub struct SessionAudioStats {
     pub epoch_resets: u64,
     /// Paquetes que libopus no pudo decodificar.
     pub decode_errors: u64,
+    /// Bloques que pasaron por una etapa DSP de reducción de ruido.
+    pub ns_stages: u64,
+    /// Bloques presentados a la cadena de NS, incluidos los rechazados.
+    pub ns_frames_processed: u64,
+    /// Bloques que la cadena devolvió sin etapa (bypass).
+    pub ns_frames_bypassed: u64,
+    /// Retardo declarado por la cadena de NS, en muestras; cero en bypass.
+    pub ns_added_latency_samples: u64,
 }
 
 /// Estado de decodificación de una sesión autorizada.
-#[derive(Debug)]
 pub struct SessionAudio {
     opus_negotiated: bool,
     decoders: [Option<OpusDecoder>; 3],
     last_epoch: Option<u32>,
     last_seq: Option<u32>,
     last_profile: Option<CodecProfile>,
+    /// La feature `speexdsp` está compilada y la sesión pidió NS.
+    ns_requested: bool,
+    /// Cadena de NS; `NsChain::bypass` mientras no se pida o no haya etapa.
+    ns: NsChain,
     stats: SessionAudioStats,
 }
 
 impl SessionAudio {
     /// Crea el estado. `opus_negotiated` debe reflejar la capacidad remota;
     /// sin ella los frames Opus se descartan en vez de decodificarse.
+    ///
+    /// La sesión arranca en bypass de reducción de ruido.
     pub fn new(opus_negotiated: bool) -> Self {
+        Self::with_ns(opus_negotiated, false)
+    }
+
+    /// Crea el estado con reducción de ruido opcional.
+    ///
+    /// `ns_enabled` sólo tiene efecto si el daemon se compiló con la feature
+    /// `speexdsp`; sin ella la cadena queda en bypass aunque se pida. La etapa
+    /// se construye con el tamaño del primer bloque decodificado y se rehace si
+    /// el perfil cambia de trama. Corre en el hilo que llama a
+    /// [`SessionAudio::handle`], nunca en el callback de tiempo real.
+    pub fn with_ns(opus_negotiated: bool, ns_enabled: bool) -> Self {
         Self {
             opus_negotiated,
             decoders: [None, None, None],
             last_epoch: None,
             last_seq: None,
             last_profile: None,
+            ns_requested: ns_enabled && cfg!(feature = "speexdsp"),
+            ns: NsChain::bypass(),
             stats: SessionAudioStats::default(),
         }
     }
@@ -105,8 +147,18 @@ impl SessionAudio {
     ///
     /// PCM16 devuelve una única entrada con las mismas muestras del frame.
     /// Opus puede devolver varias: una PLC por cada hueco dentro de la ventana
-    /// más el frame actual. Un frame descartado no produce muestras.
+    /// más el frame actual. Un frame descartado no produce muestras. Cada
+    /// bloque entregado pasa por la cadena de NS antes de salir.
     pub fn handle(&mut self, payload: AudioPayload) -> Result<Vec<DecodedAudio>, CodecError> {
+        let mut frames = self.decode(payload)?;
+        for frame in &mut frames {
+            self.apply_ns(&mut frame.samples);
+        }
+        Ok(frames)
+    }
+
+    /// Decodifica el payload sin tocar la cadena de NS.
+    fn decode(&mut self, payload: AudioPayload) -> Result<Vec<DecodedAudio>, CodecError> {
         match payload {
             AudioPayload::Pcm16(frame) => {
                 self.stats.pcm16_frames += 1;
@@ -252,6 +304,53 @@ impl SessionAudio {
             decoder.reset()?;
         }
         Ok(())
+    }
+
+    /// Pasa un bloque por la cadena de NS y acumula sus contadores.
+    ///
+    /// Sin NS pedido la cadena es bypass: no hay etapa ni cola, pero el bloque
+    /// igual se cuenta para demostrar que no se ejecutó DSP. Si el perfil
+    /// cambia de tamaño de trama, la etapa se reconstruye para ese tamaño.
+    fn apply_ns(&mut self, samples: &mut [i16]) {
+        if self.ns_requested && self.ns.frame_samples() != Some(samples.len()) {
+            self.ns = noise_chain(samples.len()).unwrap_or_else(NsChain::bypass);
+        }
+        let before = self.ns.counters();
+        self.ns.process(samples);
+        let after = self.ns.counters();
+        self.stats.ns_stages += after.stages_run - before.stages_run;
+        self.stats.ns_frames_processed += after.frames_processed - before.frames_processed;
+        self.stats.ns_frames_bypassed += after.frames_bypassed - before.frames_bypassed;
+        self.stats.ns_added_latency_samples = self.ns.added_latency_samples() as u64;
+    }
+}
+
+/// Construye la etapa de NS para un tamaño de bloque, si está compilada.
+///
+/// Sin la feature `speexdsp` no hay etapa y el resultado es `None`: la sesión
+/// permanece en bypass.
+#[cfg(feature = "speexdsp")]
+fn noise_chain(frame_samples: usize) -> Option<NsChain> {
+    NsChain::speexdsp(NATIVE_SAMPLE_RATE, frame_samples).ok()
+}
+
+/// Sin la feature `speexdsp` no hay etapa de NS disponible.
+#[cfg(not(feature = "speexdsp"))]
+fn noise_chain(_frame_samples: usize) -> Option<NsChain> {
+    None
+}
+
+impl std::fmt::Debug for SessionAudio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionAudio")
+            .field("opus_negotiated", &self.opus_negotiated)
+            .field("decoders", &self.decoders)
+            .field("last_epoch", &self.last_epoch)
+            .field("last_seq", &self.last_seq)
+            .field("last_profile", &self.last_profile)
+            .field("ns_bypass", &self.ns.is_bypass())
+            .field("stats", &self.stats)
+            .finish()
     }
 }
 

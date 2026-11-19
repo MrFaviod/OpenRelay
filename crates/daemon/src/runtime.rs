@@ -438,6 +438,12 @@ impl ProductRuntime {
     }
 
     /// Una vuelta del endpoint QUIC: lee, autoriza, responde control y drena audio.
+    ///
+    /// El audio se decodifica en este hilo, el worker del daemon, y desde aquí
+    /// se escribe el anillo que consume PipeWire. La reducción de ruido
+    /// opcional, si la sesión se construyó con `SessionAudio::with_ns`, corre en
+    /// esta misma vuelta antes del anillo: el callback de tiempo real nunca
+    /// ejecuta DSP.
     pub fn pump_quic(&mut self) -> Result<(), RuntimeError> {
         let Some(quic) = self.quic.as_mut() else {
             std::thread::sleep(READ_TICK);

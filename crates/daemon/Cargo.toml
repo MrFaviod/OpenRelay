@@ -11,6 +11,7 @@ description = "Daemon mínimo de arl: sesión QUIC autorizada -> frame -> jitter
 arl-audio-core = { path = "../audio-core" }
 arl-audio-linux = { path = "../audio-linux" }
 arl-codec = { path = "../codec" }
+arl-dsp = { path = "../dsp", default-features = false }
 arl-transport = { path = "../transport" }
 arl-proto = { path = "../proto" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
@@ -22,6 +23,11 @@ rustls-pki-types = "=1.16.0"
 arl-proto = { path = "../proto" }
 rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 time = "=0.3.36"
+
+[features]
+default = []
+# Compila SpeexDSP dentro de arl-dsp y habilita el NS opcional de sesión.
+speexdsp = ["arl-dsp/speexdsp"]
 
 [lints]
 workspace = true
