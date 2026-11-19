@@ -44,6 +44,36 @@ recalcula sumas y coherencia, no mide latencia.
 }
 ```
 
+## Medición
+
+El presupuesto de arriba sigue siendo **propuesta, no medición**. El método
+físico, el fixture y los comandos están en `docs/measurement-method.md`; el
+arnés vive en `tools/measure/` y la evidencia en `artifacts/latency/`.
+
+- **Latencia extremo a extremo:** p50/p95/p99 por detección de clics y
+  correlación cruzada entre referencia y captura `pw-record`. La resolución
+  del análisis es de 1 muestra (0,0208 ms a 48 kHz); la incertidumbre física
+  se declara aparte.
+- **RTT:** se mide y reporta en su propio campo `rtt_ms`, aparte de
+  `latency_ms`. No se suma, resta ni promedia con la latencia; confundirlos
+  invalida la evidencia.
+- **Drift de 1 h:** `cargo test -p arl-audio-core --test drift_1h -- --ignored`
+  es la referencia simulada; la evidencia de hardware exige un stream real de
+  60 min con `ppm` y `resyncs`.
+- **Soak de 8 h:** `python3 tools/measure/soak.py --hours 8...` reporta RSS
+  CPU, xruns, drops y `plc_frames` desde `/proc`, log de PipeWire y snapshot
+  de contadores. Un smoke corto no cierra SC-029.
+- **Evidencia:** `python3 tools/measure/latency.py --plan
+  docs/measurement-method.md --require-evidence artifacts/latency/` queda en
+  pendiente sin capturas físicas hasheadas. `--dry-run` es sólo preflight y nunca
+  cuenta como evidencia (SC-047).
+
+Estado actual: **pendiente**. No hay baseline físico ni dispositivo de referencia
+medido; estas cifras no se presentan como logradas. Cuando exista evidencia
+válida, el bloque `verify:latency-budget` se actualizará en coordinación con
+`tools/verify.py`; hasta entonces conserva `proposed_not_measured` para no
+declarar mediciones inexistentes.
+
 ## Contadores idle y streaming
 
 `arl_audio_core::budget` separa dos acumuladores que nunca se mezclan:
