@@ -62,7 +62,9 @@ fn enroll_approve_session_control_ticket_revoke() {
         24,
     )
     .expect("handshake enroll");
-    enroll_client.send_token(&window, spki).expect("token");
+    enroll_client
+        .send_token_async(&window, spki)
+        .expect("token");
     exchange(
         &mut enroll_client,
         CLIENT_ADDR,

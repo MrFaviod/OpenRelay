@@ -5,37 +5,39 @@
 //! sesión ya autorizada. Los dos ven la misma revisión porque comparten el
 //! mismo `SharedControl`. No hay un segundo protocolo ni un puerto en claro.
 //!
-//! La identidad, la CA de clientes y las identidades aprobadas se leen de
-//! archivos que el operador aporta. Este módulo no genera claves ni
-//! certificados. Sin esos archivos el proceso arranca sólo con el admin local
-//! y deja el endpoint QUIC apagado: ese es el hueco de producción, no se
-//! rellena con una CA fabricada.
+//! La identidad, la CA local y las identidades aprobadas viven en el
+//! directorio de estado (`openrelay::provision`). En el primer arranque se
+//! generan ahí; `pair.approve` firma con la clave de la CA la hoja de sesión
+//! que el teléfono recibe por el stream de enrolamiento. Sin provisión el
+//! proceso arranca sólo con el admin local y deja el endpoint QUIC apagado.
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, ErrorKind};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "return-audio")]
 use openrelay_audio_linux::monitor::MonitorSource;
-use openrelay_audio_linux::{ring, SampleProducer};
+use openrelay_audio_linux::{init as audio_init, PipeWireSource};
 #[cfg(feature = "return-audio")]
 use openrelay_proto::control::Feature;
 use openrelay_proto::control::{ErrorCode, PeerRole, RemoteAction};
 use openrelay_proto::wire::{decode_frame, encode_message, ControlMessage};
+use openrelay_transport::enrollment::{EnrollOutcome, EnrollServer, EnrollmentToken};
 use openrelay_transport::identity::{self, SpkiPin};
 use openrelay_transport::quinn::{
-    Acl, ServerEvent, SessionId, SessionLimits, SessionServer, TransportError,
+    Acl, Capabilities, ServerEvent, SessionId, SessionLimits, SessionServer, TransportError,
 };
 use rustls::crypto::ring::sign::any_ecdsa_type;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
+use rustls::sign::CertifiedKey;
 use serde_json::{json, Value};
 
 use crate::control::{ControlError, ControlRegistry, IdentityGrant, SharedControl};
-use crate::pairing;
+use crate::pairing::{self, Pairing};
 #[cfg(feature = "return-audio")]
 use crate::return_audio::{effective_local_features, should_send, ReturnEmitter, RETURN_EPOCH};
 use crate::session::{SessionAudio, SessionAudioStats};
@@ -43,15 +45,18 @@ use crate::session::{SessionAudio, SessionAudioStats};
 /// Tope de una línea de control que llega por el socket Unix.
 const MAX_LINE: usize = 64 * 1024;
 /// Cuánto espera el hilo de QUIC un datagrama antes de volver a mirar el paro.
-const READ_TICK: Duration = Duration::from_millis(20);
-/// Muestras del anillo local. Nadie lo consume: el micrófono no se abre.
-const RING_SAMPLES: usize = 480;
+/// También es el período con el que se itera PipeWire.
+const READ_TICK: Duration = Duration::from_millis(5);
+/// Muestras del anillo de la fuente PipeWire: 200 ms a 48 kHz.
+const RING_SAMPLES: usize = 240 * 200;
+/// Puerto UDP del enrolamiento. Sólo existe mientras hay una ventana abierta.
+pub const ENROLL_PORT: u16 = 47001;
 
-/// Archivos que el operador aporta para abrir el endpoint de sesión.
+/// Archivos de estado del endpoint de sesión.
 ///
-/// Ninguno se fabrica aquí. `identity_der` es el certificado del servidor,
-/// `identity_key` su PKCS#8 y `client_ca_der` la CA que firma a los clientes.
-/// `identities` es el archivo que ya escribe el emparejamiento.
+/// `identity_der` es el certificado del servidor, `identity_key` su PKCS#8,
+/// `client_ca_der` la CA que firma a los clientes y `client_ca_key` su clave
+/// (para emitir hojas en la aprobación). `identities` es la ACL persistida.
 #[derive(Debug, Clone)]
 pub struct ProvisionFiles {
     /// Certificado DER del servidor de sesión.
@@ -60,6 +65,9 @@ pub struct ProvisionFiles {
     pub identity_key: PathBuf,
     /// CA DER que firma los certificados de cliente.
     pub client_ca_der: PathBuf,
+    /// Clave PKCS#8 DER de esa CA. El daemon la usa para firmar la hoja de
+    /// sesión que devuelve el enrolamiento.
+    pub client_ca_key: PathBuf,
     /// Identidades aprobadas (`pairing::load`).
     pub identities: PathBuf,
     /// Permisos de control por pin, uno por línea `pin_hex<TAB>device_id<TAB>read|write`.
@@ -113,6 +121,8 @@ pub enum RuntimeError {
     Socket(io::Error),
     /// El transporte rechazó la configuración.
     Transport(TransportError),
+    /// La ventana de enrolamiento falló al bombear.
+    Enroll(String),
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -122,6 +132,7 @@ impl std::fmt::Display for RuntimeError {
             Self::Control(error) => write!(f, "control: {error}"),
             Self::Socket(error) => write!(f, "socket UDP: {error}"),
             Self::Transport(error) => write!(f, "transporte: {error}"),
+            Self::Enroll(detail) => write!(f, "enrolamiento: {detail}"),
         }
     }
 }
@@ -131,7 +142,19 @@ impl std::error::Error for RuntimeError {}
 struct QuicEndpoint {
     socket: UdpSocket,
     server: SessionServer,
-    producer: SampleProducer,
+    /// Identidad TLS del servidor; el enrolamiento reutiliza el mismo
+    /// certificado (mismo pin en el QR) y la misma CA local.
+    identity: Arc<CertifiedKey>,
+    pin: SpkiPin,
+    /// Ruta de `identities.json` que escribe la aprobación local.
+    identities: PathBuf,
+    /// CA y clave con las que se firma la hoja del teléfono.
+    client_ca_der: PathBuf,
+    client_ca_key: PathBuf,
+    /// Fuente `openrelay-mic`. `None` si PipeWire no está disponible: el
+    /// daemon sigue sirviendo sesiones y el motivo queda en `pipewire_error`.
+    pipewire: Option<PipeWireSource>,
+    pipewire_error: Option<String>,
     /// Estado de decodificación por sesión (PCM16 u Opus negociado).
     audio: HashMap<SessionId, SessionAudio>,
     /// Sesiones que este proceso vio autorizadas y aún no cerró.
@@ -146,12 +169,23 @@ struct QuicEndpoint {
     return_gap: Option<String>,
 }
 
+/// Ventana de emparejamiento viva: socket UDP efímero + servidor sans-IO.
+struct EnrollWindow {
+    socket: UdpSocket,
+    server: EnrollServer,
+    expires: Instant,
+    expires_at: u64,
+}
+
 /// Proceso dueño del estado. El socket Unix y el UDP de QUIC los atiende el
 /// mismo hilo: el estado de control no es `Send` y no se parte en dos.
 pub struct ProductRuntime {
     control: SharedControl,
     quic: Option<QuicEndpoint>,
     quic_addr: Option<SocketAddr>,
+    /// Ventana de enrolamiento abierta por `pair.open`, si hay una.
+    enroll: Option<EnrollWindow>,
+    pairing: Pairing,
     sessions: u64,
     started: Instant,
 }
@@ -211,6 +245,8 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
                 None => None,
             },
             quic,
+            enroll: None,
+            pairing: Pairing::new(),
             sessions: 0,
             started: Instant::now(),
         },
@@ -232,7 +268,7 @@ fn load_quic(
     let cert = read_cert(&files.identity_der)?;
     let pin = SpkiPin::from_certificate_der(cert.as_ref())
         .map_err(|error| RuntimeError::Provision(format!("pin del servidor: {error}")))?;
-    let identity = load_identity(cert, &files.identity_key)?;
+    let identity = Arc::new(load_identity(cert, &files.identity_key)?);
     let roots = identity::root_store([read_cert(&files.client_ca_der)?])
         .map_err(|error| RuntimeError::Provision(format!("CA de clientes: {error}")))?;
     let acl = pairing::load(&files.identities).map_err(|error| {
@@ -242,16 +278,22 @@ fn load_quic(
         ))
     })?;
     register_grants(registry, &acl, &files.control_grants)?;
-    let server = SessionServer::new(Arc::new(identity), roots, acl, SessionLimits::default())
+    let server = SessionServer::new(Arc::clone(&identity), roots, acl, SessionLimits::default())
         .map_err(RuntimeError::Transport)?;
     let socket = UdpSocket::bind(addr).map_err(RuntimeError::Socket)?;
     let bound = socket.local_addr().map_err(RuntimeError::Socket)?;
-    let (producer, _consumer) = ring(RING_SAMPLES);
+    let (pipewire, pipewire_error) = open_pipewire();
     Ok(LoadedQuic {
         endpoint: QuicEndpoint {
             socket,
             server,
-            producer,
+            identity,
+            pin,
+            identities: files.identities.clone(),
+            client_ca_der: files.client_ca_der.clone(),
+            client_ca_key: files.client_ca_key.clone(),
+            pipewire,
+            pipewire_error,
             audio: HashMap::new(),
             live: Vec::new(),
             #[cfg(feature = "return-audio")]
@@ -262,6 +304,20 @@ fn load_quic(
         pin: pin.to_hex(),
         addr: bound,
     })
+}
+
+/// Abre `openrelay-mic` una vez por proceso. Un fallo no apaga el daemon: el
+/// motivo queda en `status.pipewire` y las sesiones siguen aceptándose.
+fn open_pipewire() -> (Option<PipeWireSource>, Option<String>) {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(audio_init);
+    match PipeWireSource::open(RING_SAMPLES) {
+        Ok(mut source) => match source.activate() {
+            Ok(()) => (Some(source), None),
+            Err(error) => (None, Some(format!("activar fuente: {error}"))),
+        },
+        Err(error) => (None, Some(format!("abrir fuente: {error}"))),
+    }
 }
 
 /// Registra control sólo para pines que la ACL ya autorizó.
@@ -420,13 +476,31 @@ impl ProductRuntime {
         match op {
             "status" => {
                 let (uptime_s, sessions) = self.status();
+                let pipewire = match self.quic.as_ref() {
+                    Some(quic) => match &quic.pipewire_error {
+                        Some(error) => json!({"ok": false, "error": error}),
+                        None => json!({"ok": true}),
+                    },
+                    None => json!({"ok": false, "error": "QUIC apagado"}),
+                };
                 Ok(json!({
                     "version": env!("CARGO_PKG_VERSION"),
                     "uptime_s": uptime_s,
                     "sessions": sessions,
                     "quic": self.quic_addr.map(|addr| addr.to_string()),
+                    "pipewire": pipewire,
+                    "pair": {
+                        "open": self.enroll.is_some(),
+                        "pending": self.pairing.pending().len(),
+                        "expires_at": self.enroll.as_ref().map(|window| window.expires_at),
+                    },
                 }))
             }
+            "pair.open" => self.pair_open(args),
+            "pair.pending" => self.pair_pending(),
+            "pair.approve" => self.pair_approve(args),
+            "pair.reject" => self.pair_reject(args),
+            "audio.stats" => Ok(self.audio_stats_json()),
             "config.get" | "config.set" | "capabilities" => self.control_op(op, request_id, args),
             other => Err(failure(
                 ErrorCode::Unsupported,
@@ -455,6 +529,232 @@ impl ProductRuntime {
         }
     }
 
+    /// Abre una ventana de emparejamiento y devuelve el URI del QR.
+    fn pair_open(&mut self, args: &Value) -> Result<Value, Value> {
+        if self.enroll.is_some() {
+            return Err(failure(
+                ErrorCode::Busy,
+                "ya hay una ventana de emparejamiento abierta",
+            ));
+        }
+        let Some(quic) = self.quic.as_ref() else {
+            return Err(failure(
+                ErrorCode::Unsupported,
+                "QUIC apagado: no hay identidad de sesión para emparejar",
+            ));
+        };
+        let ttl = match args.get("ttl_s") {
+            None | Some(Value::Null) => 120,
+            Some(value) => match value.as_u64() {
+                Some(ttl)
+                    if (1..=openrelay_transport::enrollment::MAX_ENROLL_TTL.as_secs())
+                        .contains(&ttl) =>
+                {
+                    ttl
+                }
+                _ => return Err(failure(ErrorCode::Invalid, "ttl_s fuera de 1..=300")),
+            },
+        };
+        let host = match args.get("advertise") {
+            None | Some(Value::Null) => primary_lan_ipv4()
+                .map(IpAddr::V4)
+                .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Some(Value::String(text)) => match text.parse::<IpAddr>() {
+                Ok(ip) => ip,
+                Err(_) => return Err(failure(ErrorCode::Invalid, "advertise debe ser una IP")),
+            },
+            Some(_) => return Err(failure(ErrorCode::Invalid, "advertise debe ser texto")),
+        };
+        let addr = SocketAddr::new(host, ENROLL_PORT);
+        let bind = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), ENROLL_PORT);
+        let socket = UdpSocket::bind(bind)
+            .map_err(|error| failure(ErrorCode::Busy, &format!("puerto {ENROLL_PORT}: {error}")))?;
+        let _ = socket.set_nonblocking(true);
+        let mut server = EnrollServer::new(Arc::clone(&quic.identity))
+            .map_err(|error| failure(ErrorCode::Internal, &format!("enrolamiento: {error}")))?;
+        let token = EnrollmentToken::generate()
+            .map_err(|error| failure(ErrorCode::Internal, &format!("token: {error}")))?;
+        let now = Instant::now();
+        server
+            .open_window(token.clone(), Duration::from_secs(ttl), now)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("ventana: {error}")))?;
+        let uri = Pairing::qr_payload(quic.pin, addr, &token);
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or(0)
+            .saturating_add(ttl);
+        self.enroll = Some(EnrollWindow {
+            socket,
+            server,
+            expires: now + Duration::from_secs(ttl),
+            expires_at,
+        });
+        Ok(json!({"uri": uri, "expires_at": expires_at}))
+    }
+
+    fn pair_pending(&self) -> Result<Value, Value> {
+        let pending: Vec<Value> = self
+            .pairing
+            .pending()
+            .iter()
+            .map(|pin| json!({"fingerprint_hex": pin.to_hex()}))
+            .collect();
+        Ok(Value::Array(pending))
+    }
+
+    /// Aprueba el dispositivo pendiente, firma su hoja y la entrega por el
+    /// stream de enrolamiento. La sesión siguiente ya entra sin reiniciar.
+    fn pair_approve(&mut self, args: &Value) -> Result<Value, Value> {
+        let pin = parse_pin(args)?;
+        if !self.pairing.pending().contains(&pin) {
+            return Err(failure(ErrorCode::NotFound, "identidad no pendiente"));
+        }
+        let Some(enroll) = self.enroll.as_mut() else {
+            return Err(failure(
+                ErrorCode::NotFound,
+                "no hay ventana de emparejamiento",
+            ));
+        };
+        let spki = enroll
+            .server
+            .pending_spki()
+            .ok_or_else(|| failure(ErrorCode::NotFound, "el dispositivo no envió su SPKI"))?
+            .to_vec();
+        let quic = self
+            .quic
+            .as_mut()
+            .ok_or_else(|| failure(ErrorCode::Unsupported, "QUIC apagado"))?;
+        let ca = crate::issue::load(&quic.client_ca_der, &quic.client_ca_key)
+            .map_err(|error| failure(ErrorCode::Internal, &error))?;
+        let client_leaf_der = crate::issue::issue_client_leaf(&ca, &spki)
+            .map_err(|error| failure(ErrorCode::Invalid, &error))?;
+        let session_ca_der = fs::read(&quic.client_ca_der)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("CA: {error}")))?;
+        let session_port = quic
+            .socket
+            .local_addr()
+            .map_err(|error| failure(ErrorCode::Internal, &format!("socket QUIC: {error}")))?
+            .port();
+        let caps = Capabilities::none()
+            .with_mic()
+            .with_control_read()
+            .with_control_write();
+        self.pairing
+            .approve(pin, caps, &quic.identities)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+        quic.server.allow(pin, caps);
+        let outcome = EnrollOutcome {
+            client_leaf_der,
+            session_ca_der,
+            session_port,
+        };
+        enroll
+            .server
+            .approve(Instant::now(), &outcome)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
+        flush_enroll(enroll);
+        self.enroll = None;
+        Ok(json!({
+            "fingerprint_hex": pin.to_hex(),
+            "approved": true,
+            "session_port": session_port,
+        }))
+    }
+
+    /// Rechaza el pendiente (o todos si no se nombra uno) y cierra la ventana.
+    fn pair_reject(&mut self, args: &Value) -> Result<Value, Value> {
+        let pin = match args.get("fingerprint_hex") {
+            Some(Value::String(text)) => SpkiPin::from_hex(text)
+                .ok_or_else(|| failure(ErrorCode::Invalid, "pin inválido"))?,
+            _ => match self.pairing.pending().first() {
+                Some(pin) => *pin,
+                None => return Err(failure(ErrorCode::NotFound, "no hay identidad pendiente")),
+            },
+        };
+        let Some(enroll) = self.enroll.as_mut() else {
+            return Err(failure(
+                ErrorCode::NotFound,
+                "no hay ventana de emparejamiento",
+            ));
+        };
+        enroll
+            .server
+            .reject_pending(
+                Instant::now(),
+                openrelay_transport::enrollment::EnrollReject::Denied,
+            )
+            .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
+        flush_enroll(enroll);
+        self.pairing.reject(pin);
+        self.enroll = None;
+        Ok(json!({"fingerprint_hex": pin.to_hex(), "rejected": true}))
+    }
+
+    /// Una vuelta al socket de enrolamiento: sólo existe mientras la ventana
+    /// está abierta. Los eventos alimentan `pair.pending`.
+    fn pump_enroll(&mut self) -> Result<(), RuntimeError> {
+        let Some(window) = self.enroll.as_mut() else {
+            return Ok(());
+        };
+        let now = Instant::now();
+        let mut buf = [0u8; 2048];
+        loop {
+            match window.socket.recv_from(&mut buf) {
+                Ok((len, from)) => {
+                    let _ = window.server.handle_datagram(now, from, &buf[..len]);
+                }
+                Err(error) if is_timeout(&error) => break,
+                Err(error) => return Err(RuntimeError::Socket(error)),
+            }
+        }
+        while let Some(event) = window.server.next_event() {
+            self.pairing.observe(&event);
+        }
+        window
+            .server
+            .handle_timeout(now)
+            .map_err(|error| RuntimeError::Enroll(error.to_string()))?;
+        flush_enroll(window);
+        let expired = window.expires <= now && window.server.pending().is_none();
+        if expired {
+            self.enroll = None;
+        }
+        Ok(())
+    }
+
+    fn audio_stats_json(&self) -> Value {
+        let Some(quic) = self.quic.as_ref() else {
+            return json!({"sessions": []});
+        };
+        let sessions: Vec<Value> = quic
+            .live
+            .iter()
+            .filter_map(|session| {
+                let stats = quic.audio.get(session)?.stats();
+                Some(json!({
+                    "session": session.get(),
+                    "pin": quic.server.identity(*session).map(|pin| pin.to_hex()),
+                    "pcm16_frames": stats.pcm16_frames,
+                    "opus_frames": stats.opus_frames,
+                    "plc_frames": stats.plc_frames,
+                    "dropped_unnegotiated_opus": stats.dropped_unnegotiated_opus,
+                    "dropped_duplicates": stats.dropped_duplicates,
+                    "dropped_reordered": stats.dropped_reordered,
+                    "dropped_cadence": stats.dropped_cadence,
+                    "discontinuities": stats.discontinuities,
+                    "epoch_resets": stats.epoch_resets,
+                    "decode_errors": stats.decode_errors,
+                    "ns_stages": stats.ns_stages,
+                    "ns_frames_processed": stats.ns_frames_processed,
+                    "ns_frames_bypassed": stats.ns_frames_bypassed,
+                    "ns_added_latency_samples": stats.ns_added_latency_samples,
+                }))
+            })
+            .collect();
+        json!({"sessions": sessions})
+    }
+
     /// Una vuelta del endpoint QUIC: lee, autoriza, responde control y drena audio.
     ///
     /// El audio se decodifica en este hilo, el worker del daemon, y desde aquí
@@ -463,6 +763,7 @@ impl ProductRuntime {
     /// esta misma vuelta antes del anillo: el callback de tiempo real nunca
     /// ejecuta DSP.
     pub fn pump_quic(&mut self) -> Result<(), RuntimeError> {
+        self.pump_enroll()?;
         let Some(quic) = self.quic.as_mut() else {
             std::thread::sleep(READ_TICK);
             return Ok(());
@@ -513,7 +814,7 @@ impl ProductRuntime {
             };
             let QuicEndpoint {
                 server,
-                producer,
+                pipewire,
                 audio,
                 ..
             } = quic;
@@ -525,11 +826,18 @@ impl ProductRuntime {
             }
             while let Some(payload) = server.recv_audio_payload(session) {
                 if let Ok(frames) = state.handle(payload, now_us) {
-                    for frame in frames {
-                        let _ = producer.push_slice(&frame.samples);
+                    if let Some(source) = pipewire.as_mut() {
+                        for frame in frames {
+                            let _ = source.producer().push_slice(&frame.samples);
+                        }
                     }
                 }
             }
+        }
+        // El bucle principal de PipeWire se atiende en este hilo; el callback
+        // RT sólo consume el anillo.
+        if let Some(source) = quic.pipewire.as_ref() {
+            let _ = source.iterate(Duration::ZERO);
         }
         #[cfg(feature = "return-audio")]
         pump_return_audio(&self.control, quic);
@@ -643,6 +951,38 @@ fn flush_transmit(socket: &UdpSocket, server: &mut SessionServer) -> Result<(), 
         socket.send_to(&bytes, to).map_err(RuntimeError::Socket)?;
     }
     Ok(())
+}
+
+/// Envía lo que el servidor de enrolamiento tenga listo. El socket es no
+/// bloqueante: un búfer lleno no debe tumbar el daemon.
+fn flush_enroll(window: &mut EnrollWindow) {
+    let now = Instant::now();
+    while let Some((to, bytes)) = window.server.poll_transmit(now) {
+        match window.socket.send_to(&bytes, to) {
+            Ok(_) => {}
+            Err(error) if is_timeout(&error) => break,
+            Err(_) => break,
+        }
+    }
+}
+
+fn parse_pin(args: &Value) -> Result<SpkiPin, Value> {
+    let text = args
+        .get("fingerprint_hex")
+        .and_then(Value::as_str)
+        .ok_or_else(|| failure(ErrorCode::Invalid, "falta fingerprint_hex"))?;
+    SpkiPin::from_hex(text).ok_or_else(|| failure(ErrorCode::Invalid, "pin inválido"))
+}
+
+/// IPv4 no loopback de la interfaz que usaría el kernel para salir a la LAN.
+/// No envía tráfico: conecta el socket UDP y lee la dirección local elegida.
+fn primary_lan_ipv4() -> Option<std::net::Ipv4Addr> {
+    let socket = UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("192.0.2.1", 9)).ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(ip) if !ip.is_loopback() => Some(ip),
+        _ => None,
+    }
 }
 
 fn is_timeout(error: &io::Error) -> bool {

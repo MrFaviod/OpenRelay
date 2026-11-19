@@ -16,12 +16,12 @@ openrelay-transport = { path = "../transport" }
 openrelay-proto = { path = "../proto" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
 ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
+rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 rustls-pki-types = "=1.16.0"
 
 [dev-dependencies]
 openrelay-proto = { path = "../proto" }
-rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "ring"] }
 time = "=0.3.36"
 
 [features]

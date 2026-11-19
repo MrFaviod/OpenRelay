@@ -10,7 +10,9 @@
 
 pub mod acl;
 pub mod control;
+pub mod issue;
 pub mod pairing;
+pub mod provision;
 #[cfg(feature = "return-audio")]
 pub mod return_audio;
 pub mod runtime;

@@ -71,7 +71,7 @@ fn enroll_client(
 ) -> Option<SpkiPin> {
     let spki = extract_spki_der(android.cert.der()).expect("SPKI del cliente");
     exchange(client, CLIENT_ADDR, server, SERVER_ADDR, 24).expect("handshake");
-    client.send_token(window, spki).expect("token");
+    client.send_token_async(window, spki).expect("token");
     exchange(client, CLIENT_ADDR, server, SERVER_ADDR, 8).expect("vuelo");
     let events = drain_enroll_server(server);
     for event in &events {
@@ -131,7 +131,7 @@ fn a_wrong_server_pin_never_sends_token() {
     assert!(!client.is_ready(), "pin erróneo: sin handshake listo");
     let spki = extract_spki_der(android.cert.der()).expect("SPKI");
     assert!(
-        client.send_token(&window, spki).is_err(),
+        client.send_token_async(&window, spki).is_err(),
         "sin readiness no sale el token"
     );
     assert_eq!(server.attempts(), 0, "el token nunca llegó al servidor");
@@ -159,7 +159,7 @@ fn b_expired_and_reused_tokens_are_rejected() {
     )
     .expect("cliente");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake");
-    client.send_token(&expired, spki).expect("token");
+    client.send_token_async(&expired, spki).expect("token");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("vuelo");
     let events = drain_enroll_server(&mut server);
     assert!(accepted_pin(&events).is_none(), "vencido: sin aceptación");
@@ -180,7 +180,9 @@ fn b_expired_and_reused_tokens_are_rejected() {
         &mut scratch_pairing
     )
     .is_some());
-    client.send_token(&once, spki).expect("token reutilizado");
+    client
+        .send_token_async(&once, spki)
+        .expect("token reutilizado");
     exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("vuelo 2");
     let replay = drain_enroll_server(&mut server);
     assert!(
