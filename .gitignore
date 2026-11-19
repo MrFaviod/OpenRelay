@@ -3,6 +3,10 @@
 **/target/
 *.rs.bk
 
+# Fuzz (T25): corpus y artefactos locales; /fuzz/target/ ya cae en **/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+
 # Android (desde T12; hoy no existe Gradle)
 /android/.gradle/
 /android/.idea/
@@ -18,6 +22,9 @@
 .scratch/
 /tmp/
 /artifacts/tmp/
+
+# Release local (T26): artefactos pesados fuera de git; el manifiesto sí se versiona
+/dist/
 
 # Herramientas de verificación (Python; no hay producto Python)
 __pycache__/
