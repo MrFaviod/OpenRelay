@@ -137,7 +137,7 @@ fn run(announced: bool) -> (SessionAudio, u64) {
     assert_eq!(received.frame_type(), 2, "el frame viaja como type=2");
 
     let mut audio = SessionAudio::new(control.opus_negotiated(&pin));
-    let decoded = audio.handle(received).expect("decode");
+    let decoded = audio.handle(received, 0).expect("decode");
     (
         audio,
         decoded.iter().map(|frame| frame.samples.len() as u64).sum(),

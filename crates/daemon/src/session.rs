@@ -23,8 +23,16 @@
 //! Por defecto, y sin la feature `speexdsp`, la sesión es bypass puro: no hay
 //! etapa ni cola de NS y las muestras salen intactas. Los contadores de
 //! [`SessionAudioStats`] permiten demostrar ese bypass.
+//!
+//! # Cadencia
+//!
+//! Antes de decodificar, un [`CadenceLimiter`] por sesión descarta y cuenta los
+//! frames que exceden la tasa sostenida: 250 fps con ráfaga de 10 en el perfil
+//! de 5 ms, escalando con 120 y 480 muestras. El tiempo lo inyecta el runtime;
+//! el limitador no lee relojes ni asigna memoria.
 
-use arl_audio_core::{AudioPayload, OpusFrame};
+use arl_audio_core::cadence::{sustained_fps, CadenceLimiter};
+use arl_audio_core::{AudioPayload, OpusFrame, SAMPLE_COUNT};
 use arl_codec::{CodecError, CodecProfile, OpusDecoder};
 use arl_dsp::NsChain;
 
@@ -61,6 +69,8 @@ pub struct SessionAudioStats {
     pub dropped_duplicates: u64,
     /// Frames atrasados fuera de la ventana de reordenamiento.
     pub dropped_reordered: u64,
+    /// Frames descartados por exceder la cadencia sostenida de la sesión.
+    pub dropped_cadence: u64,
     /// Huecos mayores que la ventana o flags `discontinuity`.
     pub discontinuities: u64,
     /// Cambios de época observados.
@@ -88,6 +98,8 @@ pub struct SessionAudio {
     ns_requested: bool,
     /// Cadena de NS; `NsChain::bypass` mientras no se pida o no haya etapa.
     ns: NsChain,
+    /// Token bucket de cadencia; el runtime le inyecta `now_us`.
+    cadence: CadenceLimiter,
     stats: SessionAudioStats,
 }
 
@@ -116,6 +128,7 @@ impl SessionAudio {
             last_profile: None,
             ns_requested: ns_enabled && cfg!(feature = "speexdsp"),
             ns: NsChain::bypass(),
+            cadence: CadenceLimiter::default(),
             stats: SessionAudioStats::default(),
         }
     }
@@ -145,11 +158,26 @@ impl SessionAudio {
 
     /// Procesa un datagrama ya parseado y devuelve las muestras a reproducir.
     ///
+    /// `now_us` es el reloj monotónico local (microsegundos) que inyecta el
+    /// runtime. Si la sesión ya gastó su ráfaga y aún no repuso un token, el
+    /// frame se descarta antes de decodificar y se cuenta en
+    /// [`SessionAudioStats::dropped_cadence`].
+    ///
     /// PCM16 devuelve una única entrada con las mismas muestras del frame.
     /// Opus puede devolver varias: una PLC por cada hueco dentro de la ventana
     /// más el frame actual. Un frame descartado no produce muestras. Cada
     /// bloque entregado pasa por la cadena de NS antes de salir.
-    pub fn handle(&mut self, payload: AudioPayload) -> Result<Vec<DecodedAudio>, CodecError> {
+    pub fn handle(
+        &mut self,
+        payload: AudioPayload,
+        now_us: u64,
+    ) -> Result<Vec<DecodedAudio>, CodecError> {
+        self.cadence
+            .set_rate_per_sec(sustained_fps(payload_sample_count(&payload)));
+        if !self.cadence.allow(now_us) {
+            self.stats.dropped_cadence = self.cadence.dropped();
+            return Ok(Vec::new());
+        }
         let mut frames = self.decode(payload)?;
         for frame in &mut frames {
             self.apply_ns(&mut frame.samples);
@@ -362,6 +390,14 @@ const fn profile_index(profile: CodecProfile) -> usize {
     }
 }
 
+/// Muestras por frame del payload: fijas en PCM16 y declaradas en Opus.
+fn payload_sample_count(payload: &AudioPayload) -> u16 {
+    match payload {
+        AudioPayload::Pcm16(_) => SAMPLE_COUNT as u16,
+        AudioPayload::Opus(frame) => frame.sample_count(),
+    }
+}
+
 /// Huecos máximos ocultables dentro de la ventana de reordenamiento.
 fn max_plc_frames(duration_us: u32) -> u32 {
     if duration_us == 0 {
@@ -373,6 +409,7 @@ fn max_plc_frames(duration_us: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arl_audio_core::cadence::BURST_FRAMES;
     use arl_audio_core::{AudioFrame, Flags, SAMPLE_COUNT};
     use arl_codec::OpusEncoder;
 
@@ -397,7 +434,7 @@ mod tests {
         let frame = AudioFrame::new(7, 9, Flags::NONE, samples).expect("frame PCM16");
         let mut state = SessionAudio::new(false);
         let out = state
-            .handle(AudioPayload::Pcm16(frame.clone()))
+            .handle(AudioPayload::Pcm16(frame.clone()), 0)
             .expect("passthrough");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].epoch, 7);
@@ -420,7 +457,10 @@ mod tests {
         let packet = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)),
+                0,
+            )
             .expect("decode");
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].epoch, 1);
@@ -438,10 +478,13 @@ mod tests {
         let fourth = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)))
+            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
             .expect("primero");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 3, Flags::NONE, &fourth)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 3, Flags::NONE, &fourth)),
+                0,
+            )
             .expect("hueco");
         assert_eq!(out.len(), 3, "dos PLC y el frame actual");
         assert_eq!(out[0].seq, 1);
@@ -461,10 +504,13 @@ mod tests {
         let later = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)))
+            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
             .expect("primero");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 40, Flags::NONE, &later)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 40, Flags::NONE, &later)),
+                0,
+            )
             .expect("hueco largo");
         assert_eq!(out.len(), 1, "sin PLC fuera de la ventana");
         assert_eq!(out[0].seq, 40);
@@ -479,15 +525,13 @@ mod tests {
         let second = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)))
+            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
             .expect("época 1");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(
-                2,
+            .handle(
+                AudioPayload::Opus(opus_frame(2, 0, Flags::DISCONTINUITY, &second)),
                 0,
-                Flags::DISCONTINUITY,
-                &second,
-            )))
+            )
             .expect("época 2");
         assert_eq!(out.len(), 1, "la época nueva no arrastra PLC");
         assert_eq!(out[0].epoch, 2);
@@ -501,7 +545,10 @@ mod tests {
         let packet = packet(&mut encoder);
         let mut state = SessionAudio::new(false);
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)),
+                0,
+            )
             .expect("descartado sin error");
         assert!(out.is_empty());
         assert_eq!(state.stats().dropped_unnegotiated_opus, 1);
@@ -509,7 +556,10 @@ mod tests {
 
         state.set_opus_negotiated(true).expect("negociación");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)),
+                0,
+            )
             .expect("ya negociado");
         assert_eq!(out.len(), 1);
         assert_eq!(state.stats().opus_frames, 1);
@@ -522,10 +572,13 @@ mod tests {
         let second = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)))
+            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
             .expect("primero");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &second)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &second)),
+                0,
+            )
             .expect("duplicado");
         assert!(out.is_empty());
         assert_eq!(state.stats().dropped_duplicates, 1);
@@ -538,13 +591,59 @@ mod tests {
         let second = packet(&mut encoder);
         let mut state = SessionAudio::new(true);
         state
-            .handle(AudioPayload::Opus(opus_frame(2, 0, Flags::NONE, &first)))
+            .handle(AudioPayload::Opus(opus_frame(2, 0, Flags::NONE, &first)), 0)
             .expect("época vigente");
         let out = state
-            .handle(AudioPayload::Opus(opus_frame(1, 5, Flags::NONE, &second)))
+            .handle(
+                AudioPayload::Opus(opus_frame(1, 5, Flags::NONE, &second)),
+                0,
+            )
             .expect("época atrasada");
         assert!(out.is_empty(), "la época vieja no se reproduce");
         assert_eq!(state.stats().dropped_reordered, 1);
         assert_eq!(state.stats().epoch_resets, 0);
+    }
+
+    #[test]
+    fn cadence_drops_excess_frames_and_counts() {
+        let mut state = SessionAudio::new(false);
+        let samples = [0i16; SAMPLE_COUNT];
+        for seq in 0..BURST_FRAMES {
+            let frame = AudioFrame::new(1, seq, Flags::NONE, samples).expect("frame");
+            let out = state
+                .handle(AudioPayload::Pcm16(frame), 0)
+                .expect("dentro de la ráfaga");
+            assert_eq!(out.len(), 1);
+        }
+        let excess = AudioFrame::new(1, BURST_FRAMES, Flags::NONE, samples).expect("frame");
+        let out = state
+            .handle(AudioPayload::Pcm16(excess), 0)
+            .expect("descarte sin error");
+        assert!(out.is_empty(), "el frame en exceso no se decodifica");
+        assert_eq!(state.stats().dropped_cadence, 1);
+        assert_eq!(state.stats().pcm16_frames, u64::from(BURST_FRAMES));
+    }
+
+    #[test]
+    fn cadence_allows_a_frame_after_refill() {
+        let mut state = SessionAudio::new(false);
+        let samples = [0i16; SAMPLE_COUNT];
+        for seq in 0..BURST_FRAMES {
+            let frame = AudioFrame::new(1, seq, Flags::NONE, samples).expect("frame");
+            state
+                .handle(AudioPayload::Pcm16(frame), 0)
+                .expect("ráfaga inicial");
+        }
+        let excess = AudioFrame::new(1, BURST_FRAMES, Flags::NONE, samples).expect("frame");
+        assert!(state
+            .handle(AudioPayload::Pcm16(excess), 0)
+            .expect("descarte")
+            .is_empty());
+        let later = AudioFrame::new(1, BURST_FRAMES + 1, Flags::NONE, samples).expect("frame");
+        let out = state
+            .handle(AudioPayload::Pcm16(later), 4_000)
+            .expect("repuesto a los 4 ms");
+        assert_eq!(out.len(), 1);
+        assert_eq!(state.stats().dropped_cadence, 1);
     }
 }

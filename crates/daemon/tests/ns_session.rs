@@ -20,7 +20,7 @@ fn block(seed: i16) -> [i16; SAMPLE_COUNT] {
 fn run(audio: &mut SessionAudio, block: &[i16; SAMPLE_COUNT]) -> Vec<i16> {
     let frame = AudioFrame::new(5, 1, Flags::NONE, *block).expect("frame PCM16");
     let decoded = audio
-        .handle(AudioPayload::Pcm16(frame))
+        .handle(AudioPayload::Pcm16(frame), 0)
         .expect("decodificación PCM16");
     assert_eq!(decoded.len(), 1, "un frame PCM16 produce un bloque");
     assert_eq!(decoded[0].epoch, 5);

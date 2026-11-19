@@ -12,7 +12,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -34,12 +34,21 @@ use crate::identity::{
     IdentityError, PinnedServerVerifier, SpkiPin, StaticClientCertResolver,
     StaticServerCertResolver, MAX_CERT_CHAIN,
 };
+use crate::rate_limit::{HandshakeRateLimiter, MAX_TRACKED_IPS};
 use crate::{ALPN_SESSION, MAX_AUDIO_DATAGRAM, MAX_CONTROL_FRAME};
 
 /// Conexiones de sesión simultáneas máximas por endpoint.
 pub const MAX_SESSIONS: usize = 8;
 /// Handshakes pendientes máximos antes de aceptar.
 pub const MAX_PENDING_INCOMING: usize = 8;
+/// Conexiones simultáneas máximas desde una misma IP remota.
+pub const MAX_SESSIONS_PER_IP: usize = 4;
+/// Sesiones concurrentes máximas por identidad enrolada.
+pub const MAX_SESSIONS_PER_IDENTITY: usize = 2;
+/// Intentos de handshake admitidos por IP dentro de la ventana.
+pub const MAX_HANDSHAKE_ATTEMPTS_PER_IP: u32 = 10;
+/// Ventana fija del limitador de handshakes por IP.
+pub const HANDSHAKE_WINDOW: Duration = Duration::from_secs(10);
 /// Audio en cola por sesión antes de descartar el más viejo.
 pub const MAX_QUEUED_AUDIO: usize = 8;
 /// Mensajes de control en cola por sesión.
@@ -240,6 +249,8 @@ pub enum RejectReason {
     MalformedIdentity,
     /// Identidad válida sin entrada en la ACL (default deny).
     NoAclEntry,
+    /// Identidad válida que ya alcanzó su cuota de sesiones concurrentes.
+    IdentityQuota,
 }
 
 impl fmt::Display for RejectReason {
@@ -250,6 +261,7 @@ impl fmt::Display for RejectReason {
             Self::NoPeerCertificate => "cliente sin certificado",
             Self::MalformedIdentity => "identidad de peer malformada",
             Self::NoAclEntry => "identidad sin entrada en la ACL",
+            Self::IdentityQuota => "identidad con su cuota de sesiones agotada",
         };
         f.write_str(text)
     }
@@ -441,6 +453,7 @@ pub struct SessionServer {
     acl: Acl,
     limits: SessionLimits,
     pending: VecDeque<Incoming>,
+    handshakes: HandshakeRateLimiter,
     slots: HashMap<SessionId, Slot>,
     by_handle: HashMap<ConnectionHandle, SessionId>,
     events: VecDeque<ServerEvent>,
@@ -488,6 +501,11 @@ impl SessionServer {
             acl,
             limits,
             pending: VecDeque::new(),
+            handshakes: HandshakeRateLimiter::new(
+                HANDSHAKE_WINDOW,
+                MAX_HANDSHAKE_ATTEMPTS_PER_IP,
+                MAX_TRACKED_IPS,
+            ),
             slots: HashMap::new(),
             by_handle: HashMap::new(),
             events: VecDeque::new(),
@@ -515,10 +533,19 @@ impl SessionServer {
         );
         match event {
             Some(DatagramEvent::NewConnection(incoming)) => {
-                if self.pending.len() >= MAX_PENDING_INCOMING {
+                let remote = incoming.remote_address();
+                // El tope por IP se consulta antes de anotar el intento: una IP
+                // que ya está en su tope de conexiones se rechaza sin gastar
+                // presupuesto de handshake.
+                if self.sessions_for_ip(remote.ip()) >= MAX_SESSIONS_PER_IP
+                    || !self.handshakes.try_acquire(now, remote.ip())
+                {
+                    self.refuse(incoming, &mut response);
+                } else if self.pending.len() >= MAX_PENDING_INCOMING {
                     return Err(TransportError::QueueFull);
+                } else {
+                    self.pending.push_back(incoming);
                 }
-                self.pending.push_back(incoming);
             }
             Some(DatagramEvent::ConnectionEvent(handle, event)) => {
                 if let Some(session) = self.by_handle.get(&handle).copied() {
@@ -831,12 +858,43 @@ impl SessionServer {
         Ok((pin, capabilities))
     }
 
+    /// Conexiones vivas (handshake en curso o autorizadas, incluidas las que
+    /// están cerrando) abiertas desde `ip`.
+    fn sessions_for_ip(&self, ip: IpAddr) -> usize {
+        self.slots
+            .values()
+            .filter(|slot| slot.conn.remote_address().ip() == ip)
+            .count()
+    }
+
+    /// Sesiones autorizadas vivas de `pin`. La sesión que se está autorizando
+    /// no está en el mapa durante `pump`, así que no se cuenta a sí misma.
+    fn sessions_for_identity(&self, pin: &SpkiPin) -> usize {
+        self.slots
+            .values()
+            .filter(|slot| slot.authorized && slot.identity.as_ref() == Some(pin))
+            .count()
+    }
+
+    /// Rechaza un handshake con el `CONNECTION_REFUSED` de quinn y encola el
+    /// datagrama resultante. No crea estado de sesión ni entra en pánico.
+    fn refuse(&mut self, incoming: Incoming, response: &mut Vec<u8>) {
+        response.clear();
+        let transmit = self.endpoint.refuse(incoming, response);
+        self.outgoing
+            .push_back((transmit.destination, response[..transmit.size].to_vec()));
+    }
+
     fn pump(&mut self, now: Instant) -> Result<(), TransportError> {
         while self.slots.len() < MAX_SESSIONS {
             let Some(incoming) = self.pending.pop_front() else {
                 break;
             };
             let mut response = Vec::new();
+            if self.sessions_for_ip(incoming.remote_address().ip()) >= MAX_SESSIONS_PER_IP {
+                self.refuse(incoming, &mut response);
+                continue;
+            }
             match self.endpoint.accept(
                 incoming,
                 now,
@@ -918,6 +976,22 @@ impl SessionServer {
                     }
                     match self.authorize(&slot.conn) {
                         Ok((pin, capabilities)) => {
+                            if self.sessions_for_identity(&pin) >= MAX_SESSIONS_PER_IDENTITY {
+                                // Cuota por identidad: el handshake y la ACL ya
+                                // pasaron, pero la identidad no puede abrir otra
+                                // sesión. Se usa el mismo cierre que una
+                                // denegación de ACL, sin autorizar el slot.
+                                slot.conn.close(
+                                    now,
+                                    VarInt::from_u32(0x100),
+                                    Bytes::from_static(b"unauthorized"),
+                                );
+                                slot.closed = true;
+                                self.events.push_back(ServerEvent::Rejected {
+                                    reason: RejectReason::IdentityQuota,
+                                });
+                                return;
+                            }
                             slot.authorized = true;
                             slot.identity = Some(pin);
                             slot.capabilities = capabilities;
@@ -2309,3 +2383,7 @@ mod control_frame_limits {
 #[cfg(test)]
 #[path = "quinn_security_regressions.rs"]
 mod quinn_security_regressions;
+
+#[cfg(test)]
+#[path = "quinn_regressions_e.rs"]
+mod quinn_regressions_e;

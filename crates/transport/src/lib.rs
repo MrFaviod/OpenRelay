@@ -33,6 +33,7 @@
 pub mod enrollment;
 pub mod identity;
 pub mod quinn;
+pub(crate) mod rate_limit;
 
 /// ALPN exacto de la superficie de enrolamiento.
 pub const ALPN_ENROLL: &[u8] = b"arl-enroll/1";

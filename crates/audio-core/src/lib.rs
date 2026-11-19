@@ -26,6 +26,7 @@
 #![forbid(unsafe_code)]
 
 pub mod budget;
+pub mod cadence;
 pub mod drift;
 pub mod frame;
 pub mod jitter;

@@ -479,6 +479,7 @@ impl ProductRuntime {
             Err(error) => return Err(RuntimeError::Socket(error)),
         }
         let now = Instant::now();
+        let now_us = u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX);
         quic.server
             .handle_timeout(now)
             .map_err(RuntimeError::Transport)?;
@@ -523,7 +524,7 @@ impl ProductRuntime {
                 continue;
             }
             while let Some(payload) = server.recv_audio_payload(session) {
-                if let Ok(frames) = state.handle(payload) {
+                if let Ok(frames) = state.handle(payload, now_us) {
                     for frame in frames {
                         let _ = producer.push_slice(&frame.samples);
                     }
