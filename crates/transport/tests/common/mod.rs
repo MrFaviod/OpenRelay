@@ -237,6 +237,12 @@ pub fn roots(ca: &TestCa) -> Arc<rustls::RootCertStore> {
     identity::root_store([ca.cert_der()]).expect("root store de test")
 }
 
+/// Almacén sin anclas: el teléfono que sólo tiene el pin del QR.
+pub fn empty_roots() -> Arc<rustls::RootCertStore> {
+    identity::root_store(std::iter::empty::<rustls::pki_types::CertificateDer<'static>>())
+        .expect("root store vacío de test")
+}
+
 /// SPKI DER de una clave de cliente de prueba (la que iría en `enroll.request`).
 pub fn client_spki_der() -> Vec<u8> {
     KeyPair::generate().expect("clave cliente").public_key_der()

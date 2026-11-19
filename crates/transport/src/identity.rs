@@ -225,20 +225,31 @@ pub fn root_store(
 /// Verificador de servidor de sesión: webpki normal contra la CA local **y**
 /// pin SPKI exacto del certificado hoja.
 ///
-/// El pin se comprueba después de la cadena y la validez; un pin incorrecto o
-/// un certificado caducado abortan el handshake antes de enviar datos.
+/// El pin se comprueba siempre. Cuando el almacén de anclas está vacío (el
+/// teléfono que sólo recibió el pin del QR) el pin es el único ancla: se
+/// acepta el certificado si su SPKI coincide, sin cadena ni nombre, pero las
+/// firmas del handshake TLS se siguen verificando con los algoritmos del
+/// proveedor. Con anclas, además se exige cadena, validez y nombre.
 #[derive(Debug)]
 pub struct PinnedServerVerifier {
-    inner: Arc<WebPkiServerVerifier>,
+    inner: Option<Arc<WebPkiServerVerifier>>,
     pin: SpkiPin,
 }
 
 impl PinnedServerVerifier {
     /// Construye el verificador con las anclas y el pin esperado.
+    ///
+    /// Un `RootCertStore` vacío no es un error: activa el modo pin-only.
     pub fn new(roots: Arc<RootCertStore>, pin: SpkiPin) -> Result<Self, IdentityError> {
-        let inner = WebPkiServerVerifier::builder(roots)
-            .build()
-            .map_err(|_| IdentityError::Verifier)?;
+        let inner = if roots.is_empty() {
+            None
+        } else {
+            Some(
+                WebPkiServerVerifier::builder(roots)
+                    .build()
+                    .map_err(|_| IdentityError::Verifier)?,
+            )
+        };
         Ok(Self { inner, pin })
     }
 }
@@ -252,13 +263,6 @@ impl ServerCertVerifier for PinnedServerVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, TlsError> {
-        let verified = self.inner.verify_server_cert(
-            end_entity,
-            intermediates,
-            server_name,
-            ocsp_response,
-            now,
-        )?;
         let actual = SpkiPin::from_certificate_der(end_entity.as_ref())
             .map_err(|_| TlsError::InvalidCertificate(CertificateError::BadEncoding))?;
         if actual != self.pin {
@@ -266,7 +270,12 @@ impl ServerCertVerifier for PinnedServerVerifier {
                 CertificateError::ApplicationVerificationFailure,
             ));
         }
-        Ok(verified)
+        match self.inner.as_ref() {
+            Some(inner) => {
+                inner.verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+            }
+            None => Ok(ServerCertVerified::assertion()),
+        }
     }
 
     fn verify_tls12_signature(
@@ -275,7 +284,8 @@ impl ServerCertVerifier for PinnedServerVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, TlsError> {
-        self.inner.verify_tls12_signature(message, cert, dss)
+        let algorithms = rustls::crypto::ring::default_provider().signature_verification_algorithms;
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &algorithms)
     }
 
     fn verify_tls13_signature(
@@ -284,11 +294,14 @@ impl ServerCertVerifier for PinnedServerVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, TlsError> {
-        self.inner.verify_tls13_signature(message, cert, dss)
+        let algorithms = rustls::crypto::ring::default_provider().signature_verification_algorithms;
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &algorithms)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.inner.supported_verify_schemes()
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 

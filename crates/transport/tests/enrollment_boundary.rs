@@ -13,7 +13,8 @@ use openrelay_transport::quinn::{Acl, Capabilities, SessionClient, SessionLimits
 use serde_json::json;
 
 use common::{
-    client_spki_der, enrollment_setup, exchange, roots, token, TestCa, CLIENT_ADDR, SERVER_ADDR,
+    client_spki_der, empty_roots, enrollment_setup, exchange, roots, token, TestCa, CLIENT_ADDR,
+    SERVER_ADDR,
 };
 
 fn collect_server_events(server: &mut EnrollServer) -> Vec<EnrollmentEvent> {
@@ -289,4 +290,73 @@ fn enrollment_client_cannot_use_session_endpoint() {
         }
     }
     assert!(!authorized);
+}
+
+/// El QR sólo lleva el pin: sin anclas, el pin es el ancla y el handshake
+/// completa. El servidor no pide certificado de cliente en enrolamiento.
+#[test]
+fn pin_only_enrollment_succeeds_without_roots() {
+    let ca = TestCa::new();
+    let leaf = ca.leaf("openrelay-enroll-pin-only", true, false);
+    let window_token = token();
+    let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
+    server
+        .open_window(
+            window_token.clone(),
+            Duration::from_secs(120),
+            Instant::now(),
+        )
+        .expect("ventana");
+    let mut client = EnrollClient::connect(
+        empty_roots(),
+        leaf.pin,
+        Instant::now(),
+        SERVER_ADDR,
+        "192.0.2.10",
+    )
+    .expect("cliente pin-only");
+
+    exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake pin-only");
+    assert!(client.is_ready(), "el pin correcto basta sin anclas");
+    assert!(server.is_ready(), "servidor listo");
+
+    client
+        .send_token_async(&window_token, &client_spki_der())
+        .expect("token tras validar pin");
+    exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 8).expect("token en vuelo");
+    assert!(
+        collect_server_events(&mut server)
+            .iter()
+            .any(|event| matches!(event, EnrollmentEvent::Accepted(_))),
+        "el servidor acepta el token"
+    );
+}
+
+/// Sin anclas, un pin que no coincide con el SPKI del servidor aborta el
+/// handshake y el token nunca sale.
+#[test]
+fn pin_only_enrollment_rejects_wrong_pin_without_roots() {
+    let ca = TestCa::new();
+    let leaf = ca.leaf("openrelay-enroll-pin-only-bad", true, false);
+    let impostor = ca.leaf("openrelay-impostor-pin-only", true, false);
+    let mut server = EnrollServer::new(leaf.certified(&ca)).expect("servidor enroll");
+    server
+        .open_window(token(), Duration::from_secs(120), Instant::now())
+        .expect("ventana");
+    let mut client = EnrollClient::connect(
+        empty_roots(),
+        impostor.pin,
+        Instant::now(),
+        SERVER_ADDR,
+        "192.0.2.10",
+    )
+    .expect("cliente pin-only");
+
+    exchange(&mut client, CLIENT_ADDR, &mut server, SERVER_ADDR, 24).expect("handshake intentado");
+    assert!(!client.is_ready(), "el pin erróneo aborta el handshake");
+    assert_eq!(
+        server.attempts(),
+        0,
+        "el cliente no envía el token si el pin no coincide"
+    );
 }
