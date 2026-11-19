@@ -18,6 +18,13 @@ data class PairingUri(
     val tokenHex: String,
 )
 
+/**
+ * Nombre DNS del certificado persistente del daemon (`Server.der` generado por
+ * la provisión local incluye `openrelay`, `localhost`, `127.0.0.1` y `::1`).
+ * El TLS de sesión se valida contra él, no contra la IP del QR.
+ */
+private const val SESSION_TLS_NAME = "openrelay"
+
 object PairingUriParser {
 
     /** Lanza [IllegalArgumentException] con el motivo si el URI no sirve. */
@@ -90,8 +97,9 @@ object PairingUriParser {
 /**
  * Provisión persistida tras el enrolamiento. `caDer` y `leafDer` son DER
  * binarios tal como llegan del puente; se guardan en base64 en preferencias
- * privadas de la app. `serverName` es el nombre que se valida en el TLS de
- * sesión (el host del QR).
+ * privadas de la app. `serverName` es el nombre DNS que el certificado
+ * persistente del daemon acredita en el TLS de sesión (`openrelay`); el host
+ * del QR es sólo el endpoint al que se conecta.
  */
 class Pairing(
     val host: String,
@@ -100,9 +108,9 @@ class Pairing(
     val leafDer: ByteArray,
     val serverName: String,
     /**
-     * Pin SPKI del servidor de sesión. El QR sólo trae el pin del endpoint de
-     * enrolamiento; hasta que el contrato de sesión entregue el suyo se guarda
-     * ése y el handshake fallará si el PC usa otra identidad persistente.
+     * Pin SPKI del servidor de sesión. El QR trae el pin del endpoint de
+     * enrolamiento y el daemon usa la misma identidad persistente
+     * (`quic.identity`) para sesión, así que el pin es el mismo.
      */
     val serverPinHex: String,
 )
@@ -124,7 +132,7 @@ class PairingStore(context: Context) {
                 port = port,
                 caDer = Base64.decode(ca, Base64.NO_WRAP),
                 leafDer = Base64.decode(leaf, Base64.NO_WRAP),
-                serverName = prefs.getString(KEY_NAME, null) ?: host,
+                serverName = prefs.getString(KEY_NAME, null) ?: SESSION_TLS_NAME,
                 serverPinHex = prefs.getString(KEY_PIN, "") ?: "",
             )
         } catch (_: IllegalArgumentException) {
@@ -222,7 +230,7 @@ object PairingFlow {
                     port = port,
                     caDer = result[1],
                     leafDer = result[0],
-                    serverName = uri.host,
+                    serverName = SESSION_TLS_NAME,
                     serverPinHex = uri.pinHex,
                 ),
             )
