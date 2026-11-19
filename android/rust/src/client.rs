@@ -14,14 +14,20 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use arl_proto::control::{ConfigKey, ConfigValue, ErrorMsg, PeerRole};
+use arl_audio_core::AudioPayload;
+use arl_proto::control::{
+    Capabilities as PeerCapabilities, ConfigKey, ConfigValue, ErrorMsg, Feature, PeerRole,
+    RemoteAction,
+};
 use arl_proto::wire::{
-    encode_message, AckEffective, AckMsg, ConfigGetMsg, ConfigSetMsg, ControlMessage, HelloMsg,
-    SCHEMA_VERSION,
+    encode_message, AckEffective, AckMsg, CapabilitiesMsg, ConfigGetMsg, ConfigSetMsg,
+    ControlMessage, HelloMsg, SCHEMA_VERSION,
 };
 use arl_transport::identity::{self, SpkiPin};
 use arl_transport::quinn::{ClientEvent, SessionClient, SessionLimits};
 use rustls::pki_types::CertificateDer;
+
+use crate::audio::{local_features, selected_format, AudioSender, CodecChoice};
 
 use rustls::sign::SigningKey;
 
@@ -37,6 +43,8 @@ const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(8);
 /// Versión de la app que viaja en `hello`.
 const APP_VERSION: &str = "0.1.0";
+/// `device_id` estable que el puente declara en `capabilities`.
+const DEVICE_ID: &str = "android-bridge";
 
 /// Evento que Java puede leer. Texto corto, sin secretos ni rutas.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,8 +81,56 @@ struct Shared {
     events: Vec<BridgeEvent>,
     /// `request_id` del hello, para no publicar su capabilities como ACK.
     hello_id: String,
+    /// Features que el servidor anunció en su `capabilities` (texto del
+    /// contrato: p. ej. `audio.opus-48k-mono`).
+    server_features: Vec<String>,
+    /// Revisión que el servidor reportó en su último `capabilities`.
+    server_revision: u64,
+    /// `true` una vez que el `hello` salió; antes no se anuncian features.
+    hello_sent: bool,
+    /// Perfil cuyas features ya se encolaron al servidor en esta sesión.
+    advertised: Option<CodecChoice>,
+    /// Perfil de envío y codificador: PCM16 por defecto, Opus si se negocia.
+    audio: AudioSender,
     /// `true` cuando Java pidió el cierre: el hilo sale sin emitir `IoFault`.
     stop: bool,
+}
+
+impl Shared {
+    /// Encola las `capabilities` propias cuando el perfil activo cambió.
+    ///
+    /// El daemon sólo acepta frames Opus de un peer que anunció
+    /// `audio.opus-48k-mono`; PCM16 también se declara. Sin `hello` previo o
+    /// sin autorización no se envía nada y se reintenta en el siguiente bombeo.
+    fn advertise(&mut self) -> Result<(), String> {
+        if !self.hello_sent || !self.client.is_authorized() {
+            return Ok(());
+        }
+        let choice = self.audio.choice();
+        if self.advertised == Some(choice) {
+            return Ok(());
+        }
+        let mut capabilities = PeerCapabilities::from_peer(
+            DEVICE_ID,
+            PeerRole::Android,
+            vec![RemoteAction::ConfigRead, RemoteAction::ConfigWrite],
+        );
+        capabilities.features = local_features(choice)
+            .into_iter()
+            .map(|name| match name {
+                arl_audio_core::FEATURE_AUDIO_OPUS => Feature::AudioOpus48kMono,
+                _ => Feature::AudioPcm16_48kMono,
+            })
+            .collect();
+        let message = ControlMessage::Capabilities(CapabilitiesMsg {
+            request_id: request_id(),
+            revision: self.server_revision,
+            capabilities,
+        });
+        self.client.send_control(&message).map_err(show)?;
+        self.advertised = Some(choice);
+        Ok(())
+    }
 }
 
 /// Handle de producto. El mapa de JNI guarda `Arc<Mutex<…>>`, nunca un puntero.
@@ -98,16 +154,11 @@ impl ProductClient {
     /// Abre el UDP, arranca el handshake y el hilo de IO. No bloquea en red.
     pub(crate) fn open(provision: Provision) -> Result<Self, String> {
         let roots = identity::root_store([provision.ca_der]).map_err(show)?;
-        let identity = Arc::new(
-            identity::certified_key(provision.chain, provision.key).map_err(show)?,
-        );
+        let identity =
+            Arc::new(identity::certified_key(provision.chain, provision.key).map_err(show)?);
         let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).map_err(show)?;
-        socket
-            .connect(provision.endpoint)
-            .map_err(show)?;
-        socket
-            .set_read_timeout(Some(RECV_SLICE))
-            .map_err(show)?;
+        socket.connect(provision.endpoint).map_err(show)?;
+        socket.set_read_timeout(Some(RECV_SLICE)).map_err(show)?;
         let local = socket.local_addr().map_err(show)?;
         let client = SessionClient::connect(
             identity,
@@ -126,6 +177,11 @@ impl ProductClient {
             server: provision.endpoint,
             events: Vec::new(),
             hello_id,
+            server_features: Vec::new(),
+            server_revision: 0,
+            hello_sent: false,
+            advertised: None,
+            audio: AudioSender::new(),
             stop: false,
         }));
         // El primer vuelo sale ya: si no, el servidor no tiene a quién contestar.
@@ -142,25 +198,38 @@ impl ProductClient {
         })
     }
 
-    /// `hello` de rol android. La respuesta `capabilities` no es un ACK de config.
+    /// `hello` de rol android y, acto seguido, nuestras `capabilities`. La
+    /// respuesta del daemon no es un ACK de config.
     pub(crate) fn hello(&self) -> Result<(), String> {
         let message = ControlMessage::Hello(HelloMsg {
             request_id: {
-                let guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+                let guard = self
+                    .shared
+                    .lock()
+                    .map_err(|_| "lock envenenado".to_string())?;
                 guard.hello_id.clone()
             },
             role: PeerRole::Android,
             version: APP_VERSION.into(),
             protocol_version: SCHEMA_VERSION.into(),
         });
-        self.send_only(&message)
+        self.send_only(&message)?;
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
+        guard.hello_sent = true;
+        guard.advertised = None;
+        guard.advertise()
     }
 
     /// `config.get`. `key = None` pide el snapshot. Devuelve el `request_id`.
     pub(crate) fn config_get(&self, key: Option<&str>) -> Result<String, String> {
         let request_id = request_id();
         let key = match key {
-            Some(name) if !name.is_empty() => Some(ConfigKey::new(name).map_err(|e| format!("{e:?}"))?),
+            Some(name) if !name.is_empty() => {
+                Some(ConfigKey::new(name).map_err(|e| format!("{e:?}"))?)
+            }
             _ => None,
         };
         let message = ControlMessage::ConfigGet(ConfigGetMsg {
@@ -191,9 +260,64 @@ impl ProductClient {
         Ok(request_id)
     }
 
+    /// Fija el perfil de envío: `0` PCM16 (defecto), `1` Opus 5 ms, `2`
+    /// 2,5 ms, `3` Opus 10 ms. Si cambia, se anuncian las features locales;
+    /// sin servidor que también anuncie `audio.opus-48k-mono`, sigue PCM16.
+    pub(crate) fn set_codec(&self, profile: i32) -> Result<(), String> {
+        let choice = CodecChoice::from_jint(profile)?;
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
+        let changed = guard.audio.choice() != choice;
+        guard.audio.set_choice(choice)?;
+        if changed {
+            guard.advertise()?;
+        }
+        Ok(())
+    }
+
+    /// Envía un bloque de muestras del perfil activo como un frame de audio.
+    ///
+    /// PCM16 exige 240 muestras (5 ms); Opus, las de su perfil. El frame sale
+    /// de `selected_format`: PCM16 por defecto, y Opus sólo si el servidor lo
+    /// anuncia y nuestras `capabilities` ya declararon el perfil.
+    pub(crate) fn send_audio(&self, samples: &[i16]) -> Result<(), String> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err("sesión cerrada".into());
+        }
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
+        if guard.stop {
+            return Err("sesión cerrada".into());
+        }
+        if !guard.client.is_authorized() {
+            return Err("sesión no autorizada".into());
+        }
+        let choice = guard.audio.choice();
+        let format = selected_format(
+            choice,
+            &guard.server_features,
+            guard.advertised == Some(choice),
+        );
+        let payload = guard.audio.encode(format, samples)?;
+        match payload {
+            // PCM16 sale por el mismo `send_audio` de siempre: byte a byte igual.
+            AudioPayload::Pcm16(frame) => guard.client.send_audio(&frame).map_err(show),
+            payload @ AudioPayload::Opus(_) => {
+                guard.client.send_audio_payload(&payload).map_err(show)
+            }
+        }
+    }
+
     /// Siguiente evento, o `None` si la cola está vacía. No bloquea.
     pub(crate) fn poll_event(&self) -> Result<Option<BridgeEvent>, String> {
-        let mut guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
         if guard.events.is_empty() {
             Ok(None)
         } else {
@@ -220,7 +344,10 @@ impl ProductClient {
         let deadline = Instant::now() + HANDSHAKE_DEADLINE;
         loop {
             let event = {
-                let mut guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+                let mut guard = self
+                    .shared
+                    .lock()
+                    .map_err(|_| "lock envenenado".to_string())?;
                 pull_terminal(&mut guard.events)
             };
             match event {
@@ -250,7 +377,10 @@ impl ProductClient {
             return Ok(());
         }
         {
-            let mut guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+            let mut guard = self
+                .shared
+                .lock()
+                .map_err(|_| "lock envenenado".to_string())?;
             guard.stop = true;
             guard.events.push(BridgeEvent::Closed);
         }
@@ -265,7 +395,10 @@ impl ProductClient {
         if self.closed.load(Ordering::SeqCst) {
             return Err("sesión cerrada".into());
         }
-        let mut guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
         if guard.stop {
             return Err("sesión cerrada".into());
         }
@@ -279,7 +412,10 @@ impl ProductClient {
     }
 
     fn take_matching(&self, request_id: &str) -> Result<Option<BridgeEvent>, String> {
-        let mut guard = self.shared.lock().map_err(|_| "lock envenenado".to_string())?;
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
         if let Some(index) = guard.events.iter().position(|event| match event {
             BridgeEvent::Ack { request_id: id, .. } | BridgeEvent::Error { request_id: id, .. } => {
                 id == request_id
@@ -309,8 +445,19 @@ impl Drop for ProductClient {
 /// Hilo de fondo: lee UDP, entrega al sans-IO, drena respuestas y publica eventos.
 fn io_loop(shared: Arc<Mutex<Shared>>, local: SocketAddr) {
     let mut buf = [0u8; UDP_BUF];
+    // El socket se clona para esperar el datagrama sin el candado: sostenerlo
+    // durante el `recv` bloqueado deja a `wait_control`/`wait_authorized` sin
+    // turno durante segundos y agota sus plazos. El original se queda en
+    // `Shared` para los envíos de `drive`.
+    let socket = match shared.lock() {
+        Ok(guard) => match guard.socket.try_clone() {
+            Ok(socket) => socket,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
     loop {
-        let recv = {
+        {
             let guard = match shared.lock() {
                 Ok(guard) => guard,
                 Err(_) => return,
@@ -318,8 +465,8 @@ fn io_loop(shared: Arc<Mutex<Shared>>, local: SocketAddr) {
             if guard.stop {
                 return;
             }
-            guard.socket.recv(&mut buf)
-        };
+        }
+        let recv = socket.recv(&mut buf);
         match recv {
             Ok(n) => {
                 let mut guard = match shared.lock() {
@@ -342,7 +489,9 @@ fn io_loop(shared: Arc<Mutex<Shared>>, local: SocketAddr) {
                 }
                 publish(&mut guard);
             }
-            Err(error) if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut => {}
+            Err(error)
+                if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut => {
+            }
             Err(error) => {
                 let mut guard = match shared.lock() {
                     Ok(guard) => guard,
@@ -406,9 +555,25 @@ fn publish(guard: &mut Shared) {
         push_event(guard, mapped);
     }
     while let Some(message) = guard.client.recv_control() {
+        if let ControlMessage::Capabilities(caps) = &message {
+            // Lo que el servidor declara se guarda antes de mapear: de aquí
+            // sale la negociación de códec, y el hello no se publica como ACK.
+            guard.server_features = caps
+                .capabilities
+                .features
+                .iter()
+                .map(|feature| feature.as_str().to_string())
+                .collect();
+            guard.server_revision = caps.revision;
+        }
         if let Some(mapped) = map_control(&hello_id, message) {
             push_event(guard, mapped);
         }
+    }
+    // El servidor ya respondió (o el perfil cambió): se anuncian las features
+    // locales. Un fallo de cola se reintenta en el siguiente bombeo.
+    if !guard.stop {
+        let _ = guard.advertise();
     }
 }
 

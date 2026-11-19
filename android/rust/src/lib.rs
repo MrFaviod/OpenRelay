@@ -12,17 +12,18 @@ use std::time::Instant;
 
 use arl_transport::identity::{self, SpkiPin};
 use arl_transport::quinn::{
-    Acl, Capabilities, RejectReason, ServerEvent, SessionClient, SessionLimits,
-    SessionServer,
+    Acl, Capabilities, RejectReason, ServerEvent, SessionClient, SessionLimits, SessionServer,
 };
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JValue, JValueOwned};
+use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JShortArray, JValue, JValueOwned};
 use jni::{JNIEnv, JavaVM};
 use rcgen::{
-    BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa,
-    KeyPair, KeyUsagePurpose, RemoteKeyPair, PKCS_ECDSA_P256_SHA256,
+    BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
+    KeyUsagePurpose, RemoteKeyPair, PKCS_ECDSA_P256_SHA256,
 };
 use rustls::crypto::ring::sign::any_ecdsa_type;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, SubjectPublicKeyInfoDer};
+use rustls::pki_types::{
+    CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, SubjectPublicKeyInfoDer,
+};
 use rustls::sign::{CertifiedKey, Signer, SigningKey};
 use rustls::{SignatureAlgorithm, SignatureScheme};
 
@@ -132,7 +133,9 @@ impl RemoteKeyPair for KeystoreRemote {
     }
 
     fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
-        self.inner.sign_java(msg).map_err(|_| rcgen::Error::RingUnspecified)
+        self.inner
+            .sign_java(msg)
+            .map_err(|_| rcgen::Error::RingUnspecified)
     }
 
     fn algorithm(&self) -> &'static rcgen::SignatureAlgorithm {
@@ -152,7 +155,10 @@ fn ca_params() -> CertificateParams {
     let mut p = CertificateParams::new(Vec::<String>::new()).expect("params CA");
     p.distinguished_name.push(DnType::CommonName, "arl-test-ca");
     p.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    p.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::DigitalSignature];
+    p.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
     p
 }
 
@@ -174,11 +180,15 @@ fn pump(client: &mut SessionClient, server: &mut SessionServer) -> Result<(), St
     let now = Instant::now();
     for _ in 0..24 {
         for _ in 0..256 {
-            let Some((_, d)) = client.poll_transmit(now) else { break };
+            let Some((_, d)) = client.poll_transmit(now) else {
+                break;
+            };
             server.handle_datagram(now, CLIENT_ADDR, &d).map_err(text)?;
         }
         for _ in 0..256 {
-            let Some((_, d)) = server.poll_transmit(now) else { break };
+            let Some((_, d)) = server.poll_transmit(now) else {
+                break;
+            };
             client.handle_datagram(now, SERVER_ADDR, &d).map_err(text)?;
         }
     }
@@ -331,6 +341,7 @@ fn bytes_of(value: JValueOwned, env: &JNIEnv) -> Result<Vec<u8>, String> {
     env.convert_byte_array(JByteArray::from(obj)).map_err(text)
 }
 
+mod audio;
 mod client;
 
 pub(crate) use client::{BridgeEvent, ProductClient, Provision};
@@ -362,6 +373,14 @@ fn jbytes(env: &JNIEnv, value: JObject) -> Result<Vec<u8>, String> {
         .map_err(|e| e.to_string())
 }
 
+fn jshorts(env: &JNIEnv, value: &JShortArray) -> Result<Vec<i16>, String> {
+    let len = env.get_array_length(value).map_err(text)?;
+    let mut out = vec![0i16; len as usize];
+    env.get_short_array_region(value, 0, &mut out)
+        .map_err(text)?;
+    Ok(out)
+}
+
 fn jtext(env: &mut JNIEnv, value: &JString) -> Result<String, String> {
     env.get_string(value)
         .map(|s| s.to_string_lossy().into_owned())
@@ -375,8 +394,13 @@ fn ret_string(env: &mut JNIEnv, text: String) -> jstring {
     }
 }
 
-fn with_session<T>(id: u64, f: impl FnOnce(&ProductClient) -> Result<T, String>) -> Result<T, String> {
-    let guard = sessions().lock().map_err(|_| "lock envenenado".to_string())?;
+fn with_session<T>(
+    id: u64,
+    f: impl FnOnce(&ProductClient) -> Result<T, String>,
+) -> Result<T, String> {
+    let guard = sessions()
+        .lock()
+        .map_err(|_| "lock envenenado".to_string())?;
     let client = guard.get(&id).ok_or("handle desconocido")?;
     f(client)
 }
@@ -391,9 +415,7 @@ fn open_product(
     pin_hex: &str,
     chain: Vec<Vec<u8>>,
 ) -> Result<u64, String> {
-    let addr: SocketAddr = endpoint
-        .parse()
-        .map_err(|_| "endpoint no es host:puerto")?;
+    let addr: SocketAddr = endpoint.parse().map_err(|_| "endpoint no es host:puerto")?;
     if addr.port() == 0 {
         return Err("puerto de sesión vacío".into());
     }
@@ -449,9 +471,9 @@ fn event_line(event: BridgeEvent) -> String {
             applied,
             requested_json,
             effective_json,
-        } => format!(
-            "ack\t{request_id}\t{revision}\t{applied}\t{requested_json}\t{effective_json}"
-        ),
+        } => {
+            format!("ack\t{request_id}\t{revision}\t{applied}\t{requested_json}\t{effective_json}")
+        }
         BridgeEvent::Error {
             request_id,
             code,
@@ -495,16 +517,14 @@ mod exports {
             let endpoint = jtext(&mut env, &endpoint)?;
             let server_name = jtext(&mut env, &server_name)?;
             let pin_hex = jtext(&mut env, &pin_hex)?;
-            let ca = jbytes(&mut env, JObject::from(ca_der))?;
-            let len = env
-                .get_array_length(&chain)
-                .map_err(|e| e.to_string())?;
+            let ca = jbytes(&env, JObject::from(ca_der))?;
+            let len = env.get_array_length(&chain).map_err(|e| e.to_string())?;
             let mut certs = Vec::with_capacity(len as usize);
             for index in 0..len {
                 let item = env
                     .get_object_array_element(&chain, index)
                     .map_err(|e| e.to_string())?;
-                certs.push(jbytes(&mut env, item)?);
+                certs.push(jbytes(&env, item)?);
             }
             open_product(
                 &mut env,
@@ -545,7 +565,11 @@ mod exports {
     ) -> jstring {
         let key = jtext(&mut env, &key).unwrap_or_default();
         let result = with_session(handle as u64, |client| {
-            client.config_get(if key.is_empty() { None } else { Some(key.as_str()) })
+            client.config_get(if key.is_empty() {
+                None
+            } else {
+                Some(key.as_str())
+            })
         });
         ret_string(
             &mut env,
@@ -581,6 +605,39 @@ mod exports {
                 }
             },
         )
+    }
+
+    /// Fija el perfil de envío: `0` PCM16 (defecto), `1` Opus 5 ms, `2` Opus
+    /// 2,5 ms, `3` Opus 10 ms. `0` = aplicado.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSetCodec(
+        _env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        profile: jint,
+    ) -> jint {
+        call_code(handle as u64, |client| client.set_codec(profile))
+    }
+
+    /// Envía un bloque PCM16 del perfil activo: 240 muestras (5 ms) en PCM16,
+    /// o las del perfil Opus. `0` = enviado.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSendAudio(
+        env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        pcm: JShortArray,
+    ) -> jint {
+        let samples = match jshorts(&env, &pcm) {
+            Ok(samples) => samples,
+            Err(error) => {
+                remember_error(error);
+                return 1;
+            }
+        };
+        call_code(handle as u64, |client| client.send_audio(&samples))
     }
 
     #[allow(unsafe_code)]

@@ -17,9 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use arl_proto::control::{
-    AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction,
-};
+use arl_proto::control::{AuthorizedPeer, ConfigState, ControlSession, PeerRole, RemoteAction};
 use arl_transport::identity::{self, SpkiPin};
 use arl_transport::quinn::{
     Acl, Capabilities, ServerEvent, SessionId, SessionLimits, SessionServer,
@@ -36,8 +34,8 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 
 /// Prefijo SPKI de P-256 sin comprimir, verificado contra rcgen 0.13.1.
 const P256_SPKI_PREFIX: [u8; 26] = [
-    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
-    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
+    0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a,
+    0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
 ];
 const SPKI_LEN: usize = 91;
 const POINT_OFFSET: usize = 26;
@@ -115,7 +113,7 @@ fn run(dir: &std::path::Path) -> Result<(), String> {
     )
     .map_err(show)?;
 
-    let sessions: Arc<Mutex<Vec<(SessionId, ControlSession)>>> = Arc::new(Mutex::new(Vec::new()));
+    let sessions: Mutex<Vec<(SessionId, ControlSession)>> = Mutex::new(Vec::new());
     let deadline = Instant::now() + Duration::from_secs(150);
     let mut buf = [0u8; 2048];
     while Instant::now() < deadline && !dir.join("stop").exists() {
@@ -191,7 +189,10 @@ fn issue_client_leaf(ca: &Ca, spki: &[u8]) -> Result<rcgen::Certificate, String>
 /// Rechaza cualquier SPKI que no sea P-256 sin comprimir de 91 bytes.
 fn p256_point(spki: &[u8]) -> Result<Vec<u8>, String> {
     if spki.len() != SPKI_LEN || spki[..POINT_OFFSET] != P256_SPKI_PREFIX {
-        return Err(format!("SPKI no es P-256 sin comprimir ({} bytes)", spki.len()));
+        return Err(format!(
+            "SPKI no es P-256 sin comprimir ({} bytes)",
+            spki.len()
+        ));
     }
     if spki[POINT_OFFSET] != 0x04 {
         return Err("punto P-256 comprimido o inválido".into());
@@ -211,8 +212,9 @@ impl RemoteKeyPair for PublicOnlyKey {
     }
 
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
-        let signing = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &SystemRandom::new())
-            .map_err(|_| rcgen::Error::RingUnspecified)?;
+        let signing =
+            EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &SystemRandom::new())
+                .map_err(|_| rcgen::Error::RingUnspecified)?;
         let pair = EcdsaKeyPair::from_pkcs8(
             &ECDSA_P256_SHA256_ASN1_SIGNING,
             signing.as_ref(),
@@ -238,15 +240,15 @@ impl arl_proto::control::EffectivePolicy for ClampGain {
         &self,
         key: &arl_proto::control::ConfigKey,
         requested: &arl_proto::control::ConfigValue,
-    ) -> arl_proto::control::ConfigValue {
+    ) -> Result<arl_proto::control::ConfigValue, arl_proto::control::ErrorCode> {
         if key.as_str() == "audio.gain_db" {
             if let arl_proto::control::ConfigValue::Number(value) = requested {
                 if *value > 2.5 {
-                    return arl_proto::control::ConfigValue::Number(2.5);
+                    return Ok(arl_proto::control::ConfigValue::Number(2.5));
                 }
             }
         }
-        requested.clone()
+        Ok(requested.clone())
     }
 }
 

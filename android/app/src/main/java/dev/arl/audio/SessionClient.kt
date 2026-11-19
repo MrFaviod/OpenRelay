@@ -26,6 +26,19 @@ class SessionClient private constructor(private var handle: Long) : AutoCloseabl
     fun configSetGain(expectedRevision: Long, gainDb: Double): String =
         nativeConfigSetGain(handle, expectedRevision, gainDb)
 
+    /**
+     * Fija el perfil de envío de audio: `0` PCM16 (defecto), `1` Opus 5 ms,
+     * `2` Opus 2,5 ms, `3` Opus 10 ms. Sin servidor que anuncie
+     * `audio.opus-48k-mono` la sesión sigue en PCM16. 0 = aplicado.
+     */
+    fun setCodec(profile: Int): Int = nativeSetCodec(handle, profile)
+
+    /**
+     * Envía un bloque PCM16 del perfil activo: 240 muestras (5 ms) en PCM16,
+     * o las del perfil Opus. 0 = enviado; el motivo queda en [lastError].
+     */
+    fun sendAudio(pcm: ShortArray): Int = nativeSendAudio(handle, pcm)
+
     /** Siguiente evento, o cadena vacía. Ver [ControlEvent]. */
     fun poll(): String = nativePoll(handle)
 
@@ -90,6 +103,12 @@ class SessionClient private constructor(private var handle: Long) : AutoCloseabl
             expectedRevision: Long,
             gainDb: Double,
         ): String
+
+        @JvmStatic
+        private external fun nativeSetCodec(handle: Long, profile: Int): Int
+
+        @JvmStatic
+        private external fun nativeSendAudio(handle: Long, pcm: ShortArray): Int
 
         @JvmStatic
         private external fun nativePoll(handle: Long): String
