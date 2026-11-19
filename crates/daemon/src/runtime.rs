@@ -11,6 +11,7 @@
 //! y deja el endpoint QUIC apagado: ese es el hueco de producción, no se
 //! rellena con una CA fabricada.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};
@@ -31,6 +32,7 @@ use serde_json::{json, Value};
 
 use crate::control::{ControlError, ControlRegistry, IdentityGrant, SharedControl};
 use crate::pairing;
+use crate::session::{SessionAudio, SessionAudioStats};
 
 /// Tope de una línea de control que llega por el socket Unix.
 const MAX_LINE: usize = 64 * 1024;
@@ -124,6 +126,8 @@ struct QuicEndpoint {
     socket: UdpSocket,
     server: SessionServer,
     producer: SampleProducer,
+    /// Estado de decodificación por sesión (PCM16 u Opus negociado).
+    audio: HashMap<SessionId, SessionAudio>,
     /// Sesiones que este proceso vio autorizadas y aún no cerró.
     live: Vec<SessionId>,
 }
@@ -234,6 +238,7 @@ fn load_quic(
             socket,
             server,
             producer,
+            audio: HashMap::new(),
             live: Vec::new(),
         },
         pin: pin.to_hex(),
@@ -463,7 +468,10 @@ impl ProductRuntime {
                         quic.live.push(session);
                     }
                 }
-                ServerEvent::Closed { session } => quic.live.retain(|id| *id != session),
+                ServerEvent::Closed { session } => {
+                    quic.audio.remove(&session);
+                    quic.live.retain(|id| *id != session);
+                }
                 ServerEvent::Rejected { .. } => {}
             }
         }
@@ -474,11 +482,40 @@ impl ProductRuntime {
             .map_err(RuntimeError::Control)?;
         flush_transmit(&quic.socket, &mut quic.server)?;
         for session in live {
-            while let Some(frame) = quic.server.recv_audio(session) {
-                let _ = quic.producer.push_slice(frame.samples());
+            let negotiated = match quic.server.identity(session) {
+                Some(pin) => self.control.opus_negotiated(&pin),
+                None => false,
+            };
+            let QuicEndpoint {
+                server,
+                producer,
+                audio,
+                ..
+            } = quic;
+            let state = audio
+                .entry(session)
+                .or_insert_with(|| SessionAudio::new(negotiated));
+            if state.set_opus_negotiated(negotiated).is_err() {
+                continue;
+            }
+            while let Some(payload) = server.recv_audio_payload(session) {
+                if let Ok(frames) = state.handle(payload) {
+                    for frame in frames {
+                        let _ = producer.push_slice(&frame.samples);
+                    }
+                }
             }
         }
         Ok(())
+    }
+
+    /// Contadores de audio de una sesión viva (`None` si no existe).
+    pub fn audio_stats(&self, session: SessionId) -> Option<SessionAudioStats> {
+        self.quic
+            .as_ref()?
+            .audio
+            .get(&session)
+            .map(SessionAudio::stats)
     }
 }
 

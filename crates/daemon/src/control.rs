@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use arl_proto::control::{
-    AuthorizedPeer, ConfigKey, ConfigValue, ControlSession, EffectivePolicy, ErrorCode, Outcome,
-    PeerRole, RemoteAction, SharedConfig, UnsupportedPolicy,
+    AuthorizedPeer, ConfigKey, ConfigValue, ControlSession, EffectivePolicy, ErrorCode, Feature,
+    Outcome, PeerRole, RemoteAction, SharedConfig, UnsupportedPolicy,
 };
 use arl_proto::wire::ControlMessage;
 use arl_transport::identity::SpkiPin;
@@ -142,6 +142,9 @@ pub struct SharedControl {
     registry: ControlRegistry,
     policy: Arc<dyn EffectivePolicy>,
     sessions: HashMap<SpkiPin, ControlSession>,
+    /// Capacidad Opus anunciada por cada identidad remota. Sólo se activa con
+    /// un mensaje `capabilities` explícito; sin él el audio Opus se descarta.
+    peer_opus: HashMap<SpkiPin, bool>,
     /// Administrador local. Su pin no existe en el transporte.
     local: Option<ControlSession>,
 }
@@ -161,6 +164,7 @@ impl SharedControl {
             registry,
             policy: Arc::from(policy),
             sessions: HashMap::new(),
+            peer_opus: HashMap::new(),
             local: None,
         }
     }
@@ -168,6 +172,12 @@ impl SharedControl {
     /// Revisión que ven todas las identidades.
     pub fn revision(&self) -> u64 {
         self.state.revision()
+    }
+
+    /// ¿La identidad remota anunció `audio.opus-48k-mono`? Sin un mensaje
+    /// `capabilities` en esta ejecución la respuesta es `false`.
+    pub fn opus_negotiated(&self, pin: &SpkiPin) -> bool {
+        self.peer_opus.get(pin).copied().unwrap_or(false)
     }
 
     /// Registro con el que se construyó. Sirve para registrar después.
@@ -232,6 +242,13 @@ impl SharedControl {
             let Some(message) = server.recv_control(session_id) else {
                 return Ok(());
             };
+            if let ControlMessage::Capabilities(capabilities) = &message {
+                let negotiated = capabilities
+                    .capabilities
+                    .features
+                    .contains(&Feature::AudioOpus48kMono);
+                self.peer_opus.insert(pin, negotiated);
+            }
             let outcome = match self.session_for(&pin) {
                 Some(session) => session.handle(&message, now_ms()),
                 None => {

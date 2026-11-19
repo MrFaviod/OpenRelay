@@ -12,6 +12,7 @@ pub mod acl;
 pub mod control;
 pub mod pairing;
 pub mod runtime;
+pub mod session;
 
 use std::fmt;
 use std::net::UdpSocket;
