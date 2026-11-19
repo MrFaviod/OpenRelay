@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:arl:contract:audio-frame-v1",
   "title": "arl audio datagram descriptor v1",
-  "description": "Descriptor logico de un datagrama de audio arl v1, con layout binario exacto. El datagrama real es binario: 28 bytes de cabecera big-endian + 480 bytes PCM16LE. Este esquema valida el descriptor que produce el parser; no codifica el datagrama en JSON. Semantica en docs/protocol.md seccion 8.",
+  "description": "Descriptor logico de un datagrama de audio arl v1, con layout binario exacto. El datagrama real es binario: 28 bytes de cabecera big-endian + 480 bytes PCM16LE para type=1 (perfil base). La extension compatible type=2 transporta un paquete Opus variable (1..=1172 bytes) y se describe en $defs.audio_frame_opus; solo se usa si ambos extremos anuncian audio.opus-48k-mono. Este esquema valida el descriptor que produce el parser; no codifica el datagrama en JSON. Semantica en docs/protocol.md seccion 8.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -187,5 +187,242 @@
       "encoding": "pcm16le mono",
       "note": "240 muestras x 1 canal x 2 bytes; total del datagrama 508 bytes."
     }
-  ]
+  ],
+  "x-audio-profiles": [
+    {
+      "type": 1,
+      "format": "pcm16le",
+      "capability": "audio.pcm16-48k-mono",
+      "default": true,
+      "schema": "#"
+    },
+    {
+      "type": 2,
+      "format": "opus",
+      "capability": "audio.opus-48k-mono",
+      "default": false,
+      "negotiated": "solo si ambos extremos anuncian la capacidad; si no, se usa type=1",
+      "schema": "#/$defs/audio_frame_opus"
+    }
+  ],
+  "x-binary-layout-opus": [
+    {
+      "field": "type",
+      "offset": 0,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 2
+    },
+    {
+      "field": "version",
+      "offset": 1,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 1
+    },
+    {
+      "field": "flags",
+      "offset": 2,
+      "bytes": 1,
+      "encoding": "u8",
+      "minimum": 0,
+      "maximum": 3
+    },
+    {
+      "field": "header_len",
+      "offset": 3,
+      "bytes": 1,
+      "encoding": "u8",
+      "const": 28
+    },
+    {
+      "field": "epoch",
+      "offset": 4,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    {
+      "field": "seq",
+      "offset": 8,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    {
+      "field": "sample_count",
+      "offset": 12,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "enum": [120, 240, 480]
+    },
+    {
+      "field": "duration_us",
+      "offset": 14,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "enum": [2500, 5000, 10000]
+    },
+    {
+      "field": "sample_rate_hz",
+      "offset": 16,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "const": 48000
+    },
+    {
+      "field": "channels",
+      "offset": 20,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 1
+    },
+    {
+      "field": "reserved",
+      "offset": 22,
+      "bytes": 2,
+      "encoding": "u16 big-endian",
+      "const": 0
+    },
+    {
+      "field": "payload_len",
+      "offset": 24,
+      "bytes": 4,
+      "encoding": "u32 big-endian",
+      "minimum": 1,
+      "maximum": 1172
+    },
+    {
+      "field": "payload",
+      "offset": 28,
+      "bytes": "1..=1172",
+      "encoding": "opus packet",
+      "note": "Exactamente un paquete Opus; total del datagrama 29..=1200 bytes."
+    }
+  ],
+  "$defs": {
+    "audio_frame_opus": {
+      "title": "Descriptor de un datagrama de audio Opus v1 (type=2)",
+      "description": "Extension compatible de arl.audio-frame/v1. Misma cabecera de 28 bytes que type=1, con sample_count 120/240/480, duration_us 2500/5000/10000 y payload variable de exactamente un paquete Opus. Solo se usa si ambos extremos anuncian audio.opus-48k-mono; en cualquier otro caso el emisor usa type=1 PCM16.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "type",
+        "version",
+        "flags",
+        "header_len",
+        "epoch",
+        "seq",
+        "sample_count",
+        "duration_us",
+        "sample_rate_hz",
+        "channels",
+        "payload_len",
+        "format",
+        "frames_per_datagram",
+        "datagram_bytes",
+        "max_datagram_bytes"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "arl.audio-frame/v1"
+        },
+        "type": {
+          "const": 2,
+          "description": "Tipo de datagrama: audio Opus."
+        },
+        "version": {
+          "const": 1
+        },
+        "flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Mismos bits que type=1: bit 0 = silence; bit 1 = discontinuity."
+        },
+        "header_len": {
+          "const": 28
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "sample_count": {
+          "enum": [120, 240, 480],
+          "description": "Muestras por canal: 2.5, 5 o 10 ms a 48 kHz."
+        },
+        "duration_us": {
+          "enum": [2500, 5000, 10000]
+        },
+        "sample_rate_hz": {
+          "const": 48000
+        },
+        "channels": {
+          "const": 1
+        },
+        "payload_len": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1172,
+          "description": "Bytes del paquete Opus: 1200 - 28 de cabecera."
+        },
+        "format": {
+          "const": "opus"
+        },
+        "frames_per_datagram": {
+          "const": 1
+        },
+        "datagram_bytes": {
+          "type": "integer",
+          "minimum": 29,
+          "maximum": 1200,
+          "description": "header_len + payload_len."
+        },
+        "max_datagram_bytes": {
+          "const": 1200
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sample_count": {
+              "const": 120
+            },
+            "duration_us": {
+              "const": 2500
+            }
+          }
+        },
+        {
+          "properties": {
+            "sample_count": {
+              "const": 240
+            },
+            "duration_us": {
+              "const": 5000
+            }
+          }
+        },
+        {
+          "properties": {
+            "sample_count": {
+              "const": 480
+            },
+            "duration_us": {
+              "const": 10000
+            }
+          }
+        }
+      ]
+    }
+  }
 }

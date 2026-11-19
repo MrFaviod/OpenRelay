@@ -3,8 +3,11 @@
 //!
 //! Este crate no hace red, no codifica, no toca dispositivos y no usa
 //! `unsafe`. El frame es el contrato de `contracts/audio-frame-v1.schema.json`:
-//! cabecera big-endian de 28 bytes y payload PCM16LE de 480 bytes. Jitter (T06)
-//! y drift/resample (T07) consumen ese frame sin redefinir el contrato.
+//! cabecera big-endian de 28 bytes y payload PCM16LE de 480 bytes. La
+//! extensión compatible `type=2` (Opus 48 kHz mono, un paquete por datagrama)
+//! sólo se usa si ambos extremos anuncian `audio.opus-48k-mono`; el perfil
+//! PCM16 `type=1` queda byte a byte igual. Jitter (T06) y drift/resample (T07)
+//! consumen ese frame sin redefinir el contrato.
 //!
 //! Interfaz para consumidores (jitter/PLC en T06, captura en T14):
 //!
@@ -31,8 +34,10 @@ pub mod pcm16;
 pub mod resample;
 
 pub use frame::{
-    AudioFrame, Flags, FrameError, FrameHeader, BYTES_PER_SAMPLE, CHANNELS, DATAGRAM_LEN,
-    DURATION_US, HEADER_LEN, MAX_DATAGRAM_LEN, PAYLOAD_LEN, SAMPLE_COUNT, SAMPLE_RATE_HZ,
-    TYPE_AUDIO, VERSION,
+    opus_duration_for, opus_sample_count_valid, AudioFormat, AudioFrame, AudioPayload, Flags,
+    FrameError, FrameHeader, OpusFrame, BYTES_PER_SAMPLE, CHANNELS, DATAGRAM_LEN, DURATION_US,
+    FEATURE_AUDIO_OPUS, FEATURE_AUDIO_PCM16, HEADER_LEN, MAX_DATAGRAM_LEN, OPUS_DURATIONS_US,
+    OPUS_MAX_PAYLOAD_LEN, PAYLOAD_LEN, SAMPLE_COUNT, SAMPLE_RATE_HZ, TYPE_AUDIO, TYPE_AUDIO_OPUS,
+    VERSION,
 };
 pub use pcm16::Samples;

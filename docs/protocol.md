@@ -203,28 +203,29 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 - `remote_actions` sólo admite `config.read` y `config.write`. **No existe** una acción remota para iniciar o parar el micrófono, conceder permisos ni cambiar claves locales.
 - `mic.start`, `mic.stop` y `permission.request` son acciones **locales del dispositivo Android**; no tienen tipo de mensaje en v1. Un cliente que las pida por control recibe `unsupported` (o `local_key` si la petición es de configuración).
 - `config_keys` declara alcance `shared`, `local` o `readonly`; una clave local no se comparte entre dispositivos.
+- `audio.pcm16-48k-mono` es el perfil de audio base y debe anunciarse para recibir audio. `audio.opus-48k-mono` es opcional: habilita el perfil `type=2` sólo si **ambos** extremos la anuncian; si falta en cualquiera, se usa PCM16 (§8.3).
 
 ## 8. Framing de audio
 
-Un datagrama de audio contiene **exactamente un frame**. Cabecera de **28 bytes**, big-endian, seguida de payload PCM16LE mono:
+Un datagrama de audio contiene **exactamente un frame**. Cabecera de **28 bytes**, big-endian, seguida de payload. El perfil base (`type=1`) usa PCM16LE mono de 480 bytes; la extensión compatible `type=2` transporta un paquete Opus variable (§8.3):
 
 | Offset | Bytes | Campo | Tipo | Valor / límite v1 |
 |---:|---:|---|---|---|
-| 0 | 1 | `type` | u8 | `1` (audio) |
+| 0 | 1 | `type` | u8 | `1` (audio PCM16LE) o `2` (audio Opus; §8.3) |
 | 1 | 1 | `version` | u8 | `1` |
 | 2 | 1 | `flags` | u8 | bits 0–1; `0x01` silence, `0x02` discontinuity; bits 2–7 deben ser 0 |
 | 3 | 1 | `header_len` | u8 | `28` |
 | 4 | 4 | `epoch` | u32 BE | `1..=4294967295`; `0` inválido |
 | 8 | 4 | `seq` | u32 BE | `0..=4294967295`; +1 por frame, wrap permitido |
-| 12 | 2 | `sample_count` | u16 BE | `240` (5 ms a 48 kHz) |
-| 14 | 2 | `duration_us` | u16 BE | `5000` |
+| 12 | 2 | `sample_count` | u16 BE | `240` en type=1; `120`, `240` o `480` en type=2 |
+| 14 | 2 | `duration_us` | u16 BE | `5000` en type=1; `2500`, `5000` o `10000` en type=2, coherente con `sample_count` |
 | 16 | 4 | `sample_rate_hz` | u32 BE | `48000` |
 | 20 | 2 | `channels` | u16 BE | `1` |
 | 22 | 2 | `reserved` | u16 BE | `0`; otro valor ⇒ rechazo |
-| 24 | 4 | `payload_len` | u32 BE | `480` |
-| 28 | 480 | payload | bytes | PCM16LE, 240 muestras |
+| 24 | 4 | `payload_len` | u32 BE | `480` en type=1; `1..=1172` en type=2 |
+| 28 | variable | payload | bytes | type=1: PCM16LE, 240 muestras (480 bytes); type=2: un paquete Opus (1..=1172 bytes) |
 
-Total del datagrama: **508 bytes**. Tamaño máximo aceptado: **1200 bytes** (presupuesto conservador de datagrama QUIC). Un datagrama mayor, con `payload_len` distinto de `sample_count × channels × 2` o con constantes distintas se rechaza y se cuenta; no se fragmenta a este nivel.
+Total del datagrama: **508 bytes** para type=1; **29..=1200 bytes** para type=2. Tamaño máximo aceptado: **1200 bytes** (presupuesto conservador de datagrama QUIC). Un datagrama mayor, con `payload_len` distinto de `sample_count × channels × 2` (type=1) o distinto de los bytes recibidos (type=2), o con constantes distintas se rechaza y se cuenta; no se fragmenta a este nivel.
 
 ### 8.1 Semántica de época y secuencia
 
@@ -233,15 +234,37 @@ Total del datagrama: **508 bytes**. Tamaño máximo aceptado: **1200 bytes** (pr
 - Un frame con `epoch` menor que el actual es **viejo**: se descarta, no se reproduce.
 - Un `seq` duplicado en la misma época se descarta (no se reproduce dos veces).
 - Un hueco de `seq` no se recupera por retransmisión: el receptor decide PLC/silencio y lo cuenta. Nunca se reordena audio más allá de la ventana de reordenamiento (**20 ms**).
-- `flags.silence` indica payload silencioso; el payload sigue presente y con el tamaño fijo. `flags.discontinuity` marca el primer frame tras un hueco o cambio de época; el receptor reinicia su ventana de jitter.
+- `flags.silence` indica payload silencioso; el payload sigue presente (480 bytes en type=1; 1..=1172 bytes en type=2). `flags.discontinuity` marca el primer frame tras un hueco o cambio de época; el receptor reinicia su ventana de jitter.
 - El emisor no envía audio antes de que la sesión esté autorizada. El receptor descarta y cuenta cualquier datagrama de audio recibido en `enroll` o antes de la autorización.
 
 ### 8.2 Cadencia y colas
 
-- Cadencia nominal: **200 frames/s** (5 ms). Tolerancia de ráfaga del receptor: 10 frames; tasa sostenida máxima 250 frames/s.
+- Cadencia nominal: **200 frames/s** (5 ms) en el perfil de 240 muestras; con 120 o 480 muestras la cadencia escala para mantener 48 000 muestras/s (§8.3). Tolerancia de ráfaga del receptor: 10 frames; tasa sostenida máxima 250 frames/s en el perfil de 5 ms.
 - El emisor mantiene una cola de salida muy corta (≤ 2 frames) y purga antes de enviar; el audio viejo se descarta, nunca se recupera.
 - El receptor usa un jitter buffer acotado (objetivo configurable 5–40 ms) y descarta por deadline. El límite exacto de capacidad se fija en; el contrato no permite crecimiento por ráfaga.
 - El desfase de reloj (drift) se corrige en el consumidor con contador de muestras y resampling lento; no se comparan relojes monotónicos Android/Linux directamente.
+
+### 8.3 Perfil Opus negociado (type=2)
+
+Extensión compatible de v1 para transportar Opus sin cambiar el perfil base. La cabecera es la misma de 28 bytes; sólo cambian los valores permitidos y el payload:
+
+| Campo | Valor en type=2 |
+|---|---|
+| `type` | `2` |
+| `version`, `header_len`, `sample_rate_hz`, `channels`, `reserved` | iguales que type=1 (`1`, `28`, `48000`, `1`, `0`) |
+| `flags` | mismos bits 0–1; bits 2–7 en 0 |
+| `sample_count` | `120`, `240` o `480` |
+| `duration_us` | `2500` con 120, `5000` con 240, `10000` con 480 |
+| `payload_len` | `1..=1172` (1200 − 28) |
+| payload | exactamente **un paquete Opus** (RFC 6716), opaco para el framing |
+
+- El datagrama completo mide `28 + payload_len`, es decir **29..=1200 bytes**; `payload_len` debe coincidir con los bytes recibidos. Un `payload_len` en `0` o mayor que `1172`, un `sample_count` fuera de `{120,240,480}`, una `duration_us` incoherente o cualquier constante alterada se rechaza y se cuenta, igual que en type=1.
+- **Negociación:** `type=2` sólo se usa si **ambos** extremos anuncian la capacidad `audio.opus-48k-mono` en `capabilities` (§7). Si falta en cualquiera de los dos, el emisor usa `type=1` PCM16LE y el receptor no debe recibir type=2. Un receptor que recibe type=2 sin haberlo negociado descarta el datagrama y lo cuenta; no hay mensaje de control por datagrama.
+- **Cambio de perfil:** al pasar de PCM16 a Opus o al revés se incrementa `epoch`, `seq` vuelve a `0` y el primer frame lleva `flags.discontinuity`. El receptor reinicia jitter y PLC con la nueva época.
+- **Cadencia:** se mantienen 48 000 muestras/s: 400 fps con 120 muestras (2.5 ms), 200 fps con 240 (5 ms) y 100 fps con 480 (10 ms); la ráfaga permitida sigue siendo 10 frames. `flags.silence` no elimina el payload: un frame silencioso sigue llevando un paquete Opus válido (DTX, si se usa, es decisión del codificador).
+- **Fuera de contrato:** bitrate, complexity, DTX/FEC, pre-skip del encoder y cualquier otro parámetro interno de Opus.
+
+El esquema [`contracts/audio-frame-v1.schema.json`](../contracts/audio-frame-v1.schema.json) mantiene el descriptor raíz para type=1 y describe type=2 en `$defs.audio_frame_opus`; `x-audio-profiles` enumera ambos perfiles y su capacidad.
 
 ## 9. Límites exactos v1
 
@@ -258,7 +281,10 @@ Total del datagrama: **508 bytes**. Tamaño máximo aceptado: **1200 bytes** (pr
 | Caché de idempotencia | 64 entradas, TTL 60 s, FIFO, por sesión |
 | Cabecera de audio | 28 bytes |
 | Payload de audio | 480 bytes (240 muestras × 1 canal × 2 bytes) |
+| Muestras por frame Opus | 120, 240 o 480 (2.5, 5 o 10 ms a 48 kHz) |
+| Payload de audio Opus | 1..=1172 bytes (exactamente un paquete Opus) |
 | Datagrama de audio | 508 bytes; máximo aceptado 1200 |
+| Datagrama de audio Opus | 29..=1200 bytes; máximo aceptado 1200 |
 | Frames por datagrama | 1 |
 | Ventana de reordenamiento | 20 ms |
 | Cadencia / ráfaga | 200 fps nominal; 250 fps sostenido; ráfaga 10 |
@@ -270,12 +296,12 @@ Estos límites son parte del contrato: y deben aplicarlos y probarlos. Un límit
 
 - El major vive en `schema_version` (`arl.control/v1`, `arl.capabilities/v1`, `arl.audio-frame/v1`). Un major desconocido se rechaza con `version_unsupported`; no se intenta interpretar.
 - v1 no acepta campos desconocidos. Cambios aditivos compatibles se declaran explícitamente en una revisión documentada del esquema; los incompatibles abren v2.
-- El audio no negocia códec en v1: es PCM16LE mono 48 kHz fijo. Cualquier otro formato requiere una fase posterior y un contrato nuevo.
+- El perfil de audio base es PCM16LE mono 48 kHz fijo. La extensión compatible `type=2` (Opus) se negocia con la capacidad `audio.opus-48k-mono` (§8.3); si falta en cualquiera de los dos extremos se usa PCM16. Cualquier otro códec o parámetro de wire requiere una fase posterior y un contrato nuevo.
 - La sesión valida versión y límites **antes** de aceptar audio o control operativo.
 
 ## 11. Lo que este contrato no define
 
 - Handshake TLS, pin SPKI, identidad de cliente, mTLS/Keystore o app-layer: [`security/pairing.md`](security/pairing.md) y el gate (/ADR-0002).
 - Transporte concreto (quiche/Quinn), descubrimiento mDNS y puertos: decisión de.
-- Códec Opus, DSP/reducción de ruido y métricas de latencia: fases.
+- Parámetros internos de Opus (bitrate, complexity, DTX/FEC, pre-skip), DSP/reducción de ruido y métricas de latencia: fases. El wire v1 sólo transporta el paquete Opus opaco de §8.3.
 - API de la CLI y del socket Unix: se fija en; aquí sólo se asume que el daemon es la autoridad de configuración.

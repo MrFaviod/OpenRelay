@@ -57,8 +57,11 @@ El audio no tiene ACK ni mensajes de error por frame. Un datagrama inválido se 
 | Condición | Acción | Contador |
 |---|---|---|
 | `type`/`version`/`header_len` distintos | descartar | `audio.invalid_header` |
-| `payload_len` ≠ `sample_count × channels × 2` | descartar | `audio.invalid_length` |
+| `payload_len` ≠ `sample_count × channels × 2` (type=1) | descartar | `audio.invalid_length` |
 | `epoch == 0`, `reserved != 0` o flags con bits 2–7 | descartar | `audio.invalid_header` |
+| `type=2` sin `audio.opus-48k-mono` negociado por ambos extremos | descartar | `audio.unsupported_profile` |
+| `type=2` con `sample_count` fuera de `{120,240,480}` o `duration_us` incoherente | descartar | `audio.invalid_header` |
+| `type=2` con `payload_len` en `0`, mayor que `1172` o distinto de los bytes recibidos | descartar | `audio.invalid_length` |
 | Datagrama >1200 bytes | descartar | `audio.too_large` |
 | Audio en `enroll` o antes de autorizar | descartar y registrar el intento | `audio.before_authorization` |
 | `epoch` viejo, `seq` duplicado o fuera de ventana | descartar | `audio.stale` / `audio.duplicate` |

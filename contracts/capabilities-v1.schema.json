@@ -31,7 +31,7 @@
       "maxItems": 8,
       "uniqueItems": true,
       "items": {
-        "enum": ["control.v1", "audio.pcm16-48k-mono", "enrollment.v1", "session.v1"]
+        "enum": ["control.v1", "audio.pcm16-48k-mono", "audio.opus-48k-mono", "enrollment.v1", "session.v1"]
       }
     },
     "remote_actions": {
