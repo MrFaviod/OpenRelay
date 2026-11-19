@@ -27,6 +27,7 @@
 
 #[cfg(feature = "alsa")]
 pub mod alsa;
+pub mod monitor;
 pub mod pipewire_source;
 #[cfg(feature = "pulse")]
 pub mod pulse;
@@ -34,6 +35,7 @@ pub mod ring;
 
 #[cfg(feature = "alsa")]
 pub use alsa::{open_from_config, AlsaConfig, AlsaError, AlsaHwSource, HW_PREFIX};
+pub use monitor::{MonitorError, MonitorFormat, MonitorSource};
 pub use pipewire_source::{
     init, NegotiatedFormat, PipeWireSource, SourceError, CHANNEL_COUNT, MEDIA_CLASS, NODE_NAME,
 };

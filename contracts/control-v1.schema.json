@@ -280,6 +280,9 @@
         "^audio\\.jitter_target_ms$": {
           "$ref": "#/$defs/value_audio_jitter_target_ms"
         },
+        "^audio\\.return_enabled$": {
+          "$ref": "#/$defs/value_audio_return_enabled"
+        },
         "^ui\\.theme$": {
           "$ref": "#/$defs/value_ui_theme"
         },
@@ -389,6 +392,23 @@
           "if": {
             "properties": {
               "key": {
+                "const": "audio.return_enabled"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/value_audio_return_enabled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
                 "const": "ui.theme"
               }
             },
@@ -474,6 +494,9 @@
       "type": "integer",
       "minimum": 5,
       "maximum": 40
+    },
+    "value_audio_return_enabled": {
+      "type": "boolean"
     },
     "value_ui_theme": {
       "type": "string",
@@ -776,6 +799,26 @@
           "if": {
             "properties": {
               "key": {
+                "const": "audio.return_enabled"
+              }
+            },
+            "required": ["key"]
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "$ref": "#/$defs/value_audio_return_enabled"
+              },
+              "effective": {
+                "$ref": "#/$defs/value_audio_return_enabled"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "key": {
                 "const": "ui.theme"
               }
             },
@@ -897,7 +940,7 @@
           "maxItems": 8,
           "uniqueItems": true,
           "items": {
-            "enum": ["control.v1", "audio.pcm16-48k-mono", "audio.opus-48k-mono", "enrollment.v1", "session.v1"]
+            "enum": ["control.v1", "audio.pcm16-48k-mono", "audio.opus-48k-mono", "audio.return-pcm16-48k-mono", "enrollment.v1", "session.v1"]
           }
         },
         "remote_actions": {

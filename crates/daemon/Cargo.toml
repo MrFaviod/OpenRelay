@@ -26,6 +26,9 @@ time = "=0.3.36"
 
 [features]
 default = []
+# Retorno de audio Linux→Android (F8/T24, D-08). Apagado por defecto: sin esta
+# feature el módulo de retorno no existe en el binario.
+return-audio = []
 # Compila SpeexDSP dentro de arl-dsp y habilita el NS opcional de sesión.
 speexdsp = ["arl-dsp/speexdsp"]
 

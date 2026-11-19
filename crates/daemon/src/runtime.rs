@@ -19,7 +19,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "return-audio")]
+use arl_audio_linux::monitor::MonitorSource;
 use arl_audio_linux::{ring, SampleProducer};
+#[cfg(feature = "return-audio")]
+use arl_proto::control::Feature;
 use arl_proto::control::{ErrorCode, PeerRole, RemoteAction};
 use arl_proto::wire::{decode_frame, encode_message, ControlMessage};
 use arl_transport::identity::{self, SpkiPin};
@@ -32,6 +36,8 @@ use serde_json::{json, Value};
 
 use crate::control::{ControlError, ControlRegistry, IdentityGrant, SharedControl};
 use crate::pairing;
+#[cfg(feature = "return-audio")]
+use crate::return_audio::{effective_local_features, should_send, ReturnEmitter, RETURN_EPOCH};
 use crate::session::{SessionAudio, SessionAudioStats};
 
 /// Tope de una línea de control que llega por el socket Unix.
@@ -130,6 +136,14 @@ struct QuicEndpoint {
     audio: HashMap<SessionId, SessionAudio>,
     /// Sesiones que este proceso vio autorizadas y aún no cerró.
     live: Vec<SessionId>,
+    /// Emisores de retorno Linux→Android: uno por sesión que cumple
+    /// `should_send`, con su propia secuencia. Fuera de la feature no existe.
+    #[cfg(feature = "return-audio")]
+    return_audio: HashMap<SessionId, ReturnEmitter<MonitorSource>>,
+    /// Último fallo del retorno (sin sesión PipeWire o sin capacidad). Sólo
+    /// informativo: un fallo del retorno no tumba el bombeo del daemon.
+    #[cfg(feature = "return-audio")]
+    return_gap: Option<String>,
 }
 
 /// Proceso dueño del estado. El socket Unix y el UDP de QUIC los atiende el
@@ -240,6 +254,10 @@ fn load_quic(
             producer,
             audio: HashMap::new(),
             live: Vec::new(),
+            #[cfg(feature = "return-audio")]
+            return_audio: HashMap::new(),
+            #[cfg(feature = "return-audio")]
+            return_gap: None,
         },
         pin: pin.to_hex(),
         addr: bound,
@@ -512,16 +530,109 @@ impl ProductRuntime {
                 }
             }
         }
+        #[cfg(feature = "return-audio")]
+        pump_return_audio(&self.control, quic);
         Ok(())
     }
 
-    /// Contadores de audio de una sesión viva (`None` si no existe).
+    /// Último fallo del retorno Linux→Android (`None` si nunca falló o si el
+    /// daemon se compiló sin la feature).
+    #[cfg(feature = "return-audio")]
+    pub fn return_gap(&self) -> Option<&str> {
+        self.quic.as_ref()?.return_gap.as_deref()
+    }
     pub fn audio_stats(&self, session: SessionId) -> Option<SessionAudioStats> {
         self.quic
             .as_ref()?
             .audio
             .get(&session)
             .map(SessionAudio::stats)
+    }
+}
+
+/// Sesiones elegibles para el retorno en esta vuelta.
+///
+/// Es la puerta que usa el runtime, no `should_send` a secas: las features
+/// locales efectivas salen de la config (`audio.return_enabled`), así que el
+/// daemon no se atribuye una capacidad que tiene apagada. Sin mensaje
+/// `capabilities` del peer tampoco hay retorno.
+#[cfg(feature = "return-audio")]
+fn return_targets<S, F>(live: &[S], enabled: bool, mut peer_features: F) -> Vec<S>
+where
+    S: Copy + Eq,
+    F: FnMut(S) -> Option<Vec<Feature>>,
+{
+    let local = effective_local_features(enabled);
+    let mut targets = Vec::new();
+    for session in live.iter().copied() {
+        if peer_features(session).is_some_and(|peer| should_send(&peer, &local, enabled)) {
+            targets.push(session);
+        }
+    }
+    targets
+}
+
+/// Una vuelta del retorno Linux→Android (F8/T24).
+///
+/// Sólo actúa en sesiones que cumplen la puerta [`return_targets`]: la feature
+/// anunciada por el peer, la local efectiva (derivada de
+/// `audio.return_enabled`) y la config encendida. El daemon mantiene **un solo
+/// `MonitorSource`** y sirve el retorno a **una sola sesión a la vez** (ver
+/// `docs/return-audio.md`): repartir el mismo anillo entre varios peers dejaría
+/// a todos con huecos, así que las demás esperan a que la primera cierre. La
+/// secuencia de cada emisor no se mezcla con la de otro ni con el micrófono.
+/// Sin sesión de PipeWire el emisor no se crea y el hueco queda en
+/// `return_gap`; el bombeo del daemon sigue.
+#[cfg(feature = "return-audio")]
+fn pump_return_audio(control: &SharedControl, quic: &mut QuicEndpoint) {
+    let enabled = control.return_enabled();
+    let targets = return_targets(&quic.live, enabled, |session| {
+        quic.server
+            .identity(session)
+            .and_then(|pin| control.peer_features(&pin).map(<[Feature]>::to_vec))
+    });
+    let target = targets.first().copied();
+    quic.return_audio
+        .retain(|session, _| Some(*session) == target);
+    if let Some(session) = target {
+        // Toma el emisor de la sesión o abre el único `MonitorSource` del
+        // daemon; `retain` de arriba garantiza que no quede otro.
+        let mut emitter = match quic.return_audio.remove(&session) {
+            Some(emitter) => emitter,
+            None => {
+                let mut source = match MonitorSource::open(RING_SAMPLES) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        quic.return_gap = Some(error.to_string());
+                        return;
+                    }
+                };
+                if let Err(error) = source.activate() {
+                    quic.return_gap = Some(error.to_string());
+                    return;
+                }
+                match ReturnEmitter::new(source, RETURN_EPOCH, true) {
+                    Ok(emitter) => {
+                        quic.return_gap = None;
+                        emitter
+                    }
+                    Err(error) => {
+                        quic.return_gap = Some(error.to_string());
+                        return;
+                    }
+                }
+            }
+        };
+        if let Some(frame) = emitter.peek() {
+            // Un fallo de envío no tumba el bombeo ni consume la secuencia:
+            // el frame se descarta y el próximo reusa el número, sin hueco
+            // falso.
+            match quic.server.send_audio(session, &frame) {
+                Ok(()) => emitter.commit(),
+                Err(error) => quic.return_gap = Some(error.to_string()),
+            }
+        }
+        quic.return_audio.insert(session, emitter);
     }
 }
 
@@ -617,6 +728,29 @@ fn error_reply(id: Value, code: ErrorCode, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Con `audio.return_enabled = false` el runtime no elige ninguna sesión
+    /// aunque el peer anuncie el retorno: no se abre el monitor ni se emite.
+    /// La puerta deriva las features locales efectivas de la config.
+    #[cfg(feature = "return-audio")]
+    #[test]
+    fn runtime_no_elige_retorno_si_la_config_lo_apaga() {
+        use arl_proto::control::Feature;
+        let peer = [Feature::AudioPcm16_48kMono, Feature::AudioReturnPcm48kMono];
+        assert!(
+            return_targets(&[7u64, 8], false, |_| Some(peer.to_vec())).is_empty(),
+            "config apagada: el peer que anuncia no basta"
+        );
+        assert_eq!(
+            return_targets(&[7u64, 8], true, |_| Some(peer.to_vec())),
+            vec![7, 8],
+            "config encendida y peer que anuncia: sí entra"
+        );
+        assert!(
+            return_targets(&[7u64], true, |_| None).is_empty(),
+            "sin capabilities del peer no hay retorno"
+        );
+    }
 
     #[test]
     fn without_provision_quic_stays_off_and_set_is_refused_without_applicator() {

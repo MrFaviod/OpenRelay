@@ -142,9 +142,9 @@ pub struct SharedControl {
     registry: ControlRegistry,
     policy: Arc<dyn EffectivePolicy>,
     sessions: HashMap<SpkiPin, ControlSession>,
-    /// Capacidad Opus anunciada por cada identidad remota. Sólo se activa con
-    /// un mensaje `capabilities` explícito; sin él el audio Opus se descarta.
-    peer_opus: HashMap<SpkiPin, bool>,
+    /// Features que cada identidad remota anunció. Sólo se llenan con un
+    /// mensaje `capabilities` explícito; sin él no hay audio Opus ni retorno.
+    peer_features: HashMap<SpkiPin, Vec<Feature>>,
     /// Administrador local. Su pin no existe en el transporte.
     local: Option<ControlSession>,
 }
@@ -164,7 +164,7 @@ impl SharedControl {
             registry,
             policy: Arc::from(policy),
             sessions: HashMap::new(),
-            peer_opus: HashMap::new(),
+            peer_features: HashMap::new(),
             local: None,
         }
     }
@@ -177,7 +177,29 @@ impl SharedControl {
     /// ¿La identidad remota anunció `audio.opus-48k-mono`? Sin un mensaje
     /// `capabilities` en esta ejecución la respuesta es `false`.
     pub fn opus_negotiated(&self, pin: &SpkiPin) -> bool {
-        self.peer_opus.get(pin).copied().unwrap_or(false)
+        self.peer_features(pin)
+            .is_some_and(|features| features.contains(&Feature::AudioOpus48kMono))
+    }
+
+    /// Features anunciadas por una identidad remota en esta ejecución.
+    ///
+    /// `None` si esa identidad todavía no envió un mensaje `capabilities`.
+    pub fn peer_features(&self, pin: &SpkiPin) -> Option<&[Feature]> {
+        self.peer_features.get(pin).map(Vec::as_slice)
+    }
+
+    /// ¿La clave local `audio.return_enabled` vale `true`?
+    ///
+    /// Es una clave local del daemon, con default `false`. Si el estado no se
+    /// puede leer, la respuesta es `false`: el retorno no se enciende solo.
+    pub fn return_enabled(&self) -> bool {
+        let Ok(key) = ConfigKey::new("audio.return_enabled") else {
+            return false;
+        };
+        matches!(
+            self.state.snapshot().get(&key),
+            Some(ConfigValue::Bool(true))
+        )
     }
 
     /// Registro con el que se construyó. Sirve para registrar después.
@@ -243,11 +265,8 @@ impl SharedControl {
                 return Ok(());
             };
             if let ControlMessage::Capabilities(capabilities) = &message {
-                let negotiated = capabilities
-                    .capabilities
-                    .features
-                    .contains(&Feature::AudioOpus48kMono);
-                self.peer_opus.insert(pin, negotiated);
+                self.peer_features
+                    .insert(pin, capabilities.capabilities.features.clone());
             }
             let outcome = match self.session_for(&pin) {
                 Some(session) => session.handle(&message, now_ms()),
