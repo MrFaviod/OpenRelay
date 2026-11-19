@@ -654,7 +654,10 @@ impl ProductRuntime {
             .approve(Instant::now(), &outcome)
             .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
         flush_enroll(enroll);
-        self.enroll = None;
+        // La hoja va por QUIC: el cliente necesita ACKs y retransmisiones para
+        // recibirla. Cerrar el socket aquí perdería la respuesta; la ventana se
+        // queda unos segundos y `pump_enroll` la retira al vencer.
+        enroll.expires = Instant::now() + Duration::from_secs(5);
         Ok(json!({
             "fingerprint_hex": pin.to_hex(),
             "approved": true,
@@ -687,7 +690,7 @@ impl ProductRuntime {
             .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
         flush_enroll(enroll);
         self.pairing.reject(pin);
-        self.enroll = None;
+        enroll.expires = Instant::now() + Duration::from_secs(5);
         Ok(json!({"fingerprint_hex": pin.to_hex(), "rejected": true}))
     }
 

@@ -226,8 +226,11 @@ impl From<IdentityError> for EnrollError {
 
 fn enroll_transport() -> Arc<TransportConfig> {
     let mut config = TransportConfig::default();
+    // La aprobación es humana: la conexión queda ociosa mientras el PC espera
+    // el `y`. Un idle timeout corto la cerraba antes de entregar la hoja.
     config.max_idle_timeout(Some(
-        quinn_proto::IdleTimeout::try_from(Duration::from_secs(10)).expect("timeout válido"),
+        quinn_proto::IdleTimeout::try_from(MAX_ENROLL_TTL + Duration::from_secs(60))
+            .expect("timeout válido"),
     ));
     config.max_concurrent_bidi_streams(1u32.into());
     config.max_concurrent_uni_streams(0u32.into());
