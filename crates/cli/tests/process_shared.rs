@@ -106,6 +106,7 @@ fn write_material(dir: &TempDir) -> (SpkiPin, SpkiPin) {
     fs::write(dir.path("client.der"), &client.cert_der).unwrap();
     fs::write(dir.path("client.key"), &client.key_der).unwrap();
     fs::write(dir.path("ca.der"), ca_cert.der().as_ref()).unwrap();
+    fs::write(dir.path("ca.key"), ca_key.serialize_der()).unwrap();
     fs::write(
         dir.path("identities.json"),
         format!(
@@ -133,6 +134,8 @@ fn start(dir: &TempDir, sock: &Path) -> (Daemon, String) {
         .arg(dir.path("server.key"))
         .args(["--client-ca"])
         .arg(dir.path("ca.der"))
+        .args(["--client-ca-key"])
+        .arg(dir.path("ca.key"))
         .args(["--identities"])
         .arg(dir.path("identities.json"))
         .args(["--control-grants"])

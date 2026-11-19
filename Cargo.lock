@@ -50,90 +50,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
-name = "openrelay-audio-core"
-version = "0.1.0"
-
-[[package]]
-name = "openrelay-audio-linux"
-version = "0.1.0"
-dependencies = [
- "alsa",
- "openrelay-audio-core",
- "pipewire",
- "rtrb",
-]
-
-[[package]]
-name = "openrelay-cli"
-version = "0.1.0"
-dependencies = [
- "openrelay-daemon",
- "openrelay-proto",
- "openrelay-transport",
- "rcgen",
- "rustix",
- "rustls",
- "serde_json",
-]
-
-[[package]]
-name = "openrelay-codec"
-version = "0.1.0"
-dependencies = [
- "opus",
-]
-
-[[package]]
-name = "openrelay-daemon"
-version = "0.1.0"
-dependencies = [
- "openrelay-audio-core",
- "openrelay-audio-linux",
- "openrelay-codec",
- "openrelay-dsp",
- "openrelay-proto",
- "openrelay-transport",
- "rcgen",
- "ring",
- "rustls",
- "rustls-pki-types",
- "serde_json",
- "time",
-]
-
-[[package]]
-name = "openrelay-dsp"
-version = "0.1.0"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "openrelay-proto"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "openrelay-transport"
-version = "0.1.0"
-dependencies = [
- "openrelay-audio-core",
- "openrelay-proto",
- "bytes",
- "quinn-proto",
- "rcgen",
- "ring",
- "rustls",
- "rustls-pki-types",
- "serde_json",
- "time",
- "x509-cert",
-]
-
-[[package]]
 name = "audiopus_sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -530,6 +446,91 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "openrelay-audio-core"
+version = "0.1.0"
+
+[[package]]
+name = "openrelay-audio-linux"
+version = "0.1.0"
+dependencies = [
+ "alsa",
+ "openrelay-audio-core",
+ "pipewire",
+ "rtrb",
+]
+
+[[package]]
+name = "openrelay-cli"
+version = "0.1.0"
+dependencies = [
+ "openrelay-daemon",
+ "openrelay-proto",
+ "openrelay-transport",
+ "qrcode",
+ "rcgen",
+ "rustix",
+ "rustls",
+ "serde_json",
+]
+
+[[package]]
+name = "openrelay-codec"
+version = "0.1.0"
+dependencies = [
+ "opus",
+]
+
+[[package]]
+name = "openrelay-daemon"
+version = "0.1.0"
+dependencies = [
+ "openrelay-audio-core",
+ "openrelay-audio-linux",
+ "openrelay-codec",
+ "openrelay-dsp",
+ "openrelay-proto",
+ "openrelay-transport",
+ "rcgen",
+ "ring",
+ "rustls",
+ "rustls-pki-types",
+ "serde_json",
+ "time",
+]
+
+[[package]]
+name = "openrelay-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "openrelay-proto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "openrelay-transport"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "openrelay-audio-core",
+ "openrelay-proto",
+ "quinn-proto",
+ "rcgen",
+ "ring",
+ "rustls",
+ "rustls-pki-types",
+ "serde_json",
+ "time",
+ "x509-cert",
+]
+
+[[package]]
 name = "opus"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -599,6 +600,12 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quinn-proto"

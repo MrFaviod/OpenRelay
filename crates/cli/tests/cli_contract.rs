@@ -44,6 +44,7 @@ fn start_daemon(sock: &Path) -> Daemon {
     let child = Command::new(OPENRELAY)
         .args(["daemon", "--socket"])
         .arg(sock)
+        .arg("--no-quic")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

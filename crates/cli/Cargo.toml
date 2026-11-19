@@ -15,6 +15,7 @@ path = "src/main.rs"
 openrelay-proto = { path = "../proto" }
 openrelay-daemon = { path = "../daemon" }
 serde_json = { version = "=1.0.128", default-features = false, features = ["std"] }
+qrcode = { version = "=0.14.1", default-features = false }
 rustix = { version = "=1.1.6", default-features = false, features = ["std", "net", "process"] }
 
 [dev-dependencies]
