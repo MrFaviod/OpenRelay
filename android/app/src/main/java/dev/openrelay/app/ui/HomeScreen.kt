@@ -22,11 +22,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,14 +44,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.openrelay.app.PairingState
 import dev.openrelay.app.R
 
 /**
  * Pantalla única, sin estado propio. Un solo scroll, margen 24 dp, tope 480 dp.
  *
  * El micrófono de 120 dp es la acción dominante y el texto de debajo dice qué
- * hace: iniciar o detener la captura local. El estado del audio y el de la
- * conexión van aparte. La conexión no tiene botón: no hay nada que configurar.
+ * hace: iniciar o detener la captura local. El estado del audio y el del
+ * conexión van aparte. El emparejamiento vive en su propia tarjeta: QR o URI
+ * pegado, y "Olvidar PC" cuando ya hay provisión.
  * El medidor de nivel aparece sólo con un valor real. La ganancia muestra lo
  * pedido y, aparte, lo efectivo o "no disponible"; mover el slider no pretende
  * cambiar el audio.
@@ -74,7 +81,8 @@ fun HomeScreen(
             MicButton(state, actions)
             MicActionLabel(state)
             AudioStatus(state)
-            ConnectionNote()
+            ConnectionNote(state)
+            PairingSection(state, actions)
             if (state.capture == Capture.Local && state.levelAvailable) {
                 LevelMeter(state.level)
             }
@@ -158,15 +166,100 @@ private fun AudioStatus(state: HomeUiState) {
  * no hay nada que pulsar que la configure.
  */
 @Composable
-private fun ConnectionNote() {
+private fun ConnectionNote(state: HomeUiState) {
+    val text = state.connectionText.ifEmpty {
+        stringResource(R.string.connection_unconfigured)
+    }
     Text(
-        text = stringResource(R.string.connection_unconfigured),
+        text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .semantics { liveRegion = LiveRegionMode.Polite }
             .testTag("connection"),
     )
+}
+
+/**
+ * Emparejamiento: QR o URI pegado, y el estado del enrolamiento. La cámara
+ * sólo se pide al pulsar Escanear; el permiso y el escáner los resuelve la
+ * Activity. Con un PC guardado se ofrece olvidarlo.
+ */
+@Composable
+private fun PairingSection(state: HomeUiState, actions: HomeActions) {
+    var pasted by rememberSaveable { mutableStateOf("") }
+    Card(modifier = Modifier.fillMaxWidth().testTag("pairing")) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.pairing_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            val host = state.pairingHost
+            if (host != null) {
+                Text(
+                    text = stringResource(R.string.pairing_paired, host),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("pairing-paired"),
+                )
+                TextButton(
+                    onClick = actions.onForgetPc,
+                    modifier = Modifier.testTag("pairing-forget"),
+                ) {
+                    Text(text = stringResource(R.string.pairing_forget))
+                }
+            } else {
+                Text(
+                    text = stringResource(R.string.pairing_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = pasted,
+                    onValueChange = { pasted = it },
+                    singleLine = true,
+                    label = { Text(text = stringResource(R.string.pairing_uri_hint)) },
+                    modifier = Modifier.fillMaxWidth().testTag("pairing-uri"),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = actions.onScanQr,
+                        modifier = Modifier.testTag("pairing-scan"),
+                    ) {
+                        Text(text = stringResource(R.string.pairing_scan))
+                    }
+                    Button(
+                        onClick = { actions.onPairUri(pasted) },
+                        enabled = pasted.isNotBlank(),
+                        modifier = Modifier.testTag("pairing-connect"),
+                    ) {
+                        Text(text = stringResource(R.string.pairing_connect))
+                    }
+                }
+            }
+            when (val pairing = state.pairingState) {
+                is PairingState.Waiting -> Text(
+                    text = stringResource(R.string.pairing_waiting),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        .testTag("pairing-status"),
+                )
+                is PairingState.Failed -> Text(
+                    text = stringResource(R.string.pairing_failed, pairing.message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        .testTag("pairing-status"),
+                )
+                else -> Unit
+            }
+        }
+    }
 }
 
 @Composable

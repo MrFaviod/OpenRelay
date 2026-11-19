@@ -24,3 +24,7 @@ rcgen = { version = "=0.13.1", default-features = false, features = ["crypto", "
 rustls = { version = "=0.23.22", default-features = false, features = ["std", "ring"] }
 rustls-pki-types = "=1.16.0"
 ring = { version = "=0.17.8", default-features = false, features = ["alloc", "std"] }
+
+[features]
+# Se enciende cuando crates/transport expone EnrollOutcome; build.sh lo detecta.
+enroll-outcome = []

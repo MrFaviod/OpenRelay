@@ -14,6 +14,26 @@
 
     <!-- La conexión no es un botón: no hay nada que configurar todavía. -->
     <string name="connection_unconfigured">La conexión al PC aún no está configurada.</string>
+    <string name="connection_paired">Emparejado con %1$s. Al iniciar la captura se enviará al PC.</string>
+
+    <!-- Enlace con el PC durante la captura. -->
+    <string name="link_connecting">Conectando con %1$s…</string>
+    <string name="link_sending">Enviando a %1$s</string>
+    <string name="link_offline">Sin conexión: %1$s</string>
+    <string name="link_unknown_error">el PC no respondió</string>
+
+    <!-- Emparejamiento por QR o URI pegado. -->
+    <string name="pairing_title">Emparejar con PC</string>
+    <string name="pairing_body">Escanea el QR que muestra el PC o pega el URI openrelay://pair.</string>
+    <string name="pairing_scan">Escanear QR</string>
+    <string name="pairing_uri_hint">openrelay://pair?v=1&amp;h=…</string>
+    <string name="pairing_connect">Emparejar</string>
+    <string name="pairing_waiting">Esperando aprobación en la PC…</string>
+    <string name="pairing_paired">Emparejado con %1$s</string>
+    <string name="pairing_failed">No se pudo emparejar: %1$s</string>
+    <string name="pairing_forget">Olvidar PC</string>
+    <string name="pairing_uri_invalid">URI de emparejamiento no válido</string>
+    <string name="pairing_camera_denied">Sin cámara puedes pegar el URI a mano.</string>
 
     <string name="cd_mic_start">Iniciar captura local</string>
     <string name="cd_mic_stop">Detener captura</string>

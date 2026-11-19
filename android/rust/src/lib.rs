@@ -343,6 +343,7 @@ fn bytes_of(value: JValueOwned, env: &JNIEnv) -> Result<Vec<u8>, String> {
 
 mod audio;
 mod client;
+mod enroll;
 mod return_audio;
 
 pub(crate) use client::{BridgeEvent, ProductClient, Provision};
@@ -356,7 +357,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Mutex, OnceLock};
 
 use jni::objects::JString;
-use jni::sys::{jboolean, jdouble, jint, jlong, jstring};
+use jni::sys::{jboolean, jdouble, jint, jlong, jobjectArray, jstring};
 
 /// Handles de producto. Nunca un puntero crudo hacia Java: el id es opaco.
 fn sessions() -> &'static Mutex<HashMap<u64, ProductClient>> {
@@ -779,6 +780,69 @@ mod exports {
             .unwrap_or_default();
         ret_string(&mut env, text)
     }
+
+    /// Emparejamiento desde el QR: `byte[][]` de 3 elementos
+    /// `[hoja DER, CA de sesión DER, puerto BE16]`, o null y el motivo por
+    /// `nativeLastError`. Bloquea mientras el usuario aprueba en el PC.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_openrelay_app_PairingFlow_nativeEnroll(
+        mut env: JNIEnv,
+        _class: JClass,
+        host: JString,
+        port: jint,
+        pin_hex: JString,
+        token_hex: JString,
+        spki: JByteArray,
+    ) -> jobjectArray {
+        let result = (|| {
+            let host = jtext(&mut env, &host)?;
+            let pin_hex = jtext(&mut env, &pin_hex)?;
+            let token_hex = jtext(&mut env, &token_hex)?;
+            let spki = jbytes(&env, JObject::from(spki))?;
+            if !(1..=65535).contains(&port) {
+                return Err("puerto de enrolamiento fuera de rango".to_string());
+            }
+            crate::enroll::enroll(&host, port as u16, &pin_hex, &token_hex, spki)
+        })();
+        match result {
+            Ok(enrolled) => match enrolled_array(&mut env, enrolled) {
+                Ok(array) => array,
+                Err(error) => {
+                    remember_error(error);
+                    std::ptr::null_mut()
+                }
+            },
+            Err(error) => {
+                remember_error(error);
+                std::ptr::null_mut()
+            }
+        }
+    }
+}
+
+/// `byte[][]` con hoja, CA y puerto BE16. El orden lo fija `Pairing.kt`.
+fn enrolled_array(
+    env: &mut JNIEnv,
+    enrolled: crate::enroll::Enrolled,
+) -> Result<jobjectArray, String> {
+    let leaf = env
+        .byte_array_from_slice(&enrolled.leaf_der)
+        .map_err(text)?;
+    let ca = env.byte_array_from_slice(&enrolled.ca_der).map_err(text)?;
+    let port = env
+        .byte_array_from_slice(&enrolled.port.to_be_bytes())
+        .map_err(text)?;
+    let array = env
+        .new_object_array(3, "[B", JObject::null())
+        .map_err(text)?;
+    env.set_object_array_element(&array, 0, leaf)
+        .map_err(text)?;
+    env.set_object_array_element(&array, 1, ca)
+        .map_err(text)?;
+    env.set_object_array_element(&array, 2, port)
+        .map_err(text)?;
+    Ok(array.into_raw())
 }
 
 fn call_code(id: u64, f: impl FnOnce(&ProductClient) -> Result<(), String>) -> jint {

@@ -1,5 +1,6 @@
 package dev.openrelay.app
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -7,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -22,10 +24,14 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import dev.openrelay.app.ui.OpenRelayTheme
 import dev.openrelay.app.ui.Capture
 import dev.openrelay.app.ui.Connection
@@ -104,7 +110,24 @@ private fun HomeRoute(resumeTick: Int) {
     val level by collect(StreamService.level)
     val errorText by collect(StreamService.errorState)
     val notificationWarning by collect(StreamService.notificationWarning)
-    val versionName = androidx.compose.runtime.remember { installedVersionName(context) }
+    val linkText by collect(StreamService.link)
+    val pairingState by collect(PairingFlow.state)
+    val pairing = remember(resumeTick, pairingState) { PairingStore(context).load() }
+    val versionName = remember { installedVersionName(context) }
+
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents
+        if (!contents.isNullOrBlank()) startPairing(context, contents)
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            scanLauncher.launch(scanOptions(context))
+        } else {
+            Toast.makeText(context, R.string.pairing_camera_denied, Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Al volver de Ajustes el permiso puede haber cambiado sin un callback.
     LaunchedEffect(resumeTick, running) {
@@ -140,6 +163,11 @@ private fun HomeRoute(resumeTick: Int) {
         micGranted = Permissions.hasRecordAudio(context),
         notificationWarning = notificationWarning,
         notificationRequestable = notificationRequestable,
+        linkText = linkText.ifEmpty {
+            pairing?.let { context.getString(R.string.connection_paired, it.host) } ?: ""
+        },
+        pairingHost = pairing?.host,
+        pairingState = pairingState,
     ).copy(versionName = versionName)
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -170,6 +198,19 @@ private fun HomeRoute(resumeTick: Int) {
                         openNotificationSettings(context)
                     }
                 },
+                onScanQr = {
+                    val granted = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.CAMERA,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (granted) {
+                        scanLauncher.launch(scanOptions(context))
+                    } else {
+                        cameraLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
+                onPairUri = { raw -> startPairing(context, raw) },
+                onForgetPc = { PairingFlow.forget(context) },
             ),
             modifier = Modifier.padding(innerPadding),
         )
@@ -182,6 +223,23 @@ private fun onMic(context: Context, running: Boolean, ask: (String) -> Unit) {
         Permissions.hasRecordAudio(context) -> StreamService.start(context)
         else -> ask(Permissions.RECORD_AUDIO)
     }
+}
+
+/** QR del PC: sólo QR, sin sonido y con el prompt en español. */
+private fun scanOptions(context: Context): ScanOptions = ScanOptions()
+    .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+    .setPrompt(context.getString(R.string.pairing_scan))
+    .setBeepEnabled(false)
+    .setOrientationLocked(false)
+
+/** Valida el URI antes de tocar el Keystore o la red; si no, avisa. */
+private fun startPairing(context: Context, raw: String) {
+    val uri = PairingUriParser.parseOrNull(raw)
+    if (uri == null) {
+        Toast.makeText(context, R.string.pairing_uri_invalid, Toast.LENGTH_LONG).show()
+        return
+    }
+    PairingFlow.start(context, uri)
 }
 
 /**
@@ -211,12 +269,18 @@ internal fun present(
     micGranted: Boolean,
     notificationWarning: String = "",
     notificationRequestable: Boolean = false,
+    linkText: String = "",
+    pairingHost: String? = null,
+    pairingState: PairingState = PairingState.Idle,
 ): HomeUiState {
     val fresh = dropStaleMicDenial(local, micGranted, running)
     val serviceError = errorText?.let { UiError(ErrorKind.CaptureFailed, ErrorAction.Retry) }
     return fresh.copy(
         capture = if (running) Capture.Local else Capture.Idle,
         connection = Connection.Unavailable,
+        connectionText = linkText,
+        pairingHost = pairingHost,
+        pairingState = pairingState,
         muted = muted,
         level = if (muted) 0f else level.coerceIn(0f, 1f),
         levelAvailable = running,

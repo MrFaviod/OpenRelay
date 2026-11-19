@@ -183,27 +183,103 @@ class StreamService : Service() {
 
     private fun readLoop(engine: AudioEngine) {
         val buf = ShortArray(FRAME_SAMPLES)
-        while (!stopRequested.get()) {
-            if (_muted.value) {
-                // Mute efectivo: se drena y no se publica nivel. El nativo sigue abierto.
-                val dropped = engine.read(buf)
-                if (dropped < 0) {
-                    reportReadError(dropped)
-                    return
-                }
-                _level.set(0f)
-                sleepQuiet(POLL_MS)
-                continue
+        val pairing = PairingStore(this).load()
+        var link: SessionClient? = null
+        var backoffMs = BACKOFF_MIN_MS
+        var nextAttempt = 0L
+        if (pairing != null) {
+            _link.set(getString(R.string.link_connecting, pairing.host))
+            link = openLink(pairing)
+            if (link == null) {
+                backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
+                nextAttempt = System.currentTimeMillis() + backoffMs
             }
-            val n = engine.read(buf)
-            when {
-                n < 0 -> {
-                    reportReadError(n)
-                    return
+        } else {
+            _link.set("")
+        }
+        try {
+            while (!stopRequested.get()) {
+                if (pairing != null && link == null && System.currentTimeMillis() >= nextAttempt) {
+                    _link.set(getString(R.string.link_connecting, pairing.host))
+                    link = openLink(pairing)
+                    if (link != null) {
+                        backoffMs = BACKOFF_MIN_MS
+                    } else {
+                        backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
+                        nextAttempt = System.currentTimeMillis() + backoffMs
+                    }
                 }
-                n == 0 -> sleepQuiet(POLL_MS)
-                else -> _level.set(rms(buf, n))
+                if (_muted.value) {
+                    // Mute efectivo: se drena y no se publica nivel. El nativo sigue abierto.
+                    val dropped = engine.read(buf)
+                    if (dropped < 0) {
+                        reportReadError(dropped)
+                        return
+                    }
+                    _level.set(0f)
+                    sleepQuiet(POLL_MS)
+                    continue
+                }
+                val n = engine.read(buf)
+                when {
+                    n < 0 -> {
+                        reportReadError(n)
+                        return
+                    }
+                    n == 0 -> sleepQuiet(POLL_MS)
+                    else -> {
+                        _level.set(rms(buf, n))
+                        val active = link ?: continue
+                        val frame = if (n == buf.size) buf else buf.copyOf(n)
+                        if (active.sendAudio(frame) != NATIVE_OK) {
+                            // Un fallo de envío no corta el micrófono local:
+                            // se cierra el enlace y se reintenta con backoff.
+                            val detail = SessionClient.lastOpenError().ifEmpty {
+                                getString(R.string.link_unknown_error)
+                            }
+                            active.close()
+                            link = null
+                            _link.set(getString(R.string.link_offline, detail))
+                            nextAttempt = System.currentTimeMillis() + backoffMs
+                        }
+                    }
+                }
             }
+        } finally {
+            link?.close()
+            _link.set("")
+        }
+    }
+
+    /**
+     * Abre la sesión con la provisión del emparejamiento y espera la
+     * autorización TLS. Null si el PC no responde o rechaza.
+     */
+    private fun openLink(pairing: Pairing): SessionClient? {
+        return try {
+            val signer = KeystoreSigner()
+            val endpoint = if (pairing.host.contains(':')) {
+                "[${pairing.host}]:${pairing.port}"
+            } else {
+                "${pairing.host}:${pairing.port}"
+            }
+            val client = SessionClient.open(
+                signer,
+                endpoint,
+                pairing.serverName,
+                pairing.caDer,
+                pairing.serverPinHex,
+                arrayOf(pairing.leafDer),
+            ) ?: return null
+            if (client.waitAuthorized() != NATIVE_OK) {
+                client.close()
+                return null
+            }
+            _link.set(getString(R.string.link_sending, pairing.host))
+            client
+        } catch (t: Throwable) {
+            Log.w(TAG, "session open failed: " + t.javaClass.simpleName)
+            null
         }
     }
 
@@ -505,6 +581,8 @@ class StreamService : Service() {
         private const val RETURN_THREAD_NAME = "openrelay-return"
         private const val RETURN_POLL_MS = 20L
         private const val POLL_MS = 20L
+        private const val BACKOFF_MIN_MS = 500L
+        private const val BACKOFF_MAX_MS = 4_000L
         private const val NATIVE_OK = 0
         private const val ERR_STATE = -2
         private const val ERR_BUSY = -5
@@ -540,6 +618,7 @@ class StreamService : Service() {
         private val _level = AppState(0f)
         private val _errorState = AppState<String?>(null)
         private val _notificationWarning = AppState("")
+        private val _link = AppState("")
 
         /** true sólo tras startForeground aceptado y native start OK. */
         val running: AppState<Boolean> = _running
@@ -559,6 +638,12 @@ class StreamService : Service() {
          * La UI lo pinta; no es un error de captura.
          */
         val notificationWarning: AppState<String> = _notificationWarning
+
+        /**
+         * Estado del enlace con el PC: vacío si no hay emparejamiento,
+         * "Conectando…", "Enviando a <host>" o "Sin conexión: <motivo>".
+         */
+        val link: AppState<String> = _link
 
         fun start(context: Context) {
             stopRequestedFlag.set(false)
@@ -661,6 +746,7 @@ class StreamService : Service() {
             _level.set(0f)
             _errorState.set(null)
             _notificationWarning.set("")
+            _link.set("")
             ActivityPresence.shown.set(false)
         }
     }
