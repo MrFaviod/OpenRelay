@@ -204,6 +204,7 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 - `mic.start`, `mic.stop` y `permission.request` son acciones **locales del dispositivo Android**; no tienen tipo de mensaje en v1. Un cliente que las pida por control recibe `unsupported` (o `local_key` si la petición es de configuración).
 - `config_keys` declara alcance `shared`, `local` o `readonly`; una clave local no se comparte entre dispositivos.
 - `audio.pcm16-48k-mono` es el perfil de audio base y debe anunciarse para recibir audio. `audio.opus-48k-mono` es opcional: habilita el perfil `type=2` sólo si **ambos** extremos la anuncian; si falta en cualquiera, se usa PCM16 (§8.3).
+- `audio.return-pcm16-48k-mono` es opcional y declara el **retorno** Linux→Android (§8.4): sólo se envía si **ambos** extremos la anuncian y la clave local `audio.return_enabled` vale `true`.
 
 ## 8. Framing de audio
 
@@ -265,6 +266,16 @@ Extensión compatible de v1 para transportar Opus sin cambiar el perfil base. La
 - **Fuera de contrato:** bitrate, complexity, DTX/FEC, pre-skip del encoder y cualquier otro parámetro interno de Opus.
 
 El esquema [`contracts/audio-frame-v1.schema.json`](../contracts/audio-frame-v1.schema.json) mantiene el descriptor raíz para type=1 y describe type=2 en `$defs.audio_frame_opus`; `x-audio-profiles` enumera ambos perfiles y su capacidad.
+
+### 8.4 Retorno Linux→Android (`type=1`, /)
+
+Dirección inversa, opt-in y apagada por defecto (, U18 del 2026-11-19):
+
+- Reutiliza el frame `type=1` de §8 sin cambios: PCM16LE, 48 kHz, mono, 240 muestras y 480 bytes de payload. No hay perfil nuevo ni cabecera nueva.
+- Sólo se envía si **ambos** extremos anuncian `audio.return-pcm16-48k-mono` en `capabilities` **y** la clave local del daemon `audio.return_enabled` vale `true`. Si falta cualquiera de las dos condiciones, el daemon **no envía ni un datagrama** de retorno.
+- El retorno es un flujo independiente del micrófono Android→Linux: tiene su propia `epoch` y `seq`, y nunca se mezcla con el flujo de captura en el mismo datagrama ni en la misma época.
+- El extremo Android debe mostrar un aviso de eco/feedback antes de activar el retorno; sin ese aviso no se activa. La captura de audio de apps Android queda fuera de alcance.
+- Cómo se apaga y qué queda fuera de alcance: [`return-audio.md`](return-audio.md).
 
 ## 9. Límites exactos v1
 

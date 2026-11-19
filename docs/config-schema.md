@@ -22,6 +22,7 @@
 | `audio.gain_db` | number | `-24.0..=24.0`, múltiplo de `0.5` | `0.0` | shared | Ganancia de captura; el valor efectivo puede quedar limitado por el dispositivo. |
 | `audio.mute` | boolean | `true` / `false` | `false` | shared | Silencia el flujo; no detiene el micrófono ni el FGS. |
 | `audio.jitter_target_ms` | integer | `5..=40` | `10` | shared | Objetivo del jitter buffer del receptor Linux. |
+| `audio.return_enabled` | boolean | `true` / `false` | `false` | **local** | Habilita el retorno de audio Linux→Android (,); apagado por defecto. Ver [`return-audio.md`](return-audio.md). |
 | `ui.theme` | string | `system`, `light`, `dark` | `system` | **local** | Preferencia visual del dispositivo; no se comparte. |
 | `ui.text_scale` | number | `1.0..=2.0` | `1.0` | **local** | Accesibilidad local; no se comparte. |
 | `device.local_volume` | number | `0.0..=1.0` | `1.0` | **local** | Volumen local del dispositivo; no es ganancia del flujo. |
@@ -32,6 +33,7 @@ Reglas:
 - Las claves **local** y **readonly** nunca se aceptan por el canal remoto: `config.set` sobre ellas devuelve `local_key` (local) o `denied` (readonly) y **no** aplica nada. El panel Android las gestiona en su propio almacenamiento; la CLI local puede leerlas si el daemon las expone, pero no forman parte de la configuración compartida.
 - `mic.start`, `mic.stop` y `permission.request` **no son claves de configuración** ni acciones remotas. Son acciones locales del dispositivo Android; no existe mensaje de control que las ejecute en v1.
 - `audio.gain_db` no es `device.local_volume`: la primera afecta al flujo capturado; la segunda es reproducción local y no se comparte.
+- `audio.return_enabled` es **local del daemon** y no se comparte: el panel Android no la escribe por el canal remoto. El retorno además exige que ambos extremos anuncien la feature `audio.return-pcm16-48k-mono`; sin las dos condiciones el daemon no envía audio de retorno (§ [return-audio.md](return-audio.md)).
 - El valor efectivo de `audio.sample_rate_hz` y `audio.frame_duration_ms` se publica para diagnóstico; en v1 debe ser 48000 y 5. Si el dispositivo no puede, la sesión no se autoriza con ese formato (no se inventa un remuestreo silencioso en el contrato).
 
 ## 3. Ejemplo de intercambio
@@ -76,6 +78,7 @@ frame_duration_ms = 5
 gain_db = 0.0
 mute = false
 jitter_target_ms = 10
+return_enabled = false
 
 [ui]
 theme = "system"

@@ -1231,7 +1231,7 @@ fn capabilities_declare_contract_limits_and_all_scopes() {
     assert_eq!(capabilities.limits.max_reorder_ms, 20);
     assert_eq!(capabilities.limits.max_config_keys, 32);
     assert_eq!(capabilities.limits.max_request_id_len, 64);
-    assert_eq!(capabilities.config_keys.len(), 9);
+    assert_eq!(capabilities.config_keys.len(), 10);
     let mut scopes: Vec<&str> = capabilities
         .config_keys
         .iter()
@@ -1249,6 +1249,70 @@ fn capabilities_declare_contract_limits_and_all_scopes() {
             .unwrap()
             .value_type,
         ValueType::Number
+    );
+}
+
+#[test]
+fn audio_return_feature_parses_serializes_and_rejects_unknown_wire_string() {
+    assert_eq!(
+        Feature::AudioReturnPcm48kMono.as_str(),
+        "audio.return-pcm16-48k-mono"
+    );
+    // Serialización: el nombre exacto del contrato viaja en `features` y el
+    // mensaje vuelve al mismo valor tipado.
+    let mut capabilities = Capabilities::from_peer(
+        "device-0001",
+        PeerRole::LinuxDaemon,
+        vec![RemoteAction::ConfigRead],
+    );
+    capabilities.features.push(Feature::AudioReturnPcm48kMono);
+    let message = capabilities_message(0, capabilities);
+    let encoded = wire::encode_message(&message).expect("encode");
+    assert!(String::from_utf8_lossy(&encoded[4..]).contains("\"audio.return-pcm16-48k-mono\""));
+    assert_eq!(wire::decode_message(&encoded).expect("decode"), message);
+
+    // Parseo: el string de wire conocido se acepta.
+    let base = |features: &str| {
+        format!(
+            r#"{{"schema_version":"arl.control/v1","type":"capabilities","request_id":"c-1","revision":0,"payload":{{"schema_version":"arl.capabilities/v1","device_id":"device-0001","role":"android","features":{features},"remote_actions":["config.read"],"limits":{{"max_control_payload_bytes":16384,"max_audio_datagram_bytes":1200,"max_reorder_ms":20,"max_config_keys":32,"max_request_id_len":64}},"config_keys":[]}}}}"#
+        )
+    };
+    let valid = base(r#"["audio.return-pcm16-48k-mono"]"#);
+    match wire::decode_message(&frame_len(valid.as_bytes())).expect("feature válida") {
+        ControlMessage::Capabilities(message) => assert_eq!(
+            message.capabilities.features,
+            vec![Feature::AudioReturnPcm48kMono]
+        ),
+        other => panic!("se esperaba capabilities, llegó {other:?}"),
+    }
+    // Parseo: cualquier string desconocido se rechaza con `invalid`.
+    for unknown in [
+        "audio.return-pcm16-48k-stereo",
+        "audio.return-48k-mono",
+        "audio.return-pcm16-48k-mono.v2",
+    ] {
+        let message = base(&format!(r#"["{unknown}"]"#));
+        assert_eq!(
+            wire::decode_message(&frame_len(message.as_bytes()))
+                .unwrap_err()
+                .code(),
+            ErrorCode::Invalid,
+            "string desconocido {unknown:?}"
+        );
+    }
+}
+
+#[test]
+fn audio_return_enabled_is_off_by_default_and_local_only() {
+    let spec = config_keys()
+        .iter()
+        .find(|spec| spec.name == "audio.return_enabled")
+        .expect("clave declarada");
+    assert_eq!(spec.scope, ConfigScope::Local);
+    assert_eq!(spec.value_type, ValueType::Boolean);
+    assert_eq!(
+        ConfigState::new().get(&key("audio.return_enabled")),
+        Some(&ConfigValue::Bool(false))
     );
 }
 

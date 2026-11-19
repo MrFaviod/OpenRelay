@@ -298,7 +298,7 @@ pub struct KeySpec {
 }
 
 /// Catálogo completo de claves v1, en orden de declaración.
-pub const CONFIG_KEY_SPECS: [KeySpec; 9] = [
+pub const CONFIG_KEY_SPECS: [KeySpec; 10] = [
     KeySpec {
         name: "audio.sample_rate_hz",
         scope: ConfigScope::Shared,
@@ -341,6 +341,17 @@ pub const CONFIG_KEY_SPECS: [KeySpec; 9] = [
         value_type: ValueType::Integer,
         minimum: Some(5.0),
         maximum: Some(40.0),
+        step: None,
+        max_chars: None,
+    },
+    KeySpec {
+        // Retorno de audio Linux→Android (F8/T24, D-08). Clave local del
+        // daemon: el panel Android no la escribe por el canal remoto.
+        name: "audio.return_enabled",
+        scope: ConfigScope::Local,
+        value_type: ValueType::Boolean,
+        minimum: None,
+        maximum: None,
         step: None,
         max_chars: None,
     },
@@ -636,6 +647,7 @@ fn default_value(key: &str) -> ConfigValue {
         "audio.gain_db" => ConfigValue::Number(0.0),
         "audio.mute" => ConfigValue::Bool(false),
         "audio.jitter_target_ms" => ConfigValue::Integer(10),
+        "audio.return_enabled" => ConfigValue::Bool(false),
         "ui.theme" => ConfigValue::String("system".into()),
         "ui.text_scale" => ConfigValue::Number(1.0),
         "device.local_volume" => ConfigValue::Number(1.0),
@@ -839,6 +851,8 @@ pub enum Feature {
     AudioPcm16_48kMono,
     /// `audio.opus-48k-mono`.
     AudioOpus48kMono,
+    /// `audio.return-pcm16-48k-mono` (retorno Linux→Android, F8/T24).
+    AudioReturnPcm48kMono,
     /// `enrollment.v1`.
     EnrollmentV1,
     /// `session.v1`.
@@ -852,6 +866,7 @@ impl Feature {
             Feature::ControlV1 => "control.v1",
             Feature::AudioPcm16_48kMono => "audio.pcm16-48k-mono",
             Feature::AudioOpus48kMono => "audio.opus-48k-mono",
+            Feature::AudioReturnPcm48kMono => "audio.return-pcm16-48k-mono",
             Feature::EnrollmentV1 => "enrollment.v1",
             Feature::SessionV1 => "session.v1",
         }
