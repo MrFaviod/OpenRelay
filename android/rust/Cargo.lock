@@ -3,55 +3,6 @@
 version = 3
 
 [[package]]
-name = "openrelay-audio-core"
-version = "0.1.0"
-
-[[package]]
-name = "openrelay-bridge"
-version = "0.0.0"
-dependencies = [
- "openrelay-audio-core",
- "openrelay-codec",
- "openrelay-proto",
- "openrelay-transport",
- "jni",
- "rcgen",
- "ring",
- "rustls",
- "rustls-pki-types",
-]
-
-[[package]]
-name = "openrelay-codec"
-version = "0.1.0"
-dependencies = [
- "opus",
-]
-
-[[package]]
-name = "openrelay-proto"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "openrelay-transport"
-version = "0.1.0"
-dependencies = [
- "openrelay-audio-core",
- "openrelay-proto",
- "bytes",
- "quinn-proto",
- "ring",
- "rustls",
- "rustls-pki-types",
- "serde_json",
- "x509-cert",
-]
-
-[[package]]
 name = "audiopus_sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -318,6 +269,55 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "openrelay-audio-core"
+version = "0.2.0"
+
+[[package]]
+name = "openrelay-bridge"
+version = "0.0.0"
+dependencies = [
+ "jni",
+ "openrelay-audio-core",
+ "openrelay-codec",
+ "openrelay-proto",
+ "openrelay-transport",
+ "rcgen",
+ "ring",
+ "rustls",
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "openrelay-codec"
+version = "0.2.0"
+dependencies = [
+ "opus",
+]
+
+[[package]]
+name = "openrelay-proto"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "openrelay-transport"
+version = "0.2.0"
+dependencies = [
+ "bytes",
+ "openrelay-audio-core",
+ "openrelay-proto",
+ "quinn-proto",
+ "ring",
+ "rustls",
+ "rustls-pki-types",
+ "serde_json",
+ "x509-cert",
+]
 
 [[package]]
 name = "opus"

@@ -4,7 +4,12 @@
 # Uso: ./build.sh   (NDK y RUST_TOOLCHAIN sobrescribibles por entorno)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-NDK="${NDK:-${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk/27.2.12479018}}"
+NDK="${NDK:-${ANDROID_NDK_HOME:-}}"
+# Sin NDK explícito, usa el que acompaña al SDK de Android si está definido.
+if [ -z "$NDK" ] && [ -n "${ANDROID_HOME:-}" ]; then
+    NDK="$ANDROID_HOME/ndk/27.2.12479018"
+fi
+NDK="${NDK:-$HOME/Android/Sdk/ndk/27.2.12479018}"
 [ -d "$NDK" ] || { echo "NDK no encontrado: $NDK (exporta NDK=/ruta/al/ndk)" >&2; exit 1; }
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 TOOLCHAIN="${RUST_TOOLCHAIN:-1.80.1}"

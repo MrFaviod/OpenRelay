@@ -8,7 +8,7 @@
 # against the release SHA256SUMS before anything is installed.
 #
 # Environment:
-#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.1.0
+#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.2.0
 #   OPENRELAY_BIN_DIR   install directory (default: ~/.local/bin)
 #   OPENRELAY_NO_UNIT=1 skip the systemd --user unit
 #   OPENRELAY_UNINSTALL=1 remove a previous install and exit

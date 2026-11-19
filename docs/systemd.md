@@ -70,16 +70,18 @@ supervisa:
 
 `Restart=on-failure` reinicia el proceso si falla, no tras una parada limpia.
 No se pasan `--socket` ni `--quic`: los valores por defecto son los mismos que
-en primer plano. Si se necesita QUIC, se edita la unidad para añadir los cinco
-archivos de provisión; siguen siendo conexiones entrantes.
+en primer plano. En el primer arranque el daemon aprovisiona su identidad en
+`~.config/openrelay` y escucha sesiones QUIC en `0.0.0.0:47000`; la unidad
+permite escribir ese directorio.
 
 ## Hardening y por qué no rompe el arranque
 
 - `NoNewPrivileges=yes`: el daemon no eleva privilegios.
 - `ProtectSystem=strict`: `/usr`, `/etc`, `/boot` y el resto del sistema quedan
-  de sólo lectura. `ReadWritePaths=%t` devuelve escritura sólo al directorio de
-  ejecución del usuario, que es donde el daemon crea `openrelay/control.sock`. El
-  estado de control vive en memoria; no hay otro archivo que escribir.
+  de sólo lectura. `ReadWritePaths=%t %h.config` devuelve escritura al
+  directorio de ejecución (donde vive `openrelay/control.sock`) y a `~.config`
+  donde el daemon guarda su identidad. `ExecStartPre` crea
+  `~.config/openrelay` con modo 0700 antes de arrancar.
 - `PrivateTmp=yes`: `/tmp` privado, sin rutas compartidas entre servicios.
 - `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`: AF_UNIX para el socket
   local; AF_INET/AF_INET6 para el endpoint QUIC si se aprovisiona.
@@ -87,10 +89,11 @@ archivos de provisión; siguen siendo conexiones entrantes.
   `RestrictSUIDSGID`, `LockPersonality`, `SystemCallArchitectures=native` y
   `UMask=0077` cierran superficie sin tocar el camino de arranque.
 
-El daemon no necesita `$HOME` para arrancar: sin `--quic` no lee archivos de
-identidad. Si se añaden a la unidad rutas bajo `$HOME`, siguen siendo lecturas
-y `ProtectSystem=strict` no las bloquea. Si se cambiara el socket a una ruta
-fuera de `%t`, habría que añadirla a `ReadWritePaths`.
+El daemon necesita `$HOME` para guardar su identidad (`~.config/openrelay`):
+la unidad ya lo declara en `ReadWritePaths` y crea el directorio en
+`ExecStartPre`. Si se mueve el estado con `--state-dir` o `XDG_CONFIG_HOME`
+hay que añadir esa ruta a `ReadWritePaths`. Si se cambiara el socket a una ruta
+fuera de `%t`, habría que añadirla también.
 
 ## Desinstalar
 
