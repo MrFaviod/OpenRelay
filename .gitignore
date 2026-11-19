@@ -1,13 +1,13 @@
-# Rust (desde F1; Cargo.lock sí se versiona)
+# Rust build output (Cargo.lock is tracked)
 /target/
 **/target/
 *.rs.bk
 
-# Fuzz (T25): corpus y artefactos locales; /fuzz/target/ ya cae en **/target/
+# cargo-fuzz local corpus and crash artifacts (/fuzz/target/ is covered by **/target/)
 /fuzz/corpus/
 /fuzz/artifacts/
 
-# Android (desde T12; hoy no existe Gradle)
+# Android build output and local SDK/IDE state
 /android/.gradle/
 /android/.idea/
 /android/local.properties
@@ -16,39 +16,40 @@
 *.apk
 *.aab
 
-# Artefactos y temporales
+# Local artifacts and scratch files
 *.log
 *.tmp
 .scratch/
 /tmp/
 /artifacts/
 
-# Release local (T26): artefactos pesados fuera de git; el manifiesto sí se versiona
+# Local release output; releases are built in CI
 /dist/
 
-# Herramientas de verificación (Python; no hay producto Python)
+# Python caches (verification tooling only; the product has no Python)
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Entorno aislado para la dependencia de test (jsonschema; nunca global)
+# Isolated virtualenv for the test-only jsonschema dependency
 /.venv/
 /tools/.venv/
 
-# Editores y sistema
+# Editors and OS files
 .DS_Store
 .idea/
 .vscode/
 *.swp
 *~
 
-# Secretos y material de identidad (nunca versionar)
+# Secrets and identity material (never commit)
 *.pem
 *.key
 *.p12
 *.jks
 *.keystore
 
-# Estado local del daemon / configuración de usuario
+# Local daemon state and per-machine configuration
 /.openrelay/
-config.toml
+/config.toml
+/.cargo/config.toml
