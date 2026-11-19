@@ -112,7 +112,10 @@ class StreamService : Service() {
     }
 
     override fun onDestroy() {
+        // Primero la bandera (el bucle de retorno la mira) y después el
+        // retorno: su stop espera al hilo antes de tocar la salida.
         requestStop()
+        detachReturnPlayback()
         joinWorker()
         super.onDestroy()
     }
@@ -207,6 +210,112 @@ class StreamService : Service() {
     private fun reportReadError(rc: Int) {
         Log.e(TAG, "native read rc=$rc")
         fail(getString(R.string.stream_error_engine) + " (read $rc)")
+    }
+
+    /**
+     * Retorno Linux→Android sobre la sesión activa. Sólo arranca si
+     * [PlaybackEngine.start] acepta (opt-in y aviso de eco confirmados):
+     * `start()` aplica la misma política que `PlaybackPolicy.canStart()` y
+     * devuelve [PlaybackEngine.ERROR_FEEDBACK_NOT_ACKNOWLEDGED] si falta
+     * cualquiera de las dos. Sin eso no hay hilo ni salida.
+     *
+     * El toggle y el aviso visual siguen en HOLD: hoy nadie llama a
+     * [attachReturnPlayback], así que el servicio se comporta igual que antes.
+     */
+    internal class ReturnPump(
+        private val session: SessionClient,
+        private val playback: PlaybackEngine,
+    ) {
+        @Volatile private var running = false
+        @Volatile private var closed = false
+        private var thread: Thread? = null
+
+        /** true si hay hilo de retorno. Sin política favorable devuelve false. */
+        fun start(): Boolean {
+            if (closed) return false
+            if (thread?.isAlive == true) return true
+            if (playback.start() != NATIVE_OK) {
+                // Sin hilo no hay quien escriba: el handle se suelta aquí.
+                playback.destroy()
+                return false
+            }
+            if (session.setReturnAudio(true) != NATIVE_OK) {
+                playback.stop()
+                playback.destroy()
+                return false
+            }
+            running = true
+            val pump = Thread({ loop() }, RETURN_THREAD_NAME)
+            thread = pump
+            pump.start()
+            return true
+        }
+
+        /** Lee del puente y escribe en la salida; nunca gira en vacío. */
+        private fun loop() {
+            val buf = ShortArray(RETURN_FRAME_SAMPLES)
+            while (running && !stopRequestedFlag.get()) {
+                val n = session.readReturn(buf)
+                when {
+                    // Sesión cerrada o handle inservible: se sale sin ruido.
+                    n < 0 -> return
+                    n == 0 -> pause()
+                    n == RETURN_FRAME_SAMPLES -> {
+                        val written = playback.write(buf)
+                        if (written < 0) return
+                    }
+                }
+            }
+        }
+
+        /** Espera del sondeo. No usa métodos de la instancia del servicio. */
+        private fun pause() {
+            try {
+                Thread.sleep(RETURN_POLL_MS)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                running = false
+            }
+        }
+
+        /**
+         * Para el hilo y la salida, en ese orden. Idempotente. running=false
+         * más interrupt: el hilo sale del bucle tras el write en curso. Si el
+         * join vence, el hilo sigue vivo y el handle NO se destruye (se deja
+         * log): liberarlo dejaría al hilo escribiendo en un stream muerto.
+         */
+        fun stop(): Boolean {
+            if (closed) return true
+            closed = true
+            running = false
+            val pump = thread
+            thread = null
+            if (pump != null) {
+                pump.interrupt()
+                if (!joinUntilExit(pump)) {
+                    Log.e(TAG, "return pump alive after ${RETURN_JOIN_BUDGET_MS}ms: playback handle kept")
+                    return false
+                }
+            }
+            playback.stop()
+            val rc = playback.destroy()
+            if (rc != NATIVE_OK) Log.w(TAG, "playback destroy rc=$rc")
+            return true
+        }
+
+        /** Join con tope; true sólo si el hilo murió. */
+        private fun joinUntilExit(pump: Thread): Boolean {
+            val deadline = System.nanoTime() + RETURN_JOIN_BUDGET_NS
+            while (pump.isAlive && System.nanoTime() < deadline) {
+                try {
+                    pump.join(POLL_MS)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            return !pump.isAlive
+        }
     }
 
     /**
@@ -392,6 +501,9 @@ class StreamService : Service() {
         private const val CHANNEL_ID = "arl_mic"
         private const val NOTIFICATION_ID = 19
         private const val FRAME_SAMPLES = 240
+        private const val RETURN_FRAME_SAMPLES = 240
+        private const val RETURN_THREAD_NAME = "arl-return"
+        private const val RETURN_POLL_MS = 20L
         private const val POLL_MS = 20L
         private const val NATIVE_OK = 0
         private const val ERR_STATE = -2
@@ -400,6 +512,8 @@ class StreamService : Service() {
         private const val SHUTDOWN_ATTEMPTS = 8
         private const val SHUTDOWN_BUDGET_NS = 2_000_000_000L
         private const val JOIN_BUDGET_NS = 3_000_000_000L
+        private const val RETURN_JOIN_BUDGET_MS = 3_000L
+        private const val RETURN_JOIN_BUDGET_NS = RETURN_JOIN_BUDGET_MS * 1_000_000L
         private const val REQ_CONTENT = 1
         private const val REQ_STOP = 2
         private const val REQ_MUTE = 3
@@ -418,6 +532,9 @@ class StreamService : Service() {
         internal val stopRequestedFlag = AtomicBoolean(false)
 
         private val gate = Any()
+
+        /** Retorno activo. Null mientras nadie enganche una sesión (HOLD de UI). */
+        @Volatile private var returnPump: ReturnPump? = null
         private val _running = AppState(false)
         private val _muted = AppState(false)
         private val _level = AppState(0f)
@@ -489,6 +606,37 @@ class StreamService : Service() {
         /** La Activity lo llama en onStop. Sin esto el FGS no arranca. */
         fun noteActivityHidden() {
             ActivityPresence.noteActivityHidden()
+        }
+
+        /**
+         * Engancha el retorno a la sesión y la salida indicadas. Si
+         * [PlaybackEngine.start] no acepta (sin opt-in o sin aviso de eco
+         * confirmado), no se crea hilo ni se toca la salida: el servicio
+         * queda exactamente como estaba. Es el punto de entrada que usará el
+         * toggle, todavía en HOLD.
+         */
+        fun attachReturnPlayback(session: SessionClient, playback: PlaybackEngine): Boolean {
+            synchronized(gate) {
+                // Si el hilo anterior no murió, su handle sigue vivo: no se
+                // arranca otro encima y el motor nuevo no se queda colgado.
+                if (returnPump?.stop() == false) {
+                    playback.destroy()
+                    return false
+                }
+                val pump = ReturnPump(session, playback)
+                returnPump = pump
+                if (pump.start()) return true
+                returnPump = null
+                return false
+            }
+        }
+
+        /** Suelta el retorno: para el hilo y la salida. Idempotente. */
+        fun detachReturnPlayback() {
+            synchronized(gate) {
+                returnPump?.stop()
+                returnPump = null
+            }
         }
 
         /** PendingIntent explícito e inmutable. content abre MainActivity; el resto, el servicio. */

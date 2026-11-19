@@ -39,6 +39,21 @@ class SessionClient private constructor(private var handle: Long) : AutoCloseabl
      */
     fun sendAudio(pcm: ShortArray): Int = nativeSendAudio(handle, pcm)
 
+    /**
+     * Anuncia (o retira) el retorno `audio.return-pcm16-48k-mono` en las
+     * `capabilities` de la sesión. Apagado por defecto: sin esta llamada la
+     * feature no viaja y el daemon no emite ni un datagrama de retorno.
+     * 0 = aplicado; el motivo queda en [lastError].
+     */
+    fun setReturnAudio(enabled: Boolean): Int = nativeSetReturnAudio(handle, enabled)
+
+    /**
+     * Saca un frame de retorno ya decodificado (240 muestras PCM16 48 kHz
+     * mono) y lo copia en [dst]. Devuelve las muestras copiadas, `0` si no
+     * hay nada y negativo si la sesión no sirve o [dst] es corto.
+     */
+    fun readReturn(dst: ShortArray): Int = nativeReadReturn(handle, dst)
+
     /** Siguiente evento, o cadena vacía. Ver [ControlEvent]. */
     fun poll(): String = nativePoll(handle)
 
@@ -109,6 +124,12 @@ class SessionClient private constructor(private var handle: Long) : AutoCloseabl
 
         @JvmStatic
         private external fun nativeSendAudio(handle: Long, pcm: ShortArray): Int
+
+        @JvmStatic
+        private external fun nativeSetReturnAudio(handle: Long, enabled: Boolean): Int
+
+        @JvmStatic
+        private external fun nativeReadReturn(handle: Long, dst: ShortArray): Int
 
         @JvmStatic
         private external fun nativePoll(handle: Long): String

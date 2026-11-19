@@ -28,6 +28,7 @@ use arl_transport::quinn::{ClientEvent, SessionClient, SessionLimits};
 use rustls::pki_types::CertificateDer;
 
 use crate::audio::{local_features, selected_format, AudioSender, CodecChoice};
+use crate::return_audio::ReturnQueue;
 
 use rustls::sign::SigningKey;
 
@@ -88,10 +89,13 @@ struct Shared {
     server_revision: u64,
     /// `true` una vez que el `hello` salió; antes no se anuncian features.
     hello_sent: bool,
-    /// Perfil cuyas features ya se encolaron al servidor en esta sesión.
-    advertised: Option<CodecChoice>,
+    /// Perfil y anuncio de retorno con los que ya se encolaron las features
+    /// al servidor en esta sesión.
+    advertised: Option<(CodecChoice, bool)>,
     /// Perfil de envío y codificador: PCM16 por defecto, Opus si se negocia.
     audio: AudioSender,
+    /// Cola acotada del retorno Linux→Android; apagada por defecto.
+    return_audio: ReturnQueue,
     /// `true` cuando Java pidió el cierre: el hilo sale sin emitir `IoFault`.
     stop: bool,
 }
@@ -107,7 +111,8 @@ impl Shared {
             return Ok(());
         }
         let choice = self.audio.choice();
-        if self.advertised == Some(choice) {
+        let returned = self.return_audio.enabled();
+        if self.advertised == Some((choice, returned)) {
             return Ok(());
         }
         let mut capabilities = PeerCapabilities::from_peer(
@@ -115,20 +120,25 @@ impl Shared {
             PeerRole::Android,
             vec![RemoteAction::ConfigRead, RemoteAction::ConfigWrite],
         );
-        capabilities.features = local_features(choice)
+        let mut features: Vec<Feature> = local_features(choice)
             .into_iter()
             .map(|name| match name {
                 arl_audio_core::FEATURE_AUDIO_OPUS => Feature::AudioOpus48kMono,
                 _ => Feature::AudioPcm16_48kMono,
             })
             .collect();
+        // El retorno sólo se declara si Java lo pidió: por defecto no viaja.
+        if returned {
+            features.push(Feature::AudioReturnPcm48kMono);
+        }
+        capabilities.features = features;
         let message = ControlMessage::Capabilities(CapabilitiesMsg {
             request_id: request_id(),
             revision: self.server_revision,
             capabilities,
         });
         self.client.send_control(&message).map_err(show)?;
-        self.advertised = Some(choice);
+        self.advertised = Some((choice, returned));
         Ok(())
     }
 }
@@ -182,6 +192,7 @@ impl ProductClient {
             hello_sent: false,
             advertised: None,
             audio: AudioSender::new(),
+            return_audio: ReturnQueue::new(),
             stop: false,
         }));
         // El primer vuelo sale ya: si no, el servidor no tiene a quién contestar.
@@ -277,6 +288,31 @@ impl ProductClient {
         Ok(())
     }
 
+    /// Enciende o apaga el retorno y vuelve a anunciar `capabilities`.
+    ///
+    /// Apagado (defecto) la feature `audio.return-pcm16-48k-mono` no se
+    /// declara y no se encola ningún datagrama que llegue. Al encenderlo se
+    /// vacía lo que hubiera y se reanuncia: el daemon sólo emite si ambos
+    /// extremos lo ven.
+    pub(crate) fn set_return_audio(&self, enabled: bool) -> Result<(), String> {
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
+        guard.return_audio.set_enabled(enabled);
+        guard.advertised = None;
+        guard.advertise()
+    }
+
+    /// Saca un frame de retorno ya decodificado. `0` si la cola está vacía.
+    pub(crate) fn read_return(&self, dst: &mut [i16]) -> Result<usize, String> {
+        let mut guard = self
+            .shared
+            .lock()
+            .map_err(|_| "lock envenenado".to_string())?;
+        Ok(guard.return_audio.read_into(dst))
+    }
+
     /// Envía un bloque de muestras del perfil activo como un frame de audio.
     ///
     /// PCM16 exige 240 muestras (5 ms); Opus, las de su perfil. El frame sale
@@ -300,7 +336,7 @@ impl ProductClient {
         let format = selected_format(
             choice,
             &guard.server_features,
-            guard.advertised == Some(choice),
+            guard.advertised == Some((choice, guard.return_audio.enabled())),
         );
         let payload = guard.audio.encode(format, samples)?;
         match payload {
@@ -574,6 +610,13 @@ fn publish(guard: &mut Shared) {
     // locales. Un fallo de cola se reintenta en el siguiente bombeo.
     if !guard.stop {
         let _ = guard.advertise();
+    }
+    // Retorno: los datagramas que el transporte ya decodificó pasan a su cola
+    // acotada. Con el retorno apagado no se drena ni se encola nada.
+    if guard.return_audio.enabled() {
+        while let Some(payload) = guard.client.recv_audio_payload() {
+            guard.return_audio.push(payload);
+        }
     }
 }
 

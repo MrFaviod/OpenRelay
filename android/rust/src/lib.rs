@@ -343,6 +343,7 @@ fn bytes_of(value: JValueOwned, env: &JNIEnv) -> Result<Vec<u8>, String> {
 
 mod audio;
 mod client;
+mod return_audio;
 
 pub(crate) use client::{BridgeEvent, ProductClient, Provision};
 
@@ -355,7 +356,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Mutex, OnceLock};
 
 use jni::objects::JString;
-use jni::sys::{jdouble, jint, jlong, jstring};
+use jni::sys::{jboolean, jdouble, jint, jlong, jstring};
 
 /// Handles de producto. Nunca un puntero crudo hacia Java: el id es opaco.
 fn sessions() -> &'static Mutex<HashMap<u64, ProductClient>> {
@@ -638,6 +639,63 @@ mod exports {
             }
         };
         call_code(handle as u64, |client| client.send_audio(&samples))
+    }
+
+    /// Enciende o apaga el anuncio del retorno `audio.return-pcm16-48k-mono`.
+    /// Apagado por defecto: sin esta llamada la feature no viaja.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeSetReturnAudio(
+        _env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        enabled: jboolean,
+    ) -> jint {
+        call_code(handle as u64, |client| {
+            client.set_return_audio(enabled != 0)
+        })
+    }
+
+    /// Copia un frame de retorno (240 muestras) en `dst`.
+    ///
+    /// Devuelve las muestras copiadas, `0` si la cola está vacía y negativo si
+    /// el handle no existe, el retorno está apagado o `dst` es más corto que
+    /// un frame.
+    #[allow(unsafe_code)]
+    #[no_mangle]
+    pub extern "system" fn Java_dev_arl_audio_SessionClient_nativeReadReturn(
+        env: JNIEnv,
+        _class: JClass,
+        handle: jlong,
+        dst: JShortArray,
+    ) -> jint {
+        let len = match env.get_array_length(&dst) {
+            Ok(len) => len as usize,
+            Err(error) => {
+                remember_error(error.to_string());
+                return -1;
+            }
+        };
+        if len < arl_audio_core::SAMPLE_COUNT {
+            remember_error("dst de retorno más corto que un frame".into());
+            return -1;
+        }
+        let mut buf = vec![0i16; len];
+        let read = match with_session(handle as u64, |client| client.read_return(&mut buf)) {
+            Ok(read) => read,
+            Err(error) => {
+                remember_error(error);
+                return -1;
+            }
+        };
+        if read == 0 {
+            return 0;
+        }
+        if let Err(error) = env.set_short_array_region(&dst, 0, &buf[..read]) {
+            remember_error(error.to_string());
+            return -1;
+        }
+        read as jint
     }
 
     #[allow(unsafe_code)]
