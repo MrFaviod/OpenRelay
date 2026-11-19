@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use arl_audio_core::{AudioFrame, FrameError};
+use arl_audio_core::{AudioFrame, AudioPayload, FrameError};
 use arl_proto::wire::{self, ControlMessage, WireError, CONTROL_LENGTH_BYTES};
 use bytes::{Bytes, BytesMut};
 use quinn_proto::crypto::rustls::{HandshakeData, QuicClientConfig, QuicServerConfig};
@@ -382,7 +382,7 @@ struct Slot {
     identity: Option<SpkiPin>,
     capabilities: Capabilities,
     authorized: bool,
-    audio: VecDeque<AudioFrame>,
+    audio: VecDeque<AudioPayload>,
     control: VecDeque<ControlMessage>,
     recv_streams: HashSet<StreamId>,
     send_stream: Option<StreamId>,
@@ -671,8 +671,49 @@ impl SessionServer {
             .map_err(|_| TransportError::Datagram("audio"))
     }
 
+    /// Envía un payload de audio ya tipado (PCM16 u Opus) a un cliente con
+    /// capacidad `return_audio`.
+    ///
+    /// La cola de recepción guarda el payload tipado; la negociación de Opus
+    /// es de la sesión de aplicación, no de este crate.
+    pub fn send_audio_payload(
+        &mut self,
+        session: SessionId,
+        payload: &AudioPayload,
+    ) -> Result<(), TransportError> {
+        let (wire, len) = payload.encode();
+        if len > self.limits.max_audio_datagram {
+            return Err(TransportError::Audio(FrameError::Oversized { len }));
+        }
+        let slot = self.authorized_slot(session, Capabilities::return_audio, "return_audio")?;
+        slot.conn
+            .datagrams()
+            .send(Bytes::copy_from_slice(&wire[..len]), true)
+            .map_err(|_| TransportError::Datagram("audio"))
+    }
+
     /// Recibe el siguiente frame de audio de una sesión con capacidad `mic`.
+    ///
+    /// Sólo entrega frames PCM16, como antes de la extensión Opus. Un payload
+    /// Opus en la cola se omite sin bloquear los PCM16 que vengan detrás.
     pub fn recv_audio(&mut self, session: SessionId) -> Option<AudioFrame> {
+        let slot = self
+            .slots
+            .get_mut(&session)
+            .filter(|slot| slot.authorized && slot.capabilities.mic)?;
+        let index = slot
+            .audio
+            .iter()
+            .position(|payload| matches!(payload, AudioPayload::Pcm16(_)))?;
+        match slot.audio.remove(index) {
+            Some(AudioPayload::Pcm16(frame)) => Some(frame),
+            _ => None,
+        }
+    }
+
+    /// Recibe el siguiente payload de audio ya tipado de una sesión con
+    /// capacidad `mic`. Entrega PCM16 y Opus en el orden en que llegaron.
+    pub fn recv_audio_payload(&mut self, session: SessionId) -> Option<AudioPayload> {
         self.slots
             .get_mut(&session)
             .filter(|slot| slot.authorized && slot.capabilities.mic)
@@ -924,8 +965,8 @@ impl SessionServer {
                             slot.closed = true;
                             return;
                         }
-                        match AudioFrame::decode(&datagram) {
-                            Ok(frame) => {
+                        match AudioPayload::decode(&datagram) {
+                            Ok(payload) => {
                                 // El DATAGRAM ya se recibió y se decodificó; el
                                 // ingreso en la cola de aplicación exige `mic`,
                                 // el mismo permiso que `recv_audio` para
@@ -935,7 +976,7 @@ impl SessionServer {
                                     if slot.audio.len() >= MAX_QUEUED_AUDIO {
                                         slot.audio.pop_front();
                                     }
-                                    slot.audio.push_back(frame);
+                                    slot.audio.push_back(payload);
                                 }
                             }
                             Err(error) => {
@@ -1623,7 +1664,7 @@ pub struct SessionClient {
     outgoing: VecDeque<(SocketAddr, Vec<u8>)>,
     authorized: bool,
     server_pin: Option<SpkiPin>,
-    audio: VecDeque<AudioFrame>,
+    audio: VecDeque<AudioPayload>,
     control: VecDeque<ControlMessage>,
     recv_streams: HashSet<StreamId>,
     send_stream: Option<StreamId>,
@@ -1844,8 +1885,38 @@ impl SessionClient {
             .map_err(|_| TransportError::Datagram("audio"))
     }
 
-    /// Recibe audio de retorno (si el servidor lo concede).
+    /// Envía un payload de audio ya tipado (PCM16 u Opus). Requiere `mic`
+    /// concedido por el servidor; este extremo no puede saberlo.
+    pub fn send_audio_payload(&mut self, payload: &AudioPayload) -> Result<(), TransportError> {
+        if !self.authorized {
+            return Err(TransportError::Unauthorized);
+        }
+        let (wire, len) = payload.encode();
+        if len > self.limits.max_audio_datagram {
+            return Err(TransportError::Audio(FrameError::Oversized { len }));
+        }
+        self.conn
+            .datagrams()
+            .send(Bytes::copy_from_slice(&wire[..len]), true)
+            .map_err(|_| TransportError::Datagram("audio"))
+    }
+
+    /// Recibe audio de retorno (si el servidor lo concede). Sólo PCM16, como
+    /// antes de la extensión Opus; usa [`Self::recv_audio_payload`] para el
+    /// payload tipado.
     pub fn recv_audio(&mut self) -> Option<AudioFrame> {
+        let index = self
+            .audio
+            .iter()
+            .position(|payload| matches!(payload, AudioPayload::Pcm16(_)))?;
+        match self.audio.remove(index) {
+            Some(AudioPayload::Pcm16(frame)) => Some(frame),
+            _ => None,
+        }
+    }
+
+    /// Recibe el siguiente payload de audio ya tipado del servidor.
+    pub fn recv_audio_payload(&mut self) -> Option<AudioPayload> {
         self.audio.pop_front()
     }
 
@@ -1998,11 +2069,11 @@ impl SessionClient {
                             );
                             return Ok(());
                         }
-                        if let Ok(frame) = AudioFrame::decode(&datagram) {
+                        if let Ok(payload) = AudioPayload::decode(&datagram) {
                             if self.audio.len() >= MAX_QUEUED_AUDIO {
                                 self.audio.pop_front();
                             }
-                            self.audio.push_back(frame);
+                            self.audio.push_back(payload);
                         }
                     }
                 }

@@ -837,6 +837,8 @@ pub enum Feature {
     ControlV1,
     /// `audio.pcm16-48k-mono`.
     AudioPcm16_48kMono,
+    /// `audio.opus-48k-mono`.
+    AudioOpus48kMono,
     /// `enrollment.v1`.
     EnrollmentV1,
     /// `session.v1`.
@@ -849,6 +851,7 @@ impl Feature {
         match self {
             Feature::ControlV1 => "control.v1",
             Feature::AudioPcm16_48kMono => "audio.pcm16-48k-mono",
+            Feature::AudioOpus48kMono => "audio.opus-48k-mono",
             Feature::EnrollmentV1 => "enrollment.v1",
             Feature::SessionV1 => "session.v1",
         }
@@ -889,6 +892,10 @@ impl Capabilities {
             features: vec![
                 Feature::ControlV1,
                 Feature::AudioPcm16_48kMono,
+                // El códec va compilado en el daemon (dependencia obligatoria
+                // de `arl-codec`), así que la capacidad opcional siempre está
+                // disponible y se anuncia. Un extremo sin el códec la ignora.
+                Feature::AudioOpus48kMono,
                 Feature::SessionV1,
             ],
             remote_actions,

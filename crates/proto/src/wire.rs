@@ -1386,6 +1386,7 @@ fn decode_feature(value: JsonValue) -> Result<Feature, WireError> {
         JsonValue::String(name) => match name.as_str() {
             "control.v1" => Ok(Feature::ControlV1),
             "audio.pcm16-48k-mono" => Ok(Feature::AudioPcm16_48kMono),
+            "audio.opus-48k-mono" => Ok(Feature::AudioOpus48kMono),
             "enrollment.v1" => Ok(Feature::EnrollmentV1),
             "session.v1" => Ok(Feature::SessionV1),
             _ => Err(WireError::shape(None)),
