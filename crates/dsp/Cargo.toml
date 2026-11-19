@@ -1,0 +1,29 @@
+[package]
+name = "arl-dsp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Reducción de ruido opcional con SpeexDSP y bypass real para arl"
+build = "build.rs"
+
+[features]
+default = []
+# Compila el subconjunto vendorizado de SpeexDSP 1.2.1 (BSD-3-Clause).
+speexdsp = []
+
+[dependencies]
+
+[build-dependencies]
+cc = "=1.11.2"
+
+# No se hereda `workspace = true`: el workspace fija `unsafe_code = "forbid"`,
+# que no admite la excepción documentada de `src/speex.rs` (FFI de SpeexDSP sin
+# crate seguro disponible). El resto replica la política del workspace y el
+# `unsafe` queda acotado con `#[allow(unsafe_code)]` sobre ese único módulo.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = "warn"

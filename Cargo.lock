@@ -67,6 +67,7 @@ dependencies = [
  "arl-audio-core",
  "arl-audio-linux",
  "arl-codec",
+ "arl-dsp",
  "arl-proto",
  "arl-transport",
  "rcgen",
@@ -75,6 +76,13 @@ dependencies = [
  "rustls-pki-types",
  "serde_json",
  "time",
+]
+
+[[package]]
+name = "arl-dsp"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
