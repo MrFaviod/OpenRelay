@@ -1,12 +1,15 @@
 package dev.openrelay.app.ui
 
+import dev.openrelay.app.PairingState
+
 /**
  * Modelo puro de la pantalla de inicio. Sin Hilt, sin ViewModel y sin red.
  *
- * Honestidad de producto (F4, 2026-11-16): no existe pairing ni control remoto.
- * La captura local no es una transmisión al PC. [connection] permanece en
- * [Connection.Unavailable] hasta que un puente real publique estado; la UI no
- * lo inventa ni ofrece un formulario de emparejamiento.
+ * [connection] sigue en [Connection.Unavailable]: el transporte lo describe
+ * [connectionText], que el servicio publica ("Enviando a <host>" o
+ * "Sin conexión: <motivo>") y que la UI no inventa. El emparejamiento es un
+ * hecho local ([pairingHost]) más el estado del enrolamiento en curso
+ * ([pairingState]); ninguno de los dos implica que haya audio saliendo.
  *
  * El integrador mapea el servicio a [capture], [error] y [notificationWarning].
  * No infiera "transmitiendo" de un micrófono abierto. Un aviso de
@@ -15,6 +18,12 @@ package dev.openrelay.app.ui
 data class HomeUiState(
     val capture: Capture = Capture.Idle,
     val connection: Connection = Connection.Unavailable,
+    /** Texto del enlace que publica el servicio. Vacío = sin enlace. */
+    val connectionText: String = "",
+    /** Host del PC emparejado, o null si no hay provisión guardada. */
+    val pairingHost: String? = null,
+    /** Estado del último intento de enrolamiento. */
+    val pairingState: PairingState = PairingState.Idle,
     val error: UiError? = null,
     /**
      * Texto de [StreamService.notificationWarning]. Vacío si no hay aviso.

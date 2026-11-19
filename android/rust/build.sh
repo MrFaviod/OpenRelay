@@ -17,6 +17,8 @@ export ANDROID_NDK="$NDK" ANDROID_NDK_HOME="$NDK"
 SDK_CMAKE="$(dirname "$(dirname "$NDK")")/cmake/3.22.1/bin/cmake"
 [ -x "$SDK_CMAKE" ] && export CMAKE="$SDK_CMAKE"
 
+# El puente usa la API de producto del transporte (EnrollOutcome incluido).
+
 build_abi() {
     local triple="$1" abi="$2" api_triple="$3"
     local cc="$TC/${api_triple}28-clang"
@@ -25,9 +27,12 @@ build_abi() {
     export "CC_${env_triple}=$cc" "CXX_${env_triple}=$cc++" "AR_${env_triple}=$TC/llvm-ar"
     export "CARGO_TARGET_${upper}_LINKER=$cc"
     export "CARGO_TARGET_${upper}_RUSTFLAGS=-C link-arg=-Wl,-z,max-page-size=16384"
-    (cd "$here" && "${CARGO[@]}" build --release --locked --target "$triple")
+    # Un target dir por ABI: audiopus_sys cachea el CMake del primer target y
+    # reutilizarlo en el segundo deja el cache envenenado (rutas del otro ABI).
+    local out="$here/target/$abi"
+    (cd "$here" && CARGO_TARGET_DIR="$out" "${CARGO[@]}" build --release --locked --target "$triple")
     mkdir -p "$here/target/jniLibs/$abi"
-    cp "$here/target/$triple/release/libopenrelay_bridge.so" "$here/target/jniLibs/$abi/"
+    cp "$out/$triple/release/libopenrelay_bridge.so" "$here/target/jniLibs/$abi/"
     echo "OK $abi -> target/jniLibs/$abi/libopenrelay_bridge.so"
 }
 

@@ -28,4 +28,10 @@ data class HomeActions(
     val onGainChange: (Int) -> Unit = {},
     val onToggleAdvanced: () -> Unit = {},
     val onNotificationAction: () -> Unit = {},
+    /** Abre el escáner de QR (pide cámara sólo entonces). */
+    val onScanQr: () -> Unit = {},
+    /** Empareja con el URI pegado. */
+    val onPairUri: (String) -> Unit = {},
+    /** Borra la provisión local del PC. */
+    val onForgetPc: () -> Unit = {},
 )

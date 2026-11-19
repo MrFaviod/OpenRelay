@@ -14,10 +14,13 @@ androidxJunit = "1.2.1"
 espressoCore = "3.6.1"
 androidxTestRunner = "1.6.2"
 oboe = "1.11.0"
+zxingEmbedded = "4.3.0"
 
 [libraries]
 # Oboe 1.11.0: AAR Prefab oficial (Apache-2.0), usado sólo por el nativo.
 oboe = { module = "com.google.oboe:oboe", version.ref = "oboe" }
+# Escáner QR de emparejamiento (Apache-2.0). Usa zxing-core y una Activity propia.
+zxing-android-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxingEmbedded" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
