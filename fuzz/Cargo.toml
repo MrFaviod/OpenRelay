@@ -1,0 +1,33 @@
+[package]
+name = "arl-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Workspace propio: el workspace raíz no mira dentro de fuzz/.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arl-proto = { path = "../crates/proto" }
+arl-audio-core = { path = "../crates/audio-core" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "parse_control"
+path = "fuzz_targets/parse_control.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_datagram"
+path = "fuzz_targets/parse_datagram.rs"
+test = false
+doc = false
+bench = false
