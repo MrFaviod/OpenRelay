@@ -127,6 +127,26 @@ fn malformed_and_unknown_ops_return_errors_and_daemon_survives() {
 }
 
 #[test]
+fn pair_close_without_a_window_is_a_noop() {
+    let tmp = TempDir::new("pairclose");
+    let sock = tmp.0.join("openrelay").join("control.sock");
+    let _d = start_daemon(&sock);
+
+    for id in ["pair-close-1", "pair-close-2"] {
+        let resp = raw_request(
+            &sock,
+            &format!(r#"{{"request_id":"{id}","op":"pair.close"}}"#),
+        );
+        assert_eq!(resp["request_id"], id);
+        assert_eq!(resp["ok"], true, "{resp}");
+        assert_eq!(resp["result"]["closed"], false, "{resp}");
+    }
+
+    let status = raw_request(&sock, r#"{"request_id":"pair-close-3","op":"status"}"#);
+    assert_eq!(status["ok"], true, "{status}");
+}
+
+#[test]
 fn status_fails_nonzero_when_no_daemon() {
     let tmp = TempDir::new("nodaemon");
     let sock = tmp.0.join("openrelay").join("control.sock");

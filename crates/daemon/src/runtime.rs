@@ -26,7 +26,7 @@ use openrelay_audio_linux::{init as audio_init, PipeWireSource};
 use openrelay_proto::control::Feature;
 use openrelay_proto::control::{ErrorCode, PeerRole, RemoteAction};
 use openrelay_proto::wire::{decode_frame, encode_message, ControlMessage};
-use openrelay_transport::enrollment::{EnrollOutcome, EnrollServer, EnrollmentToken};
+use openrelay_transport::enrollment::{EnrollOutcome, EnrollReject, EnrollServer, EnrollmentToken};
 use openrelay_transport::identity::{self, SpkiPin};
 use openrelay_transport::quinn::{
     Acl, Capabilities, ServerEvent, SessionId, SessionLimits, SessionServer, TransportError,
@@ -175,6 +175,9 @@ struct EnrollWindow {
     server: EnrollServer,
     expires: Instant,
     expires_at: u64,
+    /// Proceso del CLI que abrió la ventana (`pair.open` con `owner_pid`).
+    /// Si desaparece, la ventana se cierra aunque el CLI muriera por SIGINT.
+    owner: Option<u32>,
 }
 
 /// Proceso dueño del estado. El socket Unix y el UDP de QUIC los atiende el
@@ -500,6 +503,7 @@ impl ProductRuntime {
             "pair.pending" => self.pair_pending(),
             "pair.approve" => self.pair_approve(args),
             "pair.reject" => self.pair_reject(args),
+            "pair.close" => self.pair_close(),
             "audio.stats" => Ok(self.audio_stats_json()),
             "config.get" | "config.set" | "capabilities" => self.control_op(op, request_id, args),
             other => Err(failure(
@@ -529,8 +533,26 @@ impl ProductRuntime {
         }
     }
 
+    /// Cierra una ventana cuyo CLI dueño ya no existe.
+    ///
+    /// SIGINT y SIGKILL no ejecutan `Drop`, así que el daemon no puede esperar
+    /// un `pair.close`. Se comprueba tanto al abrir como al bombear para que un
+    /// `openrelay pair` inmediatamente posterior no vea `busy`.
+    fn reap_dead_window(&mut self) -> bool {
+        let dead = self
+            .enroll
+            .as_ref()
+            .is_some_and(|window| window.owner.is_some_and(|pid| !pid_alive(pid)));
+        if dead {
+            self.enroll = None;
+            self.pairing.clear_pending();
+        }
+        dead
+    }
+
     /// Abre una ventana de emparejamiento y devuelve el URI del QR.
     fn pair_open(&mut self, args: &Value) -> Result<Value, Value> {
+        self.reap_dead_window();
         if self.enroll.is_some() {
             return Err(failure(
                 ErrorCode::Busy,
@@ -569,6 +591,13 @@ impl ProductRuntime {
         let bind = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), ENROLL_PORT);
         let socket = UdpSocket::bind(bind)
             .map_err(|error| failure(ErrorCode::Busy, &format!("puerto {ENROLL_PORT}: {error}")))?;
+        let owner = match args.get("owner_pid") {
+            None | Some(Value::Null) => None,
+            Some(value) => match value.as_u64().and_then(|pid| u32::try_from(pid).ok()) {
+                Some(pid) if pid > 0 => Some(pid),
+                _ => return Err(failure(ErrorCode::Invalid, "owner_pid debe ser un PID")),
+            },
+        };
         let _ = socket.set_nonblocking(true);
         let mut server = EnrollServer::new(Arc::clone(&quic.identity))
             .map_err(|error| failure(ErrorCode::Internal, &format!("enrolamiento: {error}")))?;
@@ -589,8 +618,29 @@ impl ProductRuntime {
             server,
             expires: now + Duration::from_secs(ttl),
             expires_at,
+            owner,
         });
-        Ok(json!({"uri": uri, "expires_at": expires_at}))
+        Ok(json!({ "uri": uri, "expires_at": expires_at }))
+    }
+
+    /// Cierra la ventana sin esperar al TTL y descarta los pendientes.
+    ///
+    /// Es la salida ordenada de `openrelay pair` (Ctrl-C, EOF o rechazo): la
+    /// siguiente ejecución no debe encontrarse `busy`. Si había un teléfono
+    /// esperando, se le responde `denied` antes de soltar el socket.
+    fn pair_close(&mut self) -> Result<Value, Value> {
+        let was_open = self.enroll.is_some();
+        if let Some(window) = self.enroll.as_mut() {
+            if window.server.pending().is_some() {
+                let _ = window
+                    .server
+                    .reject_pending(Instant::now(), EnrollReject::Denied);
+                flush_enroll(window);
+            }
+        }
+        self.enroll = None;
+        self.pairing.clear_pending();
+        Ok(json!({ "closed": was_open }))
     }
 
     fn pair_pending(&self) -> Result<Value, Value> {
@@ -656,8 +706,10 @@ impl ProductRuntime {
         flush_enroll(enroll);
         // La hoja va por QUIC: el cliente necesita ACKs y retransmisiones para
         // recibirla. Cerrar el socket aquí perdería la respuesta; la ventana se
-        // queda unos segundos y `pump_enroll` la retira al vencer.
+        // queda unos segundos y `pump_enroll` la retira al vencer. El dueño deja
+        // de vigilarse: el CLI ya termina y la ventana debe sobrevivirle.
         enroll.expires = Instant::now() + Duration::from_secs(5);
+        enroll.owner = None;
         Ok(json!({
             "fingerprint_hex": pin.to_hex(),
             "approved": true,
@@ -697,6 +749,12 @@ impl ProductRuntime {
     /// Una vuelta al socket de enrolamiento: sólo existe mientras la ventana
     /// está abierta. Los eventos alimentan `pair.pending`.
     fn pump_enroll(&mut self) -> Result<(), RuntimeError> {
+        if self.reap_dead_window() {
+            // El CLI que abrió la ventana murió sin llamar a `pair.close`
+            // (SIGINT, SIGKILL o cierre de la terminal): la ventana no debe
+            // sobrevivirle ni bloquear el siguiente `openrelay pair`.
+            return Ok(());
+        }
         let Some(window) = self.enroll.as_mut() else {
             return Ok(());
         };
@@ -722,6 +780,7 @@ impl ProductRuntime {
         let expired = window.expires <= now && window.server.pending().is_none();
         if expired {
             self.enroll = None;
+            self.pairing.clear_pending();
         }
         Ok(())
     }
@@ -992,6 +1051,12 @@ fn is_timeout(error: &io::Error) -> bool {
     matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
 }
 
+/// ¿Sigue vivo el proceso `pid`? Linux expone cada proceso como `/proc/<pid>`;
+/// un PID reciclado sólo podría alargar una ventana hasta su TTL, nunca abrirla.
+fn pid_alive(pid: u32) -> bool {
+    Path::new("/proc").join(pid.to_string()).exists()
+}
+
 fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMessage, Value> {
     match op {
         "config.get" => {
@@ -1100,6 +1165,20 @@ mod tests {
             return_targets(&[7u64], true, |_| None).is_empty(),
             "sin capabilities del peer no hay retorno"
         );
+    }
+
+    #[test]
+    fn pair_close_without_a_window_is_a_noop() {
+        let (mut runtime, _) = start(&RuntimeConfig::default()).expect("arranque local");
+        let closed = runtime.local_line(r#"{"request_id":"t-2","op":"pair.close"}"#);
+        assert_eq!(closed["ok"], true, "{closed}");
+        assert_eq!(closed["result"]["closed"], false, "{closed}");
+    }
+
+    #[test]
+    fn pid_alive_sees_this_process_and_not_a_missing_one() {
+        assert!(pid_alive(std::process::id()), "el propio proceso existe");
+        assert!(!pid_alive(u32::MAX), "un PID imposible no existe");
     }
 
     #[test]

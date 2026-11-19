@@ -80,6 +80,11 @@ impl Pairing {
     pub fn reject(&mut self, pin: SpkiPin) {
         self.pending.retain(|item| item != &pin);
     }
+
+    /// Vacía los pendientes: la ventana se cerró y ninguno sigue en juego.
+    pub fn clear_pending(&mut self) {
+        self.pending.clear();
+    }
 }
 
 /// Borra una identidad del archivo de identidades (escritura atómica).

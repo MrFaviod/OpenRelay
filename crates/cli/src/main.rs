@@ -478,7 +478,7 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
         eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
         return ExitCode::from(2);
     };
-    let mut args = json!({ "ttl_s": ttl });
+    let mut args = json!({ "ttl_s": ttl, "owner_pid": std::process::id() });
     if let Some(host) = advertise {
         args["advertise"] = Value::String(host);
     }
@@ -489,6 +489,10 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    // Cierra la ventana en toda salida ordenada (EOF, rechazo, QR ilegible,
+    // error de sondeo). Ctrl-C no ejecuta `Drop`: para eso `pair.open` lleva
+    // `owner_pid` y el daemon retira la ventana cuando el proceso desaparece.
+    let mut window = PairWindow::new(&socket);
     let uri = opened["uri"].as_str().unwrap_or_default();
     let expires_at = opened["expires_at"].as_u64().unwrap_or(0);
     println!("{uri}");
@@ -521,7 +525,14 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             } else {
                 ("pair.reject", json!({ "fingerprint_hex": fingerprint }))
             };
-            return match call(&socket, op, &extra) {
+            // Aprobado y aceptado: la ventana sigue unos segundos para que el
+            // teléfono reciba su hoja por QUIC. Rechazado o error: se cierra al
+            // salir. Sólo se desarma si el daemon confirmó la aprobación.
+            let result = call(&socket, op, &extra);
+            if approved && result.is_ok() {
+                window.keep_after_approve(true);
+            }
+            return match result {
                 Ok(_) if approved => {
                     println!("openrelay: dispositivo aprobado");
                     ExitCode::SUCCESS
@@ -541,6 +552,39 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+
+/// Ventana de `pair.open` vista por el CLI: se cierra al soltarla.
+///
+/// Cubre toda salida ordenada, incluido un `return` temprano por error. Para
+/// SIGINT/SIGTERM no hay `Drop`; esa mitad la resuelve el daemon con el
+/// `owner_pid` que viaja en `pair.open`.
+struct PairWindow<'a> {
+    socket: &'a Path,
+    armed: bool,
+}
+
+impl<'a> PairWindow<'a> {
+    fn new(socket: &'a Path) -> Self {
+        Self {
+            socket,
+            armed: true,
+        }
+    }
+
+    /// Tras aprobar, el daemon conserva la ventana unos segundos para que el
+    /// teléfono reciba su hoja por QUIC: el CLI no la cierra.
+    fn keep_after_approve(&mut self, approved: bool) {
+        self.armed = !approved;
+    }
+}
+
+impl Drop for PairWindow<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = call(self.socket, "pair.close", &Value::Null);
+        }
     }
 }
 
