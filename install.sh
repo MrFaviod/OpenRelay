@@ -8,11 +8,12 @@
 # against the release SHA256SUMS before anything is installed.
 #
 # Environment:
-#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.2.0
+#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.2.1
 #   OPENRELAY_BASE_URL  download base (default: the GitHub release URL); a
 #                       file:// directory with the same asset layout also works
 #   OPENRELAY_BIN_DIR   install directory (default: ~/.local/bin)
 #   OPENRELAY_NO_UNIT=1 skip the systemd --user unit
+#   OPENRELAY_FORCE=1   install even if required shared libraries are missing
 #   OPENRELAY_UNINSTALL=1 remove a previous install and exit
 set -eu
 
@@ -73,6 +74,23 @@ tar -xzf "$tmp/$asset" -C "$tmp"
 src="$tmp/openrelay-$version"
 [ -d "$src" ] || die "unexpected tarball layout: no openrelay-$version/ directory"
 
+# Required runtime libraries: PipeWire >= 0.3.65 and libopus. Check the
+# downloaded binary before installing anything; abort unless FORCE=1.
+if command -v ldd >/dev/null 2>&1; then
+  missing=$(ldd "$src/openrelay" 2>/dev/null | sed -n 's/^[[:space:]]*\([^ ]*\) => not found/\1/p')
+  if [ -n "$missing" ]; then
+    warn "the binary needs shared libraries that are not installed:"
+    printf '         %s\n' $missing >&2
+    warn "Debian/Ubuntu: sudo apt install libpipewire-0.3-0t64 libopus0   (older: libpipewire-0.3-0)"
+    warn "Fedora:        sudo dnf install pipewire-libs opus"
+    warn "Arch:          sudo pacman -S libpipewire opus"
+    if [ "${OPENRELAY_FORCE:-}" != 1 ]; then
+      die "nothing was installed; install the libraries or re-run with OPENRELAY_FORCE=1"
+    fi
+    warn "OPENRELAY_FORCE=1: installing anyway"
+  fi
+fi
+
 mkdir -p "$BIN_DIR"
 install -m 0755 "$src/openrelay" "$BIN_DIR/openrelay"
 say "Installed $BIN_DIR/openrelay"
@@ -81,17 +99,6 @@ if [ "${OPENRELAY_NO_UNIT:-}" != 1 ]; then
   mkdir -p "$UNIT_DIR"
   install -m 0644 "$src/openrelay.service" "$UNIT_DIR/openrelay.service"
   say "Installed $UNIT_DIR/openrelay.service (not enabled)"
-fi
-
-# Runtime libraries: PipeWire >= 0.3.65 and libopus.
-if command -v ldd >/dev/null 2>&1; then
-  missing=$(ldd "$BIN_DIR/openrelay" 2>/dev/null | sed -n 's/^[[:space:]]*\([^ ]*\) => not found/\1/p')
-  if [ -n "$missing" ]; then
-    warn "missing shared libraries: $(echo $missing)"
-    warn "Debian/Ubuntu: sudo apt install libpipewire-0.3-0t64 libopus0   (older: libpipewire-0.3-0)"
-    warn "Fedora:        sudo dnf install pipewire-libs opus"
-    warn "Arch:          sudo pacman -S libpipewire opus"
-  fi
 fi
 
 case ":$PATH:" in
