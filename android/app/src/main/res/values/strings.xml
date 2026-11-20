@@ -21,6 +21,8 @@
     <string name="link_sending">Enviando a %1$s</string>
     <string name="link_offline">Sin conexión: %1$s</string>
     <string name="link_unknown_error">el PC no respondió</string>
+    <string name="link_closed">el PC cerró la sesión</string>
+    <string name="link_refused">el PC rechazó este teléfono</string>
 
     <!-- Emparejamiento por QR o URI pegado. -->
     <string name="pairing_title">Emparejar con PC</string>

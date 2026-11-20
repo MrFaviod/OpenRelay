@@ -207,6 +207,16 @@ class StreamService : Service() {
                     } else {
                         backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
                         nextAttempt = System.currentTimeMillis() + backoffMs
+                        // Si el PC ya no acepta este teléfono (por ejemplo tras
+                        // `devices remove`), no dejar la UI en "Conectando…".
+                        _link.set(
+                            getString(
+                                R.string.link_offline,
+                                SessionClient.lastOpenError().ifEmpty {
+                                    getString(R.string.link_unknown_error)
+                                },
+                            ),
+                        )
                     }
                 }
                 if (_muted.value) {
@@ -241,6 +251,23 @@ class StreamService : Service() {
                             link = null
                             _link.set(getString(R.string.link_offline, detail))
                             nextAttempt = System.currentTimeMillis() + backoffMs
+                        } else {
+                            // El envío puede aceptarse en el buffer local aunque
+                            // el daemon ya haya cerrado o rechazado la sesión.
+                            // Los eventos nativos son la señal fiable.
+                            val event = active.poll()
+                            if (event == "closed" || event == "rejected" || event.startsWith("io")) {
+                                val detail = when (event) {
+                                    "rejected" -> getString(R.string.link_refused)
+                                    "closed" -> getString(R.string.link_closed)
+                                    else -> getString(R.string.link_unknown_error)
+                                }
+                                active.close()
+                                link = null
+                                _link.set(getString(R.string.link_offline, detail))
+                                nextAttempt = System.currentTimeMillis() + backoffMs
+                                backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
+                            }
                         }
                     }
                 }

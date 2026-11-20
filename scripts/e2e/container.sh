@@ -21,7 +21,7 @@ if [ "$(id -u)" = 0 ]; then
     chown -R relay:relay "$OUT" "$BUILD_DIR" 2>/dev/null || true
     # `su -` y no `su`: un login resetea HOME a /home/relay. Sin eso el shell
     # hereda HOME=/root y los XDG dirs quedan fuera del alcance de relay.
-    exec su - relay -s /bin/bash -c "OUT='$OUT' BUILD_DIR='$BUILD_DIR' /src/scripts/e2e/container.sh"
+    exec su - relay -s /bin/bash -c "OUT='$OUT' BUILD_DIR='$BUILD_DIR' MODE='${MODE:-e2e}' ADVERTISE='${ADVERTISE:-}' /src/scripts/e2e/container.sh"
 fi
 
 mkdir -p "$OUT"
@@ -160,6 +160,40 @@ else
     fail "daemon did not answer status"
     tail -20 "$OUT/daemon.log"
     exit 1
+fi
+
+# MODE=serve keeps the desktop stack and daemon alive for an external phone
+# (the real Android app in redroid) and exposes the pairing URI plus an env
+# file so the host can drive recordings with `docker exec`.
+if [ "${MODE:-e2e}" = serve ]; then
+    step "serve: pairing window for the real phone"
+    {
+        printf 'export XDG_RUNTIME_DIR=%s\n' "$XDG_RUNTIME_DIR"
+        printf 'export XDG_CONFIG_HOME=%s\n' "$XDG_CONFIG_HOME"
+        printf 'export XDG_DATA_HOME=%s\n' "$XDG_DATA_HOME"
+        printf 'export XDG_CACHE_HOME=%s\n' "$XDG_CACHE_HOME"
+        printf 'export DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS"
+        printf 'export PATH=%s:$PATH\n' "$HOME/.local/bin"
+    } >"$OUT/env.sh"
+    rm -f "$OUT/pair-uri.txt"
+    openrelay pair --ttl 300 --advertise "${ADVERTISE:-172.21.0.1}" --yes >"$OUT/pair-serve.log" 2>&1 &
+    pids+=($!)
+    URI=""
+    for _ in $(seq 1 100); do
+        URI=$(sed -n '1p' "$OUT/pair-serve.log")
+        case "$URI" in openrelay://pair*) break ;; esac
+        sleep 0.1
+    done
+    case "$URI" in
+        openrelay://pair*) printf '%s\n' "$URI" >"$OUT/pair-uri.txt"; pass "serve pair window $URI" ;;
+        *)
+            fail "serve pair did not print a URI"
+            cat "$OUT/pair-serve.log"
+            exit 1
+            ;;
+    esac
+    printf '%s\n' "$DAEMON_PID" >"$OUT/daemon.pid"
+    while :; do sleep 5; done
 fi
 
 openrelay pair --ttl 90 --advertise 127.0.0.1 --yes >"$OUT/pair.log" 2>&1 &
