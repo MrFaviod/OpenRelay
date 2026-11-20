@@ -23,6 +23,7 @@
 .scratch/
 /tmp/
 /artifacts/
+/scripts/e2e/artifacts/
 
 # Local release output; releases are built in CI
 /dist/

@@ -9,6 +9,8 @@
 #
 # Environment:
 #   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.2.0
+#   OPENRELAY_BASE_URL  download base (default: the GitHub release URL); a
+#                       file:// directory with the same asset layout also works
 #   OPENRELAY_BIN_DIR   install directory (default: ~/.local/bin)
 #   OPENRELAY_NO_UNIT=1 skip the systemd --user unit
 #   OPENRELAY_UNINSTALL=1 remove a previous install and exit
@@ -52,7 +54,7 @@ if [ -z "$tag" ]; then
 fi
 version="${tag#v}"
 asset="openrelay-$version-$target.tar.gz"
-base="https://github.com/$REPO/releases/download/$tag"
+base="${OPENRELAY_BASE_URL:-https://github.com/$REPO/releases/download/$tag}"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM

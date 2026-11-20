@@ -21,9 +21,9 @@ use openrelay_audio_core::{AudioFrame, AudioPayload, FrameError};
 use openrelay_proto::wire::{self, ControlMessage, WireError, CONTROL_LENGTH_BYTES};
 use quinn_proto::crypto::rustls::{HandshakeData, QuicClientConfig, QuicServerConfig};
 use quinn_proto::{
-    ClientConfig as QuinnClientConfig, Connection, ConnectionHandle, DatagramEvent, Dir, Endpoint,
-    EndpointConfig, Event, Incoming, ReadError, ServerConfig as QuinnServerConfig, StreamEvent,
-    StreamId, TransportConfig, VarInt, WriteError,
+    ClientConfig as QuinnClientConfig, Connection, ConnectionError, ConnectionHandle,
+    DatagramEvent, Dir, Endpoint, EndpointConfig, Event, Incoming, ReadError,
+    ServerConfig as QuinnServerConfig, StreamEvent, StreamId, TransportConfig, VarInt, WriteError,
 };
 use rustls::pki_types::CertificateDer;
 use rustls::server::WebPkiClientVerifier;
@@ -1715,6 +1715,21 @@ fn read_control(
     }
 }
 
+/// Texto del cierre de QUIC, para distinguir un rechazo de ACL.
+fn close_reason_text(cause: &ConnectionError) -> String {
+    match cause {
+        ConnectionError::ApplicationClosed(frame) => {
+            let reason = String::from_utf8_lossy(&frame.reason);
+            if reason.is_empty() {
+                format!("código {}", frame.error_code)
+            } else {
+                reason.into_owned()
+            }
+        }
+        other => other.to_string(),
+    }
+}
+
 /// ¿El frame es un mensaje `error`? Se usa para no responder `error` a `error`.
 fn is_error_frame(frame: &[u8]) -> bool {
     let Ok(payload) = wire::decode_frame(frame) else {
@@ -1753,6 +1768,9 @@ pub struct SessionClient {
     tx_failed: bool,
     /// `ClientEvent::Closed` ya entregado: el cierre se anuncia una sola vez.
     close_announced: bool,
+    /// Motivo del cierre recibido del servidor (p. ej. `unauthorized`), para
+    /// distinguir un rechazo de ACL de otros cierres.
+    close_reason: Option<String>,
     scratch: Vec<u8>,
 }
 
@@ -1860,6 +1878,7 @@ impl SessionClient {
             control_tx: PendingReplies::default(),
             tx_failed: false,
             close_announced: false,
+            close_reason: None,
             scratch: Vec::new(),
         })
     }
@@ -1921,9 +1940,17 @@ impl SessionClient {
         self.pump(now)
     }
 
-    /// ¿Sesión autorizada?
+    /// ¿Sesión autorizada por el servidor?
     pub fn is_authorized(&self) -> bool {
         self.authorized
+    }
+
+    /// Motivo del cierre anunciado por el servidor, si lo hubo.
+    ///
+    /// `Some("unauthorized")` distingue un rechazo de ACL (el servidor cerró
+    /// el handshake sin autorizar la sesión) de una pérdida de red.
+    pub fn close_reason(&self) -> Option<&str> {
+        self.close_reason.as_deref()
     }
 
     /// `true` si el handshake ofreció 0-RTT (nunca habilitado por este crate).
@@ -2124,9 +2151,10 @@ impl SessionClient {
                     self.events
                         .push_back(ClientEvent::Authorized { server: pin });
                 }
-                Event::ConnectionLost { .. } => {
+                Event::ConnectionLost { reason } => {
                     // Cierre: misma purga que un fallo de protocolo, incluida la
                     // cola TX (`control_tx`) que antes sobrevivía al cierre.
+                    self.close_reason = Some(close_reason_text(&reason));
                     self.drop_session("connection lost");
                     return Ok(());
                 }
