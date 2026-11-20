@@ -17,8 +17,8 @@ android {
         applicationId = "dev.openrelay.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
 
         // Runner listo para T14; las dependencias de test están fijadas abajo.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

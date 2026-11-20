@@ -43,7 +43,7 @@ const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
 /// Espera del handshake antes de declarar que no hubo autorización.
 const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(8);
 /// Versión de la app que viaja en `hello`.
-const APP_VERSION: &str = "0.2.0";
+const APP_VERSION: &str = "0.2.1";
 /// `device_id` estable que el puente declara en `capabilities`.
 const DEVICE_ID: &str = "android-bridge";
 

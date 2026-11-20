@@ -90,7 +90,7 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "hello", "request_id": "h1"
-  "payload": { "role": "android", "version": "0.2.0", "protocol_version": "openrelay.control/v1" } }
+  "payload": { "role": "android", "version": "0.2.1", "protocol_version": "openrelay.control/v1" } }
 ```
 
 `role` ∈ `android`, `linux-cli`, `linux-daemon`. El daemon responde `capabilities`. Una versión de protocolo distinta se rechaza con `version_unsupported`.
