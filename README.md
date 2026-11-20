@@ -48,17 +48,29 @@ curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh 
 
 It installs `openrelay` into `~/.local/bin` (no root) after checking the download against `SHA256SUMS`, and enables and starts the systemd user service when a user session is available.
 
+**Update** to the latest release (your pairings and settings in `~/.config/openrelay` are kept, and the service is restarted on the new binary):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --update
+```
+
 **Android** 9 or newer: get `openrelay-0.2.2-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it.
 
 Manual install, building from source and per-distro packages are in the [install guide](INSTALL.md).
 
 ## Usage
 
-**1. Start the daemon** (the installer already did this; manual fallback:)
+**1. Start the daemon**
+
+The installer already starts it. If `openrelay status` says `the daemon is not running`, start it yourself:
 
 ```sh
-systemctl --user enable --now openrelay.service   # or just: openrelay daemon
+systemctl --user daemon-reload
+systemctl --user enable --now openrelay.service
+openrelay status
 ```
+
+No systemd user session? Run `openrelay daemon` in a terminal and leave it open.
 
 If you have a firewall, open UDP 47000–47001:
 

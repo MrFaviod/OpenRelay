@@ -6,6 +6,7 @@ OpenRelay has two halves: the **Linux daemon and CLI** (`openrelay`) and the **A
 - [Linux: one-line install](#linux-one-line-install)
 - [Linux: manual install from a release](#linux-manual-install-from-a-release)
 - [Run it as a user service](#run-it-as-a-user-service)
+- [Update](#update)
 - [Firewall](#firewall)
 - [Android](#android)
 - [Pair a phone](#pair-a-phone)
@@ -62,7 +63,7 @@ It never uses `sudo`, and by default it writes only under your home directory.
 | `OPENRELAY_NO_UNIT=1` | skip the systemd unit |
 | `OPENRELAY_NO_SERVICE=1` | install the unit but do not enable or start it |
 | `OPENRELAY_FORCE=1` | install even when `libpipewire` or `libopus` is missing |
-| `OPENRELAY_UNINSTALL=1` | remove the binary and the unit |
+| `OPENRELAY_UNINSTALL=1` | remove the binary and the unit (same as `--uninstall`) |
 
 Example:
 
@@ -105,7 +106,7 @@ openrelay service print-unit | head -3
 
 ## Run it as a user service
 
-The installer already enables and starts the unit. These commands are the manual fallback, and `openrelay daemon` runs fine in a terminal too.
+The installer already enables and starts the unit. If `openrelay status` prints `the daemon is not running`, start it with these commands. `openrelay daemon` in a terminal works too, if you have no systemd user session.
 
 ```sh
 systemctl --user daemon-reload
@@ -215,10 +216,20 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 The NDK toolchain path in `build.sh` assumes a `linux-x86_64` host.
 
+## Update
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --update
+```
+
+It downloads the latest release, checks it against `SHA256SUMS`, replaces `~/.local/bin/openrelay` and the unit, and restarts `openrelay.service` so the new binary is running. Paired phones and settings in `~/.config/openrelay` are kept. It refuses to run if OpenRelay is not installed yet. `OPENRELAY_VERSION` and `OPENRELAY_BIN_DIR` work the same as for the install. If you run the daemon by hand with `openrelay daemon`, restart it after updating.
+
+To update the Android app, install the new APK from the release over the old one. Pairing is kept.
+
 ## Uninstall
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | OPENRELAY_UNINSTALL=1 sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --uninstall
 ```
 
 Or by hand:
@@ -237,8 +248,16 @@ Install the runtime libraries listed under [Requirements](#requirements). If you
 **`version 'GLIBC_2.34' not found`**
 Your distro is older than the release baseline. Build from source.
 
-**`openrelay status` exits with 1**
-The daemon isn't running, or it is using a different socket. Start it with `openrelay daemon`, or check `systemctl --user status openrelay.service`. The default socket is `$XDG_RUNTIME_DIR/openrelay/control.sock`. If `XDG_RUNTIME_DIR` is unset, pass `--socket PATH`.
+**`openrelay status` says `the daemon is not running` (or `no daemon at …`)**
+The daemon isn't running. Start it:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now openrelay.service
+openrelay status
+```
+
+Without a systemd user session, run `openrelay daemon` in a terminal. If the service does not stay up, read `journalctl --user -u openrelay.service -e`. The default socket is `$XDG_RUNTIME_DIR/openrelay/control.sock`; if `XDG_RUNTIME_DIR` is unset, pass `--socket PATH`.
 
 **`openrelay: command not found` right after installing**
 `~/.local/bin` is not on your `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.

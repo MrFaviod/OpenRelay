@@ -24,6 +24,14 @@ openrelay --help | openrelay <command> --help
 openrelay daemon
 ```
 
+If `openrelay status` says `the daemon is not running`, start it:
+
+```sh
+systemctl --user daemon-reload && systemctl --user enable --now openrelay.service
+```
+
+(or run `openrelay daemon`). To update later, run `curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --update`; pairings and settings are kept.
+
 It stays in the foreground until Ctrl-C or SIGTERM, and never forks; there is no `--foreground` flag. A socket left behind by a killed process is removed on the next start, while a live one is an error. To run it in the background, use the user unit:
 
 ```sh
