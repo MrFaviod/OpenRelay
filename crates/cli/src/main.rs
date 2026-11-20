@@ -10,6 +10,7 @@
 //! openrelay capabilities [--socket PATH]      pide las capacidades y la revisión actual
 //! openrelay pair [--ttl 120] [--advertise HOST] [--yes]  abre una ventana y aprueba un teléfono
 //! openrelay devices                           lista las identidades aprobadas
+//! openrelay devices remove FINGERPRINT        revoca un dispositivo y cierra sus sesiones
 //! openrelay service print-unit                imprime la unidad systemd --user
 //! ```
 //!
@@ -38,6 +39,7 @@ Uso:
   openrelay pair [--ttl 120] [--advertise HOST] [--yes]
                                               QR + aprobación local de un teléfono
   openrelay devices                           lista las identidades aprobadas
+  openrelay devices remove FINGERPRINT       revoca un dispositivo y cierra sus sesiones
   openrelay service print-unit                imprime la unidad systemd --user
   openrelay --help | openrelay <subcomando> --help
 
@@ -70,8 +72,11 @@ dispositivo sin preguntar. TTL en segundos (1..=300).
 
 const DEVICES_USAGE: &str = "\
 Uso: openrelay devices [--state-dir PATH]
+     openrelay devices remove FINGERPRINT [--socket PATH]
 
-Lista las identidades aprobadas en identities.json (spki y capacidades).
+Sin argumentos lista las identidades aprobadas en identities.json (spki y
+capacidades). `remove` pide al daemon que borre la identidad, la saque de la
+ACL viva y cierre las sesiones abiertas de ese dispositivo.
 ";
 
 const STATUS_USAGE: &str = "\
@@ -590,6 +595,9 @@ impl Drop for PairWindow<'_> {
 
 /// `openrelay devices`: lista `identities.json` sin hablar con el daemon.
 fn cmd_devices(rest: &[String]) -> ExitCode {
+    if rest.first().map(String::as_str) == Some("remove") {
+        return cmd_devices_remove(&rest[1..]);
+    }
     let mut state_dir: Option<PathBuf> = None;
     let mut it = rest.iter();
     while let Some(arg) = it.next() {
@@ -656,6 +664,65 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
         );
     }
     ExitCode::SUCCESS
+}
+
+/// `openrelay devices remove`: pide al daemon que revoque una identidad.
+fn cmd_devices_remove(rest: &[String]) -> ExitCode {
+    let mut socket: Option<PathBuf> = None;
+    let mut fingerprint: Option<String> = None;
+    let mut it = rest.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print!("{DEVICES_USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "--socket" => match it.next() {
+                Some(path) => socket = Some(PathBuf::from(path)),
+                None => {
+                    eprintln!("openrelay: --socket requiere una ruta");
+                    return ExitCode::from(2);
+                }
+            },
+            other if other.starts_with('-') => {
+                eprintln!("openrelay: argumento desconocido: {other}\n\n{DEVICES_USAGE}");
+                return ExitCode::from(2);
+            }
+            other => {
+                if fingerprint.replace(other.to_string()).is_some() {
+                    eprintln!("openrelay: devices remove acepta un solo fingerprint");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+    }
+    let Some(fingerprint) = fingerprint else {
+        eprintln!("openrelay: devices remove requiere un fingerprint\n\n{DEVICES_USAGE}");
+        return ExitCode::from(2);
+    };
+    let Some(socket) = socket.or_else(default_socket) else {
+        eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
+        return ExitCode::from(2);
+    };
+    match call(
+        &socket,
+        "devices.remove",
+        &json!({ "fingerprint_hex": fingerprint }),
+    ) {
+        Ok(result) => {
+            let hex = result["fingerprint_hex"].as_str().unwrap_or(&fingerprint);
+            println!("openrelay: dispositivo eliminado {hex}");
+            println!(
+                "sesiones cerradas: {}",
+                result["closed_sessions"].as_u64().unwrap_or(0)
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("openrelay: {error}");
+            ExitCode::from(1)
+        }
+    }
 }
 
 /// Socket de control por defecto a partir de `XDG_RUNTIME_DIR`.

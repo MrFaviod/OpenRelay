@@ -503,6 +503,7 @@ impl ProductRuntime {
             "pair.approve" => self.pair_approve(args),
             "pair.reject" => self.pair_reject(args),
             "pair.close" => self.pair_close(),
+            "devices.remove" => self.devices_remove(args),
             "audio.stats" => Ok(self.audio_stats_json()),
             "config.get" | "config.set" | "capabilities" => self.control_op(op, request_id, args),
             other => Err(failure(
@@ -640,6 +641,45 @@ impl ProductRuntime {
         self.enroll = None;
         self.pairing.clear_pending();
         Ok(json!({ "closed": was_open }))
+    }
+
+    /// `devices.remove`: borra una identidad aprobada de `identities.json`, la
+    /// saca de la ACL viva y cierra las sesiones que tuviera abiertas.
+    ///
+    /// Es la contraparte de `pair.approve`: sin esto, revocar un teléfono
+    /// exigía editar el archivo a mano y reiniciar el daemon.
+    fn devices_remove(&mut self, args: &Value) -> Result<Value, Value> {
+        let pin = parse_pin(args)?;
+        let Some(quic) = self.quic.as_mut() else {
+            return Err(failure(
+                ErrorCode::Unsupported,
+                "QUIC apagado: no hay dispositivos que revocar",
+            ));
+        };
+        let persisted = pairing::load(&quic.identities)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+        if persisted.capabilities(&pin).is_none() {
+            return Err(failure(
+                ErrorCode::NotFound,
+                "no hay dispositivo aprobado con ese fingerprint",
+            ));
+        }
+        pairing::remove_identity(&quic.identities, &pin)
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+        let closed = quic
+            .live
+            .iter()
+            .filter(|session| quic.server.identity(**session) == Some(pin))
+            .count();
+        quic.server.revoke(&pin, Instant::now());
+        // Los grants de control viven en otro registro: sin esto el pin seguiría
+        // con permisos de lectura/escritura aunque la ACL de sesión ya lo negara.
+        self.control.registry_mut().revoke(&pin);
+        Ok(json!({
+            "fingerprint_hex": pin.to_hex(),
+            "removed": true,
+            "closed_sessions": closed,
+        }))
     }
 
     fn pair_pending(&self) -> Result<Value, Value> {

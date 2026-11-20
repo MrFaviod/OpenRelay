@@ -87,9 +87,13 @@ impl Pairing {
     }
 }
 
-/// Borra una identidad del archivo de identidades (escritura atómica).
-/// Un pin ausente no es error: el resultado es el mismo (sin entrada).
-pub(crate) fn remove_identity(path: &Path, pin: &SpkiPin) -> io::Result<()> {
+/// Borra la identidad `pin` de `identities.json`, conservando el resto.
+///
+/// Un pin ausente no es error: el resultado es el mismo (sin entrada). La ACL
+/// viva del servidor de sesión no se toca aquí: el llamador decide cuándo
+/// revocar (`SessionServer::revoke`), porque el archivo y la memoria pueden
+/// fallar por separado.
+pub fn remove_identity(path: &Path, pin: &SpkiPin) -> io::Result<()> {
     let mut doc = read_doc(path)?;
     let entries = doc["identities"]
         .as_array_mut()
@@ -160,4 +164,52 @@ fn write_atomic(path: &Path, doc: &Value) -> io::Result<()> {
     file.sync_all()?;
     drop(file);
     fs::rename(tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("openrelay-pairing-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("directorio de prueba");
+        dir.join("identities.json")
+    }
+
+    fn pin(byte: u8) -> SpkiPin {
+        SpkiPin::from_spki_der(&[byte; 40])
+    }
+
+    #[test]
+    fn remove_identity_borra_solo_el_pin_pedido_y_es_idempotente() {
+        let path = scratch("remove");
+        let (removed, kept) = (pin(1), pin(2));
+        let doc = json!({
+            "version": IDENTITIES_VERSION,
+            "identities": [
+                {"spki": removed.to_hex(), "mic": true, "control_read": false,
+                 "control_write": false, "return_audio": false},
+                {"spki": kept.to_hex(), "mic": true, "control_read": true,
+                 "control_write": false, "return_audio": false},
+            ],
+        });
+        fs::write(&path, serde_json::to_vec(&doc).expect("json")).expect("identidades");
+
+        remove_identity(&path, &removed).expect("borrar");
+        let acl = load(&path).expect("cargar");
+        assert!(
+            acl.capabilities(&removed).is_none(),
+            "el pin borrado no vuelve"
+        );
+        assert!(acl.capabilities(&kept).is_some(), "el resto se conserva");
+
+        // Un segundo remove del mismo pin no es error.
+        remove_identity(&path, &removed).expect("borrar dos veces");
+        let doc: Value =
+            serde_json::from_str(&fs::read_to_string(&path).expect("leer")).expect("json");
+        assert_eq!(doc["identities"].as_array().map(Vec::len), Some(1));
+    }
 }
