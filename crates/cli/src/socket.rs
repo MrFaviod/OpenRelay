@@ -1,5 +1,5 @@
-//! Socket Unix de control: servidor (un hilo, una línea JSON por petición) y
-//! cliente mínimo para las órdenes de `openrelay`.
+//! Unix control socket: server (one thread, one JSON line per request) and a
+//! minimal client for the `openrelay` commands.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -11,46 +11,49 @@ use std::time::Duration;
 use openrelay_proto::control::ErrorCode;
 use serde_json::{json, Value};
 
-/// Tamaño máximo de una línea de petición.
+/// Maximum size of a request line.
 const MAX_LINE: usize = 64 * 1024;
-/// Tiempo máximo de espera de E/S por conexión.
+/// Maximum I/O wait per connection.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
-/// Cuánto puede bloquear una lectura del socket Unix antes de devolver el
-/// turno. El bucle intercalado bombea QUIC en `Idle`; un `read_line` de los
-/// 5 s completos dejaría el UDP sin atender durante todo ese tiempo.
+/// How long a read on the Unix socket may block before returning the turn.
+/// The interleaved loop pumps QUIC on `Idle`; a full 5 s `read_line` would
+/// leave the UDP endpoint unattended all that time.
 const READ_SLICE: Duration = Duration::from_millis(20);
 
-/// Resultado de una operación: `Ok(result)` o `Err(error)`. Para las ops de
-/// control, ambos son el mensaje v1 completo (`ack`, `capabilities`, `error`).
+/// Result of an operation: `Ok(result)` or `Err(error)`. For control ops,
+/// both are the complete v1 message (`ack`, `capabilities`, `error`).
 pub type OpResult = Result<Value, Value>;
 
-/// Qué pide el bucle intercalado al proceso dueño del estado.
+/// What the interleaved loop asks the process that owns the state for.
 pub enum Interleave<'a> {
-    /// No hay cliente local: bombear el otro transporte.
+    /// No local client: pump the other transport.
     Idle,
-    /// Una línea ya autenticada por UID.
+    /// A line already authenticated by UID.
     Request {
-        /// Operación.
+        /// Operation.
         op: &'a str,
-        /// `request_id` del cliente.
+        /// Client `request_id`.
         request_id: &'a str,
-        /// Argumentos de la operación.
+        /// Operation arguments.
         args: &'a Value,
     },
 }
 
-/// Crea el directorio padre 0700 y el socket 0600. Si ya hay un daemon vivo
-/// en `path`, devuelve error; un socket huérfano se elimina.
+/// Creates the parent directory 0700 and the socket 0600. If a live daemon is
+/// already on `path`, returns an error; an orphan socket is removed.
 ///
-/// `handler` recibe [`Interleave::Idle`] en el mismo hilo cuando no hay un
-/// cliente local. Sirve para bombear el QUIC del proceso sin abrir otro
-/// socket ni otro protocolo. El listener no es bloqueante.
+/// `handler` receives [`Interleave::Idle`] on the same thread when there is no
+/// local client. It serves to pump the process's QUIC without opening another
+/// socket or another protocol. The listener is non-blocking.
 pub fn serve_interleaved<H>(path: &Path, mut handler: H) -> io::Result<()>
 where
     H: FnMut(Interleave) -> OpResult,
 {
     let dir = path.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "ruta de socket sin directorio")
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "socket path without a parent directory",
+        )
     })?;
     fs::create_dir_all(dir)?;
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
@@ -59,7 +62,7 @@ where
         if UnixStream::connect(path).is_ok() {
             return Err(io::Error::new(
                 io::ErrorKind::AddrInUse,
-                "ya hay un daemon escuchando en ese socket",
+                "a daemon is already listening on that socket",
             ));
         }
         fs::remove_file(path)?;
@@ -79,7 +82,7 @@ where
         match listener.accept() {
             Ok((stream, _)) => {
                 if let Err(error) = handle_conn(stream, handler) {
-                    eprintln!("openrelay: conexión: {error}");
+                    eprintln!("openrelay: connection: {error}");
                 }
             }
             Err(error) if is_wait(&error) => {
@@ -97,7 +100,7 @@ fn is_wait(error: &io::Error) -> bool {
     )
 }
 
-/// Atiende una conexión: comprueba el UID del par y procesa líneas hasta EOF.
+/// Serves one connection: checks the peer UID and processes lines until EOF.
 fn handle_conn<H>(stream: UnixStream, handler: &mut H) -> io::Result<()>
 where
     H: FnMut(Interleave) -> OpResult,
@@ -105,7 +108,7 @@ where
     stream.set_read_timeout(Some(READ_SLICE))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
     if !peer_is_self(&stream)? {
-        // Cierre inmediato: el par no es nuestro UID.
+        // Immediate close: the peer is not our UID.
         return Ok(());
     }
 
@@ -117,15 +120,11 @@ where
             .by_ref()
             .take(MAX_LINE as u64 + 1)
             .read_line(&mut line);
-        // El tope se mide sobre la línea acumulada, no sobre cada lectura:
-        // un timeout devuelve `Err` con el prefijo ya en `line`, así que un
-        // cliente lento podría acumular sin límite si sólo se mirara `n`.
+        // The cap is measured on the accumulated line, not on each read:
+        // a timeout returns `Err` with the prefix already in `line`, so a
+        // slow client could accumulate without limit if only `n` were checked.
         if line.trim_end_matches('\n').len() > MAX_LINE {
-            let reply = error_reply(
-                Value::Null,
-                ErrorCode::TooLarge,
-                "petición demasiado grande",
-            );
+            let reply = error_reply(Value::Null, ErrorCode::TooLarge, "request too large");
             write_reply(reader.get_mut(), &reply)?;
             return Ok(());
         }
@@ -134,8 +133,8 @@ where
             Ok(_) => {
                 waited = Duration::ZERO;
                 if !line.ends_with('\n') {
-                    // El tope de lectura cortó a mitad de línea: se sigue
-                    // acumulando, sin tratar el prefijo como una petición.
+                    // The read cap cut mid-line: keep accumulating, without
+                    // treating the prefix as a request.
                     continue;
                 }
                 let reply = process_line(line.trim_end(), handler);
@@ -147,7 +146,7 @@ where
                 if waited >= IO_TIMEOUT {
                     return Err(error);
                 }
-                // Nadie completó la línea: el otro transporte recupera el turno.
+                // Nobody completed the line: the other transport gets the turn.
                 let _ = handler(Interleave::Idle);
             }
             Err(error) => return Err(error),
@@ -155,22 +154,22 @@ where
     }
 }
 
-/// Procesa una línea y devuelve la respuesta ya formada.
+/// Processes one line and returns the already formed reply.
 fn process_line<H>(line: &str, handler: &mut H) -> Value
 where
     H: FnMut(Interleave) -> OpResult,
 {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
-        Err(_) => return error_reply(Value::Null, ErrorCode::Invalid, "JSON inválido"),
+        Err(_) => return error_reply(Value::Null, ErrorCode::Invalid, "invalid JSON"),
     };
     let id = match req.get("request_id") {
         Some(v) if v.is_string() => v.clone(),
-        _ => return error_reply(Value::Null, ErrorCode::Invalid, "falta request_id"),
+        _ => return error_reply(Value::Null, ErrorCode::Invalid, "missing request_id"),
     };
     let op = match req.get("op").and_then(Value::as_str) {
         Some(op) => op,
-        None => return error_reply(id, ErrorCode::Invalid, "falta op"),
+        None => return error_reply(id, ErrorCode::Invalid, "missing op"),
     };
     let args = req.get("args").cloned().unwrap_or(Value::Null);
     let id_text = id.as_str().unwrap_or_default();
@@ -198,17 +197,17 @@ fn write_reply(stream: &mut UnixStream, reply: &Value) -> io::Result<()> {
     stream.write_all(out.as_bytes())
 }
 
-/// `SO_PEERCRED` vía rustix (sin `unsafe`): ¿el UID del par es el nuestro?
+/// `SO_PEERCRED` via rustix (no `unsafe`): is the peer UID ours?
 fn peer_is_self(stream: &UnixStream) -> io::Result<bool> {
     let cred = rustix::net::sockopt::socket_peercred(stream)?;
     Ok(cred.uid.as_raw() == rustix::process::getuid().as_raw())
 }
 
-/// Envía una petición `op` con `args` al daemon en `path` y devuelve la
-/// respuesta completa.
+/// Sends a request `op` with `args` to the daemon at `path` and returns the
+/// complete response.
 pub fn request(path: &Path, op: &str, args: &Value) -> Result<Value, String> {
-    let mut stream = UnixStream::connect(path)
-        .map_err(|e| format!("no hay daemon en {}: {e}", path.display()))?;
+    let mut stream =
+        UnixStream::connect(path).map_err(|e| format!("no daemon at {}: {e}", path.display()))?;
     stream
         .set_read_timeout(Some(IO_TIMEOUT))
         .map_err(|e| e.to_string())?;
@@ -232,12 +231,12 @@ pub fn request(path: &Path, op: &str, args: &Value) -> Result<Value, String> {
         .read_line(&mut line)
         .map_err(|e| e.to_string())?;
     if n == 0 {
-        return Err("el daemon cerró la conexión sin responder".to_owned());
+        return Err("the daemon closed the connection without replying".to_owned());
     }
     let resp: Value =
-        serde_json::from_str(line.trim_end()).map_err(|e| format!("respuesta inválida: {e}"))?;
+        serde_json::from_str(line.trim_end()).map_err(|e| format!("invalid response: {e}"))?;
     if resp.get("request_id") != Some(&Value::String(id)) {
-        return Err("request_id de la respuesta no coincide".to_owned());
+        return Err("response request_id does not match".to_owned());
     }
     Ok(resp)
 }

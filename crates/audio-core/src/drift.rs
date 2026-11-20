@@ -66,7 +66,7 @@ impl DriftConfig {
             || self.kp_ratio_per_frame < 0.0
             || self.ki_ratio_per_frame_s < 0.0
         {
-            return Err(DriftError::InvalidConfig("límites fuera de rango"));
+            return Err(DriftError::InvalidConfig("limits out of range"));
         }
         Ok(())
     }
@@ -93,12 +93,12 @@ pub enum DriftError {
 impl fmt::Display for DriftError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NonFiniteConfig => write!(f, "configuración de drift no finita"),
-            Self::InvalidConfig(what) => write!(f, "configuración de drift inválida: {what}"),
-            Self::NonMonotonicTime => write!(f, "reloj local no monotónico"),
-            Self::NonMonotonicCounters => write!(f, "contadores de muestras no monotónicos"),
-            Self::IntervalTooShort => write!(f, "intervalo demasiado corto para ppm"),
-            Self::FillOutOfRange => write!(f, "ocupación fuera del rango razonable"),
+            Self::NonFiniteConfig => write!(f, "non-finite drift configuration"),
+            Self::InvalidConfig(what) => write!(f, "invalid drift configuration: {what}"),
+            Self::NonMonotonicTime => write!(f, "local clock is not monotonic"),
+            Self::NonMonotonicCounters => write!(f, "sample counters are not monotonic"),
+            Self::IntervalTooShort => write!(f, "interval too short to estimate ppm"),
+            Self::FillOutOfRange => write!(f, "occupancy outside a reasonable range"),
         }
     }
 }

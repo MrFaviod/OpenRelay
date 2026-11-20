@@ -128,11 +128,11 @@ pub enum RuntimeError {
 impl std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Provision(detail) => write!(f, "provisión: {detail}"),
+            Self::Provision(detail) => write!(f, "provision: {detail}"),
             Self::Control(error) => write!(f, "control: {error}"),
-            Self::Socket(error) => write!(f, "socket UDP: {error}"),
-            Self::Transport(error) => write!(f, "transporte: {error}"),
-            Self::Enroll(detail) => write!(f, "enrolamiento: {detail}"),
+            Self::Socket(error) => write!(f, "UDP socket: {error}"),
+            Self::Transport(error) => write!(f, "transport: {error}"),
+            Self::Enroll(detail) => write!(f, "enrollment: {detail}"),
         }
     }
 }
@@ -201,7 +201,7 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
         (Some(addr), Some(files)) => Some(load_quic(*addr, files, &mut registry)?),
         (Some(_), None) => {
             return Err(RuntimeError::Provision(
-                "falta la provisión (identidad, CA, identidades y grants)".into(),
+                "provision is missing (identity, CA, identities and grants)".into(),
             ))
         }
         (None, _) => None,
@@ -230,9 +230,7 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
             RuntimeReady {
                 server_pin: None,
                 quic_addr: None,
-                quic_gap: Some(
-                    "endpoint QUIC apagado: no hay identidad, CA ni pin aprovisionados".into(),
-                ),
+                quic_gap: Some("QUIC endpoint is off: no identity, CA or pin provisioned".into()),
             },
         ),
     };
@@ -241,9 +239,11 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
         ProductRuntime {
             control,
             quic_addr: match quic.as_ref() {
-                Some(endpoint) => Some(endpoint.socket.local_addr().map_err(|error| {
-                    RuntimeError::Provision(format!("dirección local: {error}"))
-                })?),
+                Some(endpoint) => {
+                    Some(endpoint.socket.local_addr().map_err(|error| {
+                        RuntimeError::Provision(format!("local address: {error}"))
+                    })?)
+                }
                 None => None,
             },
             quic,
@@ -268,13 +268,13 @@ fn load_quic(
 ) -> Result<LoadedQuic, RuntimeError> {
     let cert = read_cert(&files.identity_der)?;
     let pin = SpkiPin::from_certificate_der(cert.as_ref())
-        .map_err(|error| RuntimeError::Provision(format!("pin del servidor: {error}")))?;
+        .map_err(|error| RuntimeError::Provision(format!("server pin: {error}")))?;
     let identity = Arc::new(load_identity(cert, &files.identity_key)?);
     let roots = identity::root_store([read_cert(&files.client_ca_der)?])
-        .map_err(|error| RuntimeError::Provision(format!("CA de clientes: {error}")))?;
+        .map_err(|error| RuntimeError::Provision(format!("client CA: {error}")))?;
     let acl = pairing::load(&files.identities).map_err(|error| {
         RuntimeError::Provision(format!(
-            "identidades ({}): {error}",
+            "identities ({}): {error}",
             files.identities.display()
         ))
     })?;
@@ -315,9 +315,9 @@ fn open_pipewire() -> (Option<PipeWireSource>, Option<String>) {
     match PipeWireSource::open(RING_SAMPLES) {
         Ok(mut source) => match source.activate() {
             Ok(()) => (Some(source), None),
-            Err(error) => (None, Some(format!("activar fuente: {error}"))),
+            Err(error) => (None, Some(format!("activate source: {error}"))),
         },
-        Err(error) => (None, Some(format!("abrir fuente: {error}"))),
+        Err(error) => (None, Some(format!("open source: {error}"))),
     }
 }
 
@@ -344,17 +344,17 @@ fn register_grants(
             (Some(pin), Some(device), Some(mode)) if parts.next().is_none() => (pin, device, mode),
             _ => {
                 return Err(RuntimeError::Provision(format!(
-                    "grants línea {}: se esperan pin, device_id y read|write",
+                    "grants line {}: expected pin, device_id and read|write",
                     index + 1
                 )))
             }
         };
         let pin = SpkiPin::from_hex(pin_hex).ok_or_else(|| {
-            RuntimeError::Provision(format!("grants línea {}: pin inválido", index + 1))
+            RuntimeError::Provision(format!("grants line {}: invalid pin", index + 1))
         })?;
         let caps = acl.capabilities(&pin).ok_or_else(|| {
             RuntimeError::Provision(format!(
-                "grants línea {}: el pin no está en la ACL cargada",
+                "grants line {}: pin is not in the loaded ACL",
                 index + 1
             ))
         })?;
@@ -363,20 +363,20 @@ fn register_grants(
             "write" => true,
             _ => {
                 return Err(RuntimeError::Provision(format!(
-                    "grants línea {}: modo {mode} no es read ni write",
+                    "grants line {}: mode {mode} is neither read nor write",
                     index + 1
                 )))
             }
         };
         if write && !caps.control_write() {
             return Err(RuntimeError::Provision(format!(
-                "grants línea {}: la ACL no concede control_write",
+                "grants line {}: ACL does not grant control_write",
                 index + 1
             )));
         }
         if !caps.control_read() {
             return Err(RuntimeError::Provision(format!(
-                "grants línea {}: la ACL no concede control_read",
+                "grants line {}: ACL does not grant control_read",
                 index + 1
             )));
         }
@@ -403,19 +403,19 @@ fn load_identity(
     key_path: &Path,
 ) -> Result<rustls::sign::CertifiedKey, RuntimeError> {
     let key_bytes = fs::read(key_path).map_err(|error| {
-        RuntimeError::Provision(format!("clave ({}): {error}", key_path.display()))
+        RuntimeError::Provision(format!("key ({}): {error}", key_path.display()))
     })?;
     let key_der = PrivatePkcs8KeyDer::from(key_bytes);
     let signing = any_ecdsa_type(&key_der.into())
-        .map_err(|_| RuntimeError::Provision("la clave PKCS#8 no es ECDSA usable".into()))?;
+        .map_err(|_| RuntimeError::Provision("the PKCS#8 key is not usable ECDSA".into()))?;
     // `certified_key` rechaza una clave que no corresponde al certificado.
     identity::certified_key(vec![cert], signing)
-        .map_err(|error| RuntimeError::Provision(format!("identidad: {error}")))
+        .map_err(|error| RuntimeError::Provision(format!("identity: {error}")))
 }
 
 fn read_cert(path: &Path) -> Result<CertificateDer<'static>, RuntimeError> {
     let bytes = fs::read(path).map_err(|error| {
-        RuntimeError::Provision(format!("certificado ({}): {error}", path.display()))
+        RuntimeError::Provision(format!("certificate ({}): {error}", path.display()))
     })?;
     Ok(CertificateDer::from(bytes))
 }
@@ -440,23 +440,19 @@ impl ProductRuntime {
     /// Aplica una línea del socket Unix. El JSON es el que ya habla `openrelay`.
     pub fn local_line(&mut self, line: &str) -> Value {
         if line.len() > MAX_LINE {
-            return error_reply(
-                Value::Null,
-                ErrorCode::TooLarge,
-                "petición demasiado grande",
-            );
+            return error_reply(Value::Null, ErrorCode::TooLarge, "request too large");
         }
         let req: Value = match serde_json::from_str(line) {
             Ok(value) => value,
-            Err(_) => return error_reply(Value::Null, ErrorCode::Invalid, "JSON inválido"),
+            Err(_) => return error_reply(Value::Null, ErrorCode::Invalid, "invalid JSON"),
         };
         let id = match req.get("request_id") {
             Some(value) if value.is_string() => value.clone(),
-            _ => return error_reply(Value::Null, ErrorCode::Invalid, "falta request_id"),
+            _ => return error_reply(Value::Null, ErrorCode::Invalid, "missing request_id"),
         };
         let op = match req.get("op").and_then(Value::as_str) {
             Some(op) => op,
-            None => return error_reply(id, ErrorCode::Invalid, "falta op"),
+            None => return error_reply(id, ErrorCode::Invalid, "missing op"),
         };
         let args = req.get("args").cloned().unwrap_or(Value::Null);
         let id_text = id.as_str().unwrap_or_default();
@@ -483,7 +479,7 @@ impl ProductRuntime {
                         Some(error) => json!({"ok": false, "error": error}),
                         None => json!({"ok": true}),
                     },
-                    None => json!({"ok": false, "error": "QUIC apagado"}),
+                    None => json!({"ok": false, "error": "QUIC is off"}),
                 };
                 Ok(json!({
                     "version": env!("CARGO_PKG_VERSION"),
@@ -508,7 +504,7 @@ impl ProductRuntime {
             "config.get" | "config.set" | "capabilities" => self.control_op(op, request_id, args),
             other => Err(failure(
                 ErrorCode::Unsupported,
-                &format!("op desconocida: {other}"),
+                &format!("unknown op: {other}"),
             )),
         }
     }
@@ -516,15 +512,15 @@ impl ProductRuntime {
     fn control_op(&mut self, op: &str, request_id: &str, args: &Value) -> Result<Value, Value> {
         let message = local_message(op, request_id, args)?;
         if encode_message(&message).is_err() {
-            return Err(failure(ErrorCode::Invalid, "petición de control inválida"));
+            return Err(failure(ErrorCode::Invalid, "invalid control request"));
         }
         let outcome = self
             .control
             .local_call(&message)
-            .map_err(|_| failure(ErrorCode::Internal, "admin local no disponible"))?;
+            .map_err(|_| failure(ErrorCode::Internal, "local admin unavailable"))?;
         let response = outcome
             .response
-            .ok_or_else(|| failure(ErrorCode::Internal, "sin respuesta de control"))?;
+            .ok_or_else(|| failure(ErrorCode::Internal, "no control response"))?;
         let envelope =
             message_json(&response).map_err(|text| failure(ErrorCode::Internal, &text))?;
         match response {
@@ -554,15 +550,12 @@ impl ProductRuntime {
     fn pair_open(&mut self, args: &Value) -> Result<Value, Value> {
         self.reap_dead_window();
         if self.enroll.is_some() {
-            return Err(failure(
-                ErrorCode::Busy,
-                "ya hay una ventana de emparejamiento abierta",
-            ));
+            return Err(failure(ErrorCode::Busy, "a pairing window is already open"));
         }
         let Some(quic) = self.quic.as_ref() else {
             return Err(failure(
                 ErrorCode::Unsupported,
-                "QUIC apagado: no hay identidad de sesión para emparejar",
+                "QUIC is off: no session identity to pair with",
             ));
         };
         let ttl = match args.get("ttl_s") {
@@ -574,7 +567,7 @@ impl ProductRuntime {
                 {
                     ttl
                 }
-                _ => return Err(failure(ErrorCode::Invalid, "ttl_s fuera de 1..=300")),
+                _ => return Err(failure(ErrorCode::Invalid, "ttl_s out of 1..=300")),
             },
         };
         let host = match args.get("advertise") {
@@ -583,30 +576,30 @@ impl ProductRuntime {
                 .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
             Some(Value::String(text)) => match text.parse::<IpAddr>() {
                 Ok(ip) => ip,
-                Err(_) => return Err(failure(ErrorCode::Invalid, "advertise debe ser una IP")),
+                Err(_) => return Err(failure(ErrorCode::Invalid, "advertise must be an IP")),
             },
-            Some(_) => return Err(failure(ErrorCode::Invalid, "advertise debe ser texto")),
+            Some(_) => return Err(failure(ErrorCode::Invalid, "advertise must be text")),
         };
         let addr = SocketAddr::new(host, ENROLL_PORT);
         let bind = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), ENROLL_PORT);
         let socket = UdpSocket::bind(bind)
-            .map_err(|error| failure(ErrorCode::Busy, &format!("puerto {ENROLL_PORT}: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Busy, &format!("port {ENROLL_PORT}: {error}")))?;
         let owner = match args.get("owner_pid") {
             None | Some(Value::Null) => None,
             Some(value) => match value.as_u64().and_then(|pid| u32::try_from(pid).ok()) {
                 Some(pid) if pid > 0 => Some(pid),
-                _ => return Err(failure(ErrorCode::Invalid, "owner_pid debe ser un PID")),
+                _ => return Err(failure(ErrorCode::Invalid, "owner_pid must be a PID")),
             },
         };
         let _ = socket.set_nonblocking(true);
         let mut server = EnrollServer::new(Arc::clone(&quic.identity))
-            .map_err(|error| failure(ErrorCode::Internal, &format!("enrolamiento: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("enrollment: {error}")))?;
         let token = EnrollmentToken::generate()
             .map_err(|error| failure(ErrorCode::Internal, &format!("token: {error}")))?;
         let now = Instant::now();
         server
             .open_window(token.clone(), Duration::from_secs(ttl), now)
-            .map_err(|error| failure(ErrorCode::Internal, &format!("ventana: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("window: {error}")))?;
         let uri = Pairing::qr_payload(quic.pin, addr, &token);
         let expires_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -653,19 +646,19 @@ impl ProductRuntime {
         let Some(quic) = self.quic.as_mut() else {
             return Err(failure(
                 ErrorCode::Unsupported,
-                "QUIC apagado: no hay dispositivos que revocar",
+                "QUIC is off: no devices to revoke",
             ));
         };
         let persisted = pairing::load(&quic.identities)
-            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identities: {error}")))?;
         if persisted.capabilities(&pin).is_none() {
             return Err(failure(
                 ErrorCode::NotFound,
-                "no hay dispositivo aprobado con ese fingerprint",
+                "no approved device with that fingerprint",
             ));
         }
         pairing::remove_identity(&quic.identities, &pin)
-            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identities: {error}")))?;
         let closed = quic
             .live
             .iter()
@@ -697,23 +690,20 @@ impl ProductRuntime {
     fn pair_approve(&mut self, args: &Value) -> Result<Value, Value> {
         let pin = parse_pin(args)?;
         if !self.pairing.pending().contains(&pin) {
-            return Err(failure(ErrorCode::NotFound, "identidad no pendiente"));
+            return Err(failure(ErrorCode::NotFound, "identity is not pending"));
         }
         let Some(enroll) = self.enroll.as_mut() else {
-            return Err(failure(
-                ErrorCode::NotFound,
-                "no hay ventana de emparejamiento",
-            ));
+            return Err(failure(ErrorCode::NotFound, "no pairing window"));
         };
         let spki = enroll
             .server
             .pending_spki()
-            .ok_or_else(|| failure(ErrorCode::NotFound, "el dispositivo no envió su SPKI"))?
+            .ok_or_else(|| failure(ErrorCode::NotFound, "the device did not send its SPKI"))?
             .to_vec();
         let quic = self
             .quic
             .as_mut()
-            .ok_or_else(|| failure(ErrorCode::Unsupported, "QUIC apagado"))?;
+            .ok_or_else(|| failure(ErrorCode::Unsupported, "QUIC is off"))?;
         let ca = crate::issue::load(&quic.client_ca_der, &quic.client_ca_key)
             .map_err(|error| failure(ErrorCode::Internal, &error))?;
         let client_leaf_der = crate::issue::issue_client_leaf(&ca, &spki)
@@ -723,7 +713,7 @@ impl ProductRuntime {
         let session_port = quic
             .socket
             .local_addr()
-            .map_err(|error| failure(ErrorCode::Internal, &format!("socket QUIC: {error}")))?
+            .map_err(|error| failure(ErrorCode::Internal, &format!("QUIC socket: {error}")))?
             .port();
         let caps = Capabilities::none()
             .with_mic()
@@ -731,7 +721,7 @@ impl ProductRuntime {
             .with_control_write();
         self.pairing
             .approve(pin, caps, &quic.identities)
-            .map_err(|error| failure(ErrorCode::Internal, &format!("identidades: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("identities: {error}")))?;
         quic.server.allow(pin, caps);
         let outcome = EnrollOutcome {
             client_leaf_der,
@@ -741,7 +731,7 @@ impl ProductRuntime {
         enroll
             .server
             .approve(Instant::now(), &outcome)
-            .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("response: {error}")))?;
         flush_enroll(enroll);
         // La hoja va por QUIC: el cliente necesita ACKs y retransmisiones para
         // recibirla. Cerrar el socket aquí perdería la respuesta; la ventana se
@@ -759,18 +749,16 @@ impl ProductRuntime {
     /// Rechaza el pendiente (o todos si no se nombra uno) y cierra la ventana.
     fn pair_reject(&mut self, args: &Value) -> Result<Value, Value> {
         let pin = match args.get("fingerprint_hex") {
-            Some(Value::String(text)) => SpkiPin::from_hex(text)
-                .ok_or_else(|| failure(ErrorCode::Invalid, "pin inválido"))?,
+            Some(Value::String(text)) => {
+                SpkiPin::from_hex(text).ok_or_else(|| failure(ErrorCode::Invalid, "invalid pin"))?
+            }
             _ => match self.pairing.pending().first() {
                 Some(pin) => *pin,
-                None => return Err(failure(ErrorCode::NotFound, "no hay identidad pendiente")),
+                None => return Err(failure(ErrorCode::NotFound, "no pending identity")),
             },
         };
         let Some(enroll) = self.enroll.as_mut() else {
-            return Err(failure(
-                ErrorCode::NotFound,
-                "no hay ventana de emparejamiento",
-            ));
+            return Err(failure(ErrorCode::NotFound, "no pairing window"));
         };
         enroll
             .server
@@ -778,7 +766,7 @@ impl ProductRuntime {
                 Instant::now(),
                 openrelay_transport::enrollment::EnrollReject::Denied,
             )
-            .map_err(|error| failure(ErrorCode::Internal, &format!("respuesta: {error}")))?;
+            .map_err(|error| failure(ErrorCode::Internal, &format!("response: {error}")))?;
         flush_enroll(enroll);
         self.pairing.reject(pin);
         enroll.expires = Instant::now() + Duration::from_secs(5);
@@ -1070,8 +1058,8 @@ fn parse_pin(args: &Value) -> Result<SpkiPin, Value> {
     let text = args
         .get("fingerprint_hex")
         .and_then(Value::as_str)
-        .ok_or_else(|| failure(ErrorCode::Invalid, "falta fingerprint_hex"))?;
-    SpkiPin::from_hex(text).ok_or_else(|| failure(ErrorCode::Invalid, "pin inválido"))
+        .ok_or_else(|| failure(ErrorCode::Invalid, "missing fingerprint_hex"))?;
+    SpkiPin::from_hex(text).ok_or_else(|| failure(ErrorCode::Invalid, "invalid pin"))
 }
 
 /// IPv4 no loopback de la interfaz que usaría el kernel para salir a la LAN.
@@ -1102,9 +1090,9 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
                 None | Some(Value::Null) => None,
                 Some(Value::String(name)) => Some(
                     openrelay_proto::control::ConfigKey::new(name)
-                        .map_err(|code| failure(code, "clave de configuración inválida"))?,
+                        .map_err(|code| failure(code, "invalid config key"))?,
                 ),
-                Some(_) => return Err(failure(ErrorCode::Invalid, "key debe ser texto")),
+                Some(_) => return Err(failure(ErrorCode::Invalid, "key must be text")),
             };
             Ok(ControlMessage::ConfigGet(
                 openrelay_proto::wire::ConfigGetMsg {
@@ -1116,13 +1104,13 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
         "config.set" => {
             let key = match args.get("key").and_then(Value::as_str) {
                 Some(name) => openrelay_proto::control::ConfigKey::new(name)
-                    .map_err(|code| failure(code, "clave de configuración inválida"))?,
-                None => return Err(failure(ErrorCode::Invalid, "falta key")),
+                    .map_err(|code| failure(code, "invalid config key"))?,
+                None => return Err(failure(ErrorCode::Invalid, "missing key")),
             };
             let expected_revision = args
                 .get("expected_revision")
                 .and_then(Value::as_u64)
-                .ok_or_else(|| failure(ErrorCode::Invalid, "falta expected_revision"))?;
+                .ok_or_else(|| failure(ErrorCode::Invalid, "missing expected_revision"))?;
             let value = match args.get("value") {
                 Some(Value::Bool(flag)) => openrelay_proto::control::ConfigValue::Bool(*flag),
                 Some(Value::String(text)) => {
@@ -1131,12 +1119,12 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
                 Some(Value::Number(number)) => match (number.as_i64(), number.as_f64()) {
                     (Some(integer), _) => openrelay_proto::control::ConfigValue::Integer(integer),
                     (None, Some(real)) => openrelay_proto::control::ConfigValue::Number(real),
-                    _ => return Err(failure(ErrorCode::Invalid, "value no representable")),
+                    _ => return Err(failure(ErrorCode::Invalid, "value is not representable")),
                 },
                 _ => {
                     return Err(failure(
                         ErrorCode::Invalid,
-                        "value debe ser bool, número o texto",
+                        "value must be a bool, number or text",
                     ))
                 }
             };
@@ -1155,15 +1143,15 @@ fn local_message(op: &str, request_id: &str, args: &Value) -> Result<ControlMess
             version: env!("CARGO_PKG_VERSION").to_owned(),
             protocol_version: openrelay_proto::wire::SCHEMA_VERSION.to_owned(),
         })),
-        _ => Err(failure(ErrorCode::Unsupported, "op desconocida")),
+        _ => Err(failure(ErrorCode::Unsupported, "unknown op")),
     }
 }
 
 fn message_json(message: &ControlMessage) -> Result<Value, String> {
     let frame =
-        encode_message(message).map_err(|_| "mensaje de control no codificable".to_owned())?;
-    let payload = decode_frame(&frame).map_err(|_| "frame de control inválido".to_owned())?;
-    serde_json::from_slice(payload).map_err(|_| "JSON de control inválido".to_owned())
+        encode_message(message).map_err(|_| "control message is not encodable".to_owned())?;
+    let payload = decode_frame(&frame).map_err(|_| "invalid control frame".to_owned())?;
+    serde_json::from_slice(payload).map_err(|_| "invalid control JSON".to_owned())
 }
 
 fn failure(code: ErrorCode, message: &str) -> Value {
@@ -1192,22 +1180,22 @@ mod tests {
         let peer = [Feature::AudioPcm16_48kMono, Feature::AudioReturnPcm48kMono];
         assert!(
             return_targets(&[7u64, 8], false, |_| Some(peer.to_vec())).is_empty(),
-            "config apagada: el peer que anuncia no basta"
+            "config off: an announcing peer is not enough"
         );
         assert_eq!(
             return_targets(&[7u64, 8], true, |_| Some(peer.to_vec())),
             vec![7, 8],
-            "config encendida y peer que anuncia: sí entra"
+            "config on and announcing peer: it is included"
         );
         assert!(
             return_targets(&[7u64], true, |_| None).is_empty(),
-            "sin capabilities del peer no hay retorno"
+            "without peer capabilities there is no return audio"
         );
     }
 
     #[test]
     fn pair_close_without_a_window_is_a_noop() {
-        let (mut runtime, _) = start(&RuntimeConfig::default()).expect("arranque local");
+        let (mut runtime, _) = start(&RuntimeConfig::default()).expect("local start");
         let closed = runtime.local_line(r#"{"request_id":"t-2","op":"pair.close"}"#);
         assert_eq!(closed["ok"], true, "{closed}");
         assert_eq!(closed["result"]["closed"], false, "{closed}");
@@ -1215,13 +1203,13 @@ mod tests {
 
     #[test]
     fn pid_alive_sees_this_process_and_not_a_missing_one() {
-        assert!(pid_alive(std::process::id()), "el propio proceso existe");
-        assert!(!pid_alive(u32::MAX), "un PID imposible no existe");
+        assert!(pid_alive(std::process::id()), "this process exists");
+        assert!(!pid_alive(u32::MAX), "an impossible PID does not exist");
     }
 
     #[test]
     fn without_provision_quic_stays_off_and_set_is_refused_without_applicator() {
-        let (mut runtime, ready) = start(&RuntimeConfig::default()).expect("arranque local");
+        let (mut runtime, ready) = start(&RuntimeConfig::default()).expect("local start");
         assert!(!runtime.quic_enabled());
         assert!(ready.quic_gap.is_some());
         assert!(ready.server_pin.is_none());

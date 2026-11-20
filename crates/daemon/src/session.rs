@@ -323,7 +323,7 @@ impl SessionAudio {
         }
         match self.decoders[index].as_mut() {
             Some(decoder) => Ok(decoder),
-            None => unreachable!("el decodificador se inicializó arriba"),
+            None => unreachable!("the decoder was initialized above"),
         }
     }
 
@@ -444,10 +444,10 @@ mod tests {
             out[0].epoch,
             out[0].seq,
             Flags::NONE,
-            out[0].samples.as_slice().try_into().expect("240 muestras"),
+            out[0].samples.as_slice().try_into().expect("240 samples"),
         )
-        .expect("frame reconstruido");
-        assert_eq!(rebuilt.encode(), frame.encode(), "bytes PCM16 idénticos");
+        .expect("rebuilt frame");
+        assert_eq!(rebuilt.encode(), frame.encode(), "identical PCM16 bytes");
         assert_eq!(state.stats().pcm16_frames, 1);
     }
 
@@ -479,14 +479,14 @@ mod tests {
         let mut state = SessionAudio::new(true);
         state
             .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
-            .expect("primero");
+            .expect("first");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(1, 3, Flags::NONE, &fourth)),
                 0,
             )
-            .expect("hueco");
-        assert_eq!(out.len(), 3, "dos PLC y el frame actual");
+            .expect("gap");
+        assert_eq!(out.len(), 3, "two PLC frames and the current frame");
         assert_eq!(out[0].seq, 1);
         assert_eq!(out[1].seq, 2);
         assert_eq!(out[2].seq, 3);
@@ -505,14 +505,14 @@ mod tests {
         let mut state = SessionAudio::new(true);
         state
             .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
-            .expect("primero");
+            .expect("first");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(1, 40, Flags::NONE, &later)),
                 0,
             )
-            .expect("hueco largo");
-        assert_eq!(out.len(), 1, "sin PLC fuera de la ventana");
+            .expect("long gap");
+        assert_eq!(out.len(), 1, "no PLC outside the window");
         assert_eq!(out[0].seq, 40);
         assert_eq!(state.stats().plc_frames, 0);
         assert_eq!(state.stats().discontinuities, 1);
@@ -526,14 +526,14 @@ mod tests {
         let mut state = SessionAudio::new(true);
         state
             .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
-            .expect("época 1");
+            .expect("epoch 1");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(2, 0, Flags::DISCONTINUITY, &second)),
                 0,
             )
-            .expect("época 2");
-        assert_eq!(out.len(), 1, "la época nueva no arrastra PLC");
+            .expect("epoch 2");
+        assert_eq!(out.len(), 1, "the new epoch does not carry PLC");
         assert_eq!(out[0].epoch, 2);
         assert_eq!(state.stats().epoch_resets, 1);
         assert_eq!(state.stats().plc_frames, 0);
@@ -549,18 +549,18 @@ mod tests {
                 AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)),
                 0,
             )
-            .expect("descartado sin error");
+            .expect("discarded without error");
         assert!(out.is_empty());
         assert_eq!(state.stats().dropped_unnegotiated_opus, 1);
         assert_eq!(state.stats().opus_frames, 0);
 
-        state.set_opus_negotiated(true).expect("negociación");
+        state.set_opus_negotiated(true).expect("negotiation");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &packet)),
                 0,
             )
-            .expect("ya negociado");
+            .expect("already negotiated");
         assert_eq!(out.len(), 1);
         assert_eq!(state.stats().opus_frames, 1);
     }
@@ -573,13 +573,13 @@ mod tests {
         let mut state = SessionAudio::new(true);
         state
             .handle(AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &first)), 0)
-            .expect("primero");
+            .expect("first");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(1, 0, Flags::NONE, &second)),
                 0,
             )
-            .expect("duplicado");
+            .expect("duplicate");
         assert!(out.is_empty());
         assert_eq!(state.stats().dropped_duplicates, 1);
     }
@@ -592,14 +592,14 @@ mod tests {
         let mut state = SessionAudio::new(true);
         state
             .handle(AudioPayload::Opus(opus_frame(2, 0, Flags::NONE, &first)), 0)
-            .expect("época vigente");
+            .expect("current epoch");
         let out = state
             .handle(
                 AudioPayload::Opus(opus_frame(1, 5, Flags::NONE, &second)),
                 0,
             )
-            .expect("época atrasada");
-        assert!(out.is_empty(), "la época vieja no se reproduce");
+            .expect("late epoch");
+        assert!(out.is_empty(), "the old epoch is not played back");
         assert_eq!(state.stats().dropped_reordered, 1);
         assert_eq!(state.stats().epoch_resets, 0);
     }
@@ -612,14 +612,14 @@ mod tests {
             let frame = AudioFrame::new(1, seq, Flags::NONE, samples).expect("frame");
             let out = state
                 .handle(AudioPayload::Pcm16(frame), 0)
-                .expect("dentro de la ráfaga");
+                .expect("within the burst");
             assert_eq!(out.len(), 1);
         }
         let excess = AudioFrame::new(1, BURST_FRAMES, Flags::NONE, samples).expect("frame");
         let out = state
             .handle(AudioPayload::Pcm16(excess), 0)
-            .expect("descarte sin error");
-        assert!(out.is_empty(), "el frame en exceso no se decodifica");
+            .expect("drop without error");
+        assert!(out.is_empty(), "the excess frame is not decoded");
         assert_eq!(state.stats().dropped_cadence, 1);
         assert_eq!(state.stats().pcm16_frames, u64::from(BURST_FRAMES));
     }
@@ -632,17 +632,17 @@ mod tests {
             let frame = AudioFrame::new(1, seq, Flags::NONE, samples).expect("frame");
             state
                 .handle(AudioPayload::Pcm16(frame), 0)
-                .expect("ráfaga inicial");
+                .expect("initial burst");
         }
         let excess = AudioFrame::new(1, BURST_FRAMES, Flags::NONE, samples).expect("frame");
         assert!(state
             .handle(AudioPayload::Pcm16(excess), 0)
-            .expect("descarte")
+            .expect("drop")
             .is_empty());
         let later = AudioFrame::new(1, BURST_FRAMES + 1, Flags::NONE, samples).expect("frame");
         let out = state
             .handle(AudioPayload::Pcm16(later), 4_000)
-            .expect("repuesto a los 4 ms");
+            .expect("refilled at 4 ms");
         assert_eq!(out.len(), 1);
         assert_eq!(state.stats().dropped_cadence, 1);
     }

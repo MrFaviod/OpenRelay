@@ -3,68 +3,68 @@
     <string name="app_name">OpenRelay</string>
     <string name="home_title">OpenRelay</string>
 
-    <!-- Acción visible junto al micrófono. No describe la conexión. -->
-    <string name="action_start_capture">Iniciar captura local</string>
-    <string name="action_stop_capture">Detener captura</string>
+    <!-- Action shown next to the microphone. It does not describe the connection. -->
+    <string name="action_start_capture">Start local capture</string>
+    <string name="action_stop_capture">Stop capture</string>
 
-    <!-- Estado del audio, separado de la conexión. -->
-    <string name="status_idle">Captura parada</string>
-    <string name="status_local">Captura local</string>
-    <string name="status_error">Error de captura</string>
+    <!-- Audio state, kept separate from the connection. -->
+    <string name="status_idle">Capture stopped</string>
+    <string name="status_local">Local capture</string>
+    <string name="status_error">Capture error</string>
 
-    <!-- La conexión no es un botón: no hay nada que configurar todavía. -->
-    <string name="connection_unconfigured">La conexión al PC aún no está configurada.</string>
-    <string name="connection_paired">Emparejado con %1$s. Al iniciar la captura se enviará al PC.</string>
+    <!-- The connection is not a button: there is nothing to configure yet. -->
+    <string name="connection_unconfigured">The PC connection is not set up yet.</string>
+    <string name="connection_paired">Paired with %1$s. Starting a capture sends it to the PC.</string>
 
-    <!-- Enlace con el PC durante la captura. -->
-    <string name="link_connecting">Conectando con %1$s…</string>
-    <string name="link_sending">Enviando a %1$s</string>
-    <string name="link_offline">Sin conexión: %1$s</string>
-    <string name="link_unknown_error">el PC no respondió</string>
-    <string name="link_closed">el PC cerró la sesión</string>
-    <string name="link_refused">el PC rechazó este teléfono</string>
+    <!-- Link with the PC while capturing. -->
+    <string name="link_connecting">Connecting to %1$s…</string>
+    <string name="link_sending">Sending to %1$s</string>
+    <string name="link_offline">No connection: %1$s</string>
+    <string name="link_unknown_error">the PC did not respond</string>
+    <string name="link_closed">the PC closed the session</string>
+    <string name="link_refused">the PC rejected this phone</string>
 
-    <!-- Emparejamiento por QR o URI pegado. -->
-    <string name="pairing_title">Emparejar con PC</string>
-    <string name="pairing_body">Escanea el QR que muestra el PC o pega el URI openrelay://pair.</string>
-    <string name="pairing_scan">Escanear QR</string>
+    <!-- Pairing by QR or pasted URI. -->
+    <string name="pairing_title">Pair with PC</string>
+    <string name="pairing_body">Scan the QR code shown on the PC, or paste the openrelay://pair URI.</string>
+    <string name="pairing_scan">Scan QR</string>
     <string name="pairing_uri_hint">openrelay://pair?v=1&amp;h=…</string>
-    <string name="pairing_connect">Emparejar</string>
-    <string name="pairing_waiting">Esperando aprobación en la PC…</string>
-    <string name="pairing_paired">Emparejado con %1$s</string>
-    <string name="pairing_failed">No se pudo emparejar: %1$s</string>
-    <string name="pairing_forget">Olvidar PC</string>
-    <string name="pairing_uri_invalid">URI de emparejamiento no válido</string>
-    <string name="pairing_camera_denied">Sin cámara puedes pegar el URI a mano.</string>
+    <string name="pairing_connect">Pair</string>
+    <string name="pairing_waiting">Waiting for approval on the PC…</string>
+    <string name="pairing_paired">Paired with %1$s</string>
+    <string name="pairing_failed">Could not pair: %1$s</string>
+    <string name="pairing_forget">Forget PC</string>
+    <string name="pairing_uri_invalid">Invalid pairing URI</string>
+    <string name="pairing_camera_denied">Without a camera, you can paste the URI by hand.</string>
 
-    <string name="cd_mic_start">Iniciar captura local</string>
-    <string name="cd_mic_stop">Detener captura</string>
-    <string name="cd_level">Nivel de entrada %1$d %%</string>
+    <string name="cd_mic_start">Start local capture</string>
+    <string name="cd_mic_stop">Stop capture</string>
+    <string name="cd_level">Input level %1$d %%</string>
 
-    <string name="action_mute">Silenciar</string>
-    <string name="action_unmute">Quitar silencio</string>
-    <!-- El servicio pone el nivel a 0 al silenciar, pero no hay una medición de que el micrófono baje. -->
-    <string name="mute_applied">Las muestras capturadas se descartan. El nivel publicado queda en cero; el micrófono sigue abierto.</string>
-    <string name="mute_not_applied">Silencio desactivado. El nivel muestra la entrada del micrófono.</string>
-    <string name="mute_requested_disconnected">Silencio pedido. La captura todavía no está en marcha, así que no hay nivel que bajar.</string>
+    <string name="action_mute">Mute</string>
+    <string name="action_unmute">Unmute</string>
+    <!-- The service sets the level to 0 when muted, but nothing measures that the microphone drops. -->
+    <string name="mute_applied">Captured samples are discarded. The published level stays at zero; the microphone stays open.</string>
+    <string name="mute_not_applied">Mute is off. The level shows the microphone input.</string>
+    <string name="mute_requested_disconnected">Mute requested. Capture is not running yet, so there is no level to lower.</string>
 
-    <string name="error_mic_permission">El micrófono está denegado. Sin ese permiso no hay captura.</string>
-    <!-- Aviso, no error: denegar notificaciones no para la captura. -->
-    <string name="notification_warning_title">Las notificaciones están desactivadas</string>
-    <string name="notification_warning_body">La captura puede seguir. No verás Parar ni Silenciar en la barra.</string>
-    <string name="action_notification_settings">Ajustes de notificaciones</string>
-    <string name="action_allow_notifications">Permitir notificaciones</string>
-    <string name="error_capture">La captura no arrancó. Puedes reintentar.</string>
-    <string name="action_grant">Conceder permiso</string>
-    <string name="action_settings">Abrir ajustes</string>
-    <string name="action_retry">Reintentar</string>
+    <string name="error_mic_permission">Microphone access is denied. Without that permission there is no capture.</string>
+    <!-- Warning, not an error: denying notifications does not stop capture. -->
+    <string name="notification_warning_title">Notifications are turned off</string>
+    <string name="notification_warning_body">Capture can continue. You will not see Stop or Mute in the status bar.</string>
+    <string name="action_notification_settings">Notification settings</string>
+    <string name="action_allow_notifications">Allow notifications</string>
+    <string name="error_capture">Capture did not start. You can retry.</string>
+    <string name="action_grant">Grant permission</string>
+    <string name="action_settings">Open settings</string>
+    <string name="action_retry">Retry</string>
 
-    <string name="advanced_show">Avanzado</string>
-    <string name="advanced_hide">Ocultar avanzado</string>
-    <string name="gain_title">Ganancia</string>
-    <string name="gain_honesty">Mover esto guarda lo que pides. No cambia el audio.</string>
-    <string name="gain_requested">Pedida: %1$d dB</string>
-    <string name="gain_effective">Efectiva: %1$d dB</string>
-    <string name="gain_effective_unavailable">Efectiva: no disponible</string>
-    <string name="version_label">Versión %1$s</string>
+    <string name="advanced_show">Advanced</string>
+    <string name="advanced_hide">Hide advanced</string>
+    <string name="gain_title">Gain</string>
+    <string name="gain_honesty">Moving this saves what you ask for. It does not change the audio.</string>
+    <string name="gain_requested">Requested: %1$d dB</string>
+    <string name="gain_effective">Effective: %1$d dB</string>
+    <string name="gain_effective_unavailable">Effective: unavailable</string>
+    <string name="version_label">Version %1$s</string>
 </resources>

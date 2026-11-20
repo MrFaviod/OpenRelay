@@ -55,14 +55,14 @@ pub enum IdentityError {
 impl fmt::Display for IdentityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyChain => write!(f, "cadena de certificados vacía"),
-            Self::ChainTooLong => write!(f, "cadena de certificados demasiado larga"),
-            Self::CertificateTooLarge => write!(f, "certificado DER demasiado grande"),
-            Self::MalformedDer(reason) => write!(f, "DER inválido: {reason}"),
-            Self::SpkiMissing => write!(f, "certificado sin SubjectPublicKeyInfo"),
-            Self::KeyMismatch => write!(f, "la clave no corresponde al certificado"),
-            Self::RootStore => write!(f, "ancla de confianza rechazada"),
-            Self::Verifier => write!(f, "no se pudo construir el verificador"),
+            Self::EmptyChain => write!(f, "empty certificate chain"),
+            Self::ChainTooLong => write!(f, "certificate chain too long"),
+            Self::CertificateTooLarge => write!(f, "certificate DER too large"),
+            Self::MalformedDer(reason) => write!(f, "invalid DER: {reason}"),
+            Self::SpkiMissing => write!(f, "certificate without SubjectPublicKeyInfo"),
+            Self::KeyMismatch => write!(f, "key does not match the certificate"),
+            Self::RootStore => write!(f, "trust anchor rejected"),
+            Self::Verifier => write!(f, "could not build the verifier"),
         }
     }
 }

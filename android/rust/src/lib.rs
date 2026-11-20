@@ -146,7 +146,7 @@ impl RemoteKeyPair for KeystoreRemote {
 /// Punto P-256 sin comprimir (65 bytes) al final del SPKI de 91 bytes.
 fn raw_point(spki: &[u8]) -> Result<Vec<u8>, String> {
     if spki.len() != 91 || spki[26] != 0x04 {
-        return Err("SPKI del Keystore no es P-256 sin comprimir".into());
+        return Err("Keystore SPKI is not uncompressed P-256".into());
     }
     Ok(spki[26..].to_vec())
 }
@@ -297,13 +297,13 @@ fn run(env: &mut JNIEnv, signer: JObject) -> Result<String, String> {
         .iter()
         .any(|e| matches!(e, ServerEvent::Authorized { identity, .. } if *identity == client_pin));
     if !authorized {
-        return Err(format!("servidor no autorizó: {events:?}"));
+        return Err(format!("server did not authorize: {events:?}"));
     }
     if !client_ok {
-        return Err("cliente no validó el servidor".into());
+        return Err("client did not validate the server".into());
     }
     if sigs_pos == 0 {
-        return Err("el Keystore no firmó ninguna vez".into());
+        return Err("the Keystore never signed".into());
     }
 
     // Negativo: la ACL sólo tiene el pin de otra identidad → no autoriza.
@@ -318,7 +318,7 @@ fn run(env: &mut JNIEnv, signer: JObject) -> Result<String, String> {
         .iter()
         .any(|e| matches!(e, ServerEvent::Authorized { .. }))
     {
-        return Err("negativo: el servidor autorizó con pin ajeno".into());
+        return Err("negative: the server authorized with a foreign pin".into());
     }
     let reason = neg_events
         .iter()
@@ -326,9 +326,9 @@ fn run(env: &mut JNIEnv, signer: JObject) -> Result<String, String> {
             ServerEvent::Rejected { reason } => Some(*reason),
             _ => None,
         })
-        .ok_or("negativo: sin evento Rejected")?;
+        .ok_or("negative: no Rejected event")?;
     if reason != RejectReason::NoAclEntry {
-        return Err(format!("negativo: motivo inesperado {reason:?}"));
+        return Err(format!("negative: unexpected reason {reason:?}"));
     }
 
     Ok(format!(
@@ -402,8 +402,8 @@ fn with_session<T>(
 ) -> Result<T, String> {
     let guard = sessions()
         .lock()
-        .map_err(|_| "lock envenenado".to_string())?;
-    let client = guard.get(&id).ok_or("handle desconocido")?;
+        .map_err(|_| "poisoned lock".to_string())?;
+    let client = guard.get(&id).ok_or("unknown handle")?;
     f(client)
 }
 
@@ -417,13 +417,13 @@ fn open_product(
     pin_hex: &str,
     chain: Vec<Vec<u8>>,
 ) -> Result<u64, String> {
-    let addr: SocketAddr = endpoint.parse().map_err(|_| "endpoint no es host:puerto")?;
+    let addr: SocketAddr = endpoint.parse().map_err(|_| "endpoint is not host:port")?;
     if addr.port() == 0 {
-        return Err("puerto de sesión vacío".into());
+        return Err("session port is empty".into());
     }
-    let pin = SpkiPin::from_hex(pin_hex).ok_or("pin SPKI no es 64 hex")?;
+    let pin = SpkiPin::from_hex(pin_hex).ok_or("SPKI pin is not 64 hex")?;
     if ca_der.is_empty() || chain.is_empty() || chain.len() > identity::MAX_CERT_CHAIN {
-        return Err("provisión de certificados vacía o larga".into());
+        return Err("certificate provision is empty or too long".into());
     }
     let vm = env.get_java_vm().map_err(|e| e.to_string())?;
     let signer_ref = env.new_global_ref(&signer).map_err(|e| e.to_string())?;
@@ -456,7 +456,7 @@ fn open_product(
     let id = next_id();
     sessions()
         .lock()
-        .map_err(|_| "lock envenenado".to_string())?
+        .map_err(|_| "poisoned lock".to_string())?
         .insert(id, client);
     Ok(id)
 }
@@ -678,7 +678,7 @@ mod exports {
             }
         };
         if len < openrelay_audio_core::SAMPLE_COUNT {
-            remember_error("dst de retorno más corto que un frame".into());
+            remember_error("return dst is shorter than a frame".into());
             return -1;
         }
         let mut buf = vec![0i16; len];
@@ -801,7 +801,7 @@ mod exports {
             let token_hex = jtext(&mut env, &token_hex)?;
             let spki = jbytes(&env, JObject::from(spki))?;
             if !(1..=65535).contains(&port) {
-                return Err("puerto de enrolamiento fuera de rango".to_string());
+                return Err("enrollment port out of range".to_string());
             }
             crate::enroll::enroll(&host, port as u16, &pin_hex, &token_hex, spki)
         })();

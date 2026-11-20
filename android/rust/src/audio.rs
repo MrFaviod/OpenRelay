@@ -40,7 +40,7 @@ impl CodecChoice {
             1 => Ok(Self::Opus(CodecProfile::LowDelay5Ms)),
             2 => Ok(Self::Opus(CodecProfile::LowDelay2p5Ms)),
             3 => Ok(Self::Opus(CodecProfile::LowDelay10Ms)),
-            other => Err(format!("perfil de códec desconocido: {other}")),
+            other => Err(format!("unknown codec profile: {other}")),
         }
     }
 
@@ -124,7 +124,7 @@ impl AudioSender {
             CodecChoice::Pcm16 => None,
             CodecChoice::Opus(profile) => Some(
                 OpusEncoder::new(profile, OPUS_BITRATE_BPS)
-                    .map_err(|error| format!("códec Opus: {error}"))?,
+                    .map_err(|error| format!("Opus codec: {error}"))?,
             ),
         };
         if choice != self.choice {
@@ -154,7 +154,7 @@ impl AudioSender {
             AudioFormat::Pcm16 => {
                 if samples.len() != SAMPLE_COUNT {
                     return Err(format!(
-                        "PCM16 espera {SAMPLE_COUNT} muestras, hay {}",
+                        "PCM16 expects {SAMPLE_COUNT} samples, got {}",
                         samples.len()
                     ));
                 }
@@ -165,15 +165,15 @@ impl AudioSender {
                 AudioPayload::Pcm16(frame)
             }
             AudioFormat::Opus => {
-                let profile = self.choice.profile().ok_or("Opus sin perfil configurado")?;
+                let profile = self.choice.profile().ok_or("Opus without a configured profile")?;
                 if samples.len() != profile.samples_per_frame() {
                     return Err(format!(
-                        "Opus de {} muestras por trama, hay {}",
+                        "Opus frame of {} samples, got {}",
                         profile.samples_per_frame(),
                         samples.len()
                     ));
                 }
-                let encoder = self.encoder.as_mut().ok_or("codificador Opus ausente")?;
+                let encoder = self.encoder.as_mut().ok_or("Opus encoder missing")?;
                 let packet = encoder.encode(samples).map_err(|error| error.to_string())?;
                 let frame =
                     OpusFrame::new(self.epoch, seq, Flags::NONE, samples.len() as u16, &packet)

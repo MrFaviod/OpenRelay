@@ -49,8 +49,8 @@ The token lives in memory only. It is compared in constant time and invalidated 
 {"type":"enroll.request","version":1,"token":"<64 hex>","spki":"<client public key, hex DER>"}
 ```
 
-4. The server checks the token, window and message limits, computes `SHA-256(spki)` — the device fingerprint — and queues the device as **pending**. Nothing is persisted yet. The phone shows *Esperando aprobación en la PC…*.
-5. The CLI polls `pair.pending`, prints `Dispositivo: <fingerprint>` and asks `¿Aprobar este dispositivo? [y/N]`. `--yes` answers the first prompt automatically.
+4. The server checks the token, window and message limits, computes `SHA-256(spki)` — the device fingerprint — and queues the device as **pending**. Nothing is persisted yet. The phone shows *Waiting for approval on the PC…*.
+5. The CLI polls `pair.pending`, prints `Device: <fingerprint>` and asks `Approve this device? [y/N]`. `--yes` answers the first prompt automatically.
 6. On `y`, the daemon signs a `clientAuth` leaf for the device key with the local CA, adds the pin to the transport ACL and to `identities.json`/`grants.txt`, and sends the result back over the enrollment stream:
 
 ```json

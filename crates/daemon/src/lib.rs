@@ -46,8 +46,8 @@ pub enum DaemonError {
 impl fmt::Display for DaemonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Socket(error) => write!(f, "socket UDP: {error}"),
-            Self::Transport(error) => write!(f, "transporte: {error}"),
+            Self::Socket(error) => write!(f, "UDP socket: {error}"),
+            Self::Transport(error) => write!(f, "transport: {error}"),
             Self::Control(error) => write!(f, "control: {error}"),
         }
     }

@@ -1,37 +1,36 @@
-# Licencias — política del proyecto
+# Licenses — project policy
 
-**El código y la documentación propios son MIT** ([LICENSE](../LICENSE)). Este documento fija la política para terceros; no aprueba ninguna dependencia.
+**The project's own code and documentation are MIT** ([LICENSE](../LICENSE)). This document sets the policy for third parties; it does not approve any dependency.
 
-## Política
+## Policy
 
-| Clase | Regla |
+| Class | Rule |
 |---|---|
-| Propio | MIT. Sin copiar código de terceros al árbol propio. |
-| Permisivas (MIT, Apache-2.0, BSD-2/3, ISC, Zlib, MPL-2.0) | Aceptables como candidatas si se registran pin, origen y rol; avisos preservados. |
-| LGPL | Sólo `libpulse`, **enlace dinámico** contra la biblioteca del sistema. Nunca estático ni vendorizado. |
-| GPL / AGPL | **Excluido.** No se copia, no se enlaza, no se añade al build. |
-| Pesos de modelos | Se tratan como artefactos aparte del código; sin licencia explícita, **no se distribuyen**. |
-| Sin licencia / incierta | No se distribuye ni se incorpora. |
+| Own | MIT. No third-party code copied into our own tree. |
+| Permissive (MIT, Apache-2.0, BSD-2/3, ISC, Zlib, MPL-2.0) | Acceptable as candidates if pin, origin and role are recorded; notices preserved. |
+| LGPL | Only `libpulse`, **dynamically linked** against the system library. Never static or vendored. |
+| GPL / AGPL | **Excluded.** Not copied, not linked, not added to the build. |
+| Model weights | Treated as artifacts separate from the code; without an explicit license, **not distributed**. |
+| Unlicensed / uncertain | Not distributed or incorporated. |
 
-## Obligaciones por caso
+## Obligations by case
 
-- **MIT / BSD / ISC / Zlib:** conservar copyright y texto de licencia del artefacto distribuido; no se reescribe la licencia del tercero.
+- **MIT / BSD / ISC / Zlib:** keep the copyright and license text of the distributed artifact; a third party's license is not rewritten.
 - **Apache-2.0 (Oboe):** keep upstream LICENSE and NOTICE.
-- **LGPL-2.1-or-later (libpulse):** enlace dinámico, aviso de la biblioteca y su licencia en la documentación de distribución, posibilidad de sustituir la biblioteca (relink) y oferta de fuente de las modificaciones de la biblioteca —no previstas—. El software propio sigue MIT; el binario combinado no se relicencia.
-- **NDK / C / C++ (quiche-BoringSSL, Oboe, Opus, SpeexDSP):** la licencia se audita sobre el artefacto y sus transitivas, no sólo sobre el repositorio upstream. Un build con NDK no cambia la licencia del código propio.
-- **Patentes:** la licencia de código no resuelve por sí sola una revisión de patentes; no se afirma cobertura de patentes para Opus, WebRTC ni BoringSSL.
+- **LGPL-2.1-or-later (libpulse):** dynamic linking, a notice of the library and its license in the distribution documentation, the ability to substitute the library (relink) and an offer of the source for library modifications — none planned. Our own software remains MIT; the combined binary is not relicensed.
+- **NDK / C / C++ (quiche-BoringSSL, Oboe, Opus, SpeexDSP):** the license is audited on the artifact and its transitives, not only on the upstream repository. A build with the NDK does not change the license of our own code.
+- **Patents:** a code license does not by itself settle a patent review; no patent coverage is claimed for Opus, WebRTC or BoringSSL.
 
-## Pesos RNNoise
+## RNNoise weights
 
-El código RNNoise v0.2 está declarado BSD-3-Clause; los pesos `rnnoise_data-0b50c45` **no tienen licencia explícita observada dentro del tarball**. Es una incertidumbre documental, no un dictamen de ilegalidad. Mientras no se resuelva procedencia y licencia: **los pesos no se distribuyen, no se vendorizan y no se empaquetan** en ningún artefacto. El código puede evaluarse sin ellos sólo si el build no los incorpora.
+The RNNoise v0.2 code is declared BSD-3-Clause; the `rnnoise_data-0b50c45` weights **have no explicit license observed inside the tarball**. This is a documentary uncertainty, not a finding of illegality. Until provenance and license are resolved: **the weights are not distributed, not vendored and not packaged** in any artifact. The code can be evaluated without them only if the build does not incorporate them.
 
 ## GPL
 
-Quedan excluidos del árbol, del build y del enlace: `snd-aloop` (GPL-2.0-or-later), la opción `gpl-fftw3` de SpeexDSP y cualquier componente GPL/AGPL. La compatibilidad opt-in con ALSA se documenta, no se copia. `libpulse` es LGPL, no GPL, y se usa dinámica.
+Excluded from the tree, the build and linking: `snd-aloop` (GPL-2.0-or-later), SpeexDSP's `gpl-fftw3` option and any GPL/AGPL component. Opt-in compatibility with ALSA is documented, not copied. `libpulse` is LGPL, not GPL, and is used dynamically.
 
-## Estado
+## Status
 
-- La auditoría de licencias se hace sobre el artefacto construido y sus
-  transitivas, no sólo sobre el repositorio upstream.
-- La app Android y el NDK se auditan con el artefacto de release.
-- Este documento es política; no sustituye esa auditoría.
+- The license audit is done on the built artifact and its transitives, not only on the upstream repository.
+- The Android app and the NDK are audited with the release artifact.
+- This document is policy; it does not replace that audit.

@@ -56,13 +56,13 @@ pub enum PulseError {
 impl fmt::Display for PulseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PulseError::Spawn(e) => write!(f, "no se pudo ejecutar pactl: {e}"),
+            PulseError::Spawn(e) => write!(f, "could not run pactl: {e}"),
             PulseError::Exit { args, code, stderr } => {
-                let code = code.map_or_else(|| "desconocido".to_string(), |c| c.to_string());
-                write!(f, "pactl {args} falló (código {code}): {stderr}")
+                let code = code.map_or_else(|| "unknown".to_string(), |c| c.to_string());
+                write!(f, "pactl {args} failed (code {code}): {stderr}")
             }
             PulseError::Parse { what, output } => {
-                write!(f, "salida inesperada de pactl en {what}: {output}")
+                write!(f, "unexpected pactl output in {what}: {output}")
             }
         }
     }

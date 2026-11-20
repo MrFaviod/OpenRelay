@@ -1,33 +1,33 @@
-# Servicio de usuario con systemd
+# systemd user service
 
-Unidad **opcional** para dejar `openrelay daemon` corriendo bajo `systemd --user`.
-No es un paquete del sistema ni un servicio privilegiado: corre con el UID que
-la activa, no abre puertos administrativos, no instala archivos por sí sola y
-no requiere root. El daemon acepta conexiones iniciadas desde Android (socket
-Unix local para la CLI y, si se aprovisiona, QUIC entrante); nunca conecta
-hacia afuera.
+An **optional** unit for keeping `openrelay daemon` running under `systemd --user`.
+It is not a system package and not a privileged service: it runs with the UID
+that enables it, opens no administrative ports, installs no files by itself and
+does not require root. The daemon accepts connections started from Android (a
+local Unix socket for the CLI and, if provisioned, inbound QUIC); it never
+connects outbound.
 
-El archivo canónico es [../packaging/systemd/openrelay.service](../packaging/systemd/openrelay.service).
-`openrelay service print-unit` imprime su contenido exacto, y
-`bash scripts/package.sh --check` comprueba que ambos coincidan.
+The canonical file is [../packaging/systemd/openrelay.service](../packaging/systemd/openrelay.service).
+`openrelay service print-unit` prints its exact contents, and
+`bash scripts/package.sh --check` checks that the two match.
 
-## Requisitos
+## Requirements
 
-- Sesión `systemd --user` activa (`systemctl --user status`).
-- Binario en `~/.local/bin/openrelay` (la unidad usa `%h/.local/bin/openrelay`).
-- `XDG_RUNTIME_DIR` válido: systemd lo define para la sesión del usuario y el
-  daemon crea ahí `openrelay/control.sock` (directorio 0700, socket 0600).
-- Bibliotecas del binario resolubles por el cargador. Si `openrelay` enlaza un
-  PipeWire staged (no instalado en el sistema), exporta `LD_LIBRARY_PATH` al
-  directorio que contiene `libpipewire-0.3.so.0` antes de ejecutar el binario,
-  `package.sh` o la unidad. La unidad no fija esa variable; para el servicio,
-  añade un drop-in con `Environment=LD_LIBRARY_PATH=...`.
+- An active `systemd --user` session (`systemctl --user status`).
+- The binary at `~/.local/bin/openrelay` (the unit uses `%h/.local/bin/openrelay`).
+- A valid `XDG_RUNTIME_DIR`: systemd defines it for the user session and the
+  daemon creates `openrelay/control.sock` there (directory 0700, socket 0600).
+- Binary libraries resolvable by the loader. If `openrelay` links a staged
+  PipeWire (not installed on the system), export `LD_LIBRARY_PATH` to the
+  directory that contains `libpipewire-0.3.so.0` before running the binary,
+  `package.sh` or the unit. The unit does not set that variable; for the
+  service, add a drop-in with `Environment=LD_LIBRARY_PATH=...`.
 
-## Instalar y activar a mano
+## Install and enable by hand
 
 ```sh
 install -d ~/.local/bin
-install -m 0755 <ruta-al-binario>/openrelay ~/.local/bin/openrelay
+install -m 0755 <path-to-binary>/openrelay ~/.local/bin/openrelay
 
 install -d ~/.config/systemd/user
 install -m 0644 packaging/systemd/openrelay.service ~/.config/systemd/user/openrelay.service
@@ -37,65 +37,64 @@ systemctl --user enable --now openrelay.service
 systemctl --user status openrelay.service
 ```
 
-Comprobación funcional y parada:
+Functional check and stop:
 
 ```sh
 openrelay status
 systemctl --user stop openrelay.service
 ```
 
-Los mensajes del proceso van al journal de usuario:
+Process messages go to the user journal:
 
 ```sh
 journalctl --user -u openrelay.service -e
 ```
 
-`enable` crea el enlace en `default.target`, así que la unidad arranca con la
-sesión del usuario. Para que sobreviva al cierre de sesión haría falta
-`loginctl enable-linger`, que es una decisión de política del sistema y puede
-requerir al administrador; esta unidad no lo activa.
+`enable` creates the link in `default.target`, so the unit starts with the user
+session. Surviving logout would need `loginctl enable-linger`, which is a system
+policy decision and may require the administrator; this unit does not enable it.
 
-## Equivalencia con primer plano
+## Equivalence with the foreground process
 
-`openrelay daemon` ya es un proceso de primer plano: no tiene flag `--foreground`
-ni se bifurca. La unidad no cambia el comportamiento del binario, sólo lo
-supervisa:
+`openrelay daemon` is already a foreground process: it has no `--foreground`
+flag and does not fork. The unit does not change the binary's behaviour, it only
+supervises it:
 
-| Primer plano | Unidad |
+| Foreground | Unit |
 |---|---|
-| `openrelay daemon` en una terminal | `ExecStart=%h/.local/bin/openrelay daemon` |
-| Ctrl-C para detenerlo | `systemctl --user stop openrelay.service` |
-| socket `$XDG_RUNTIME_DIR/openrelay/control.sock` | el mismo, heredado de systemd |
-| sale con 0 al recibir SIGTERM | `Restart=on-failure` no lo reinicia |
+| `openrelay daemon` in a terminal | `ExecStart=%h/.local/bin/openrelay daemon` |
+| Ctrl-C to stop it | `systemctl --user stop openrelay.service` |
+| socket `$XDG_RUNTIME_DIR/openrelay/control.sock` | the same, inherited from systemd |
+| exits 0 on SIGTERM | `Restart=on-failure` does not restart it |
 
-`Restart=on-failure` reinicia el proceso si falla, no tras una parada limpia.
-No se pasan `--socket` ni `--quic`: los valores por defecto son los mismos que
-en primer plano. En el primer arranque el daemon aprovisiona su identidad en
-`~/.config/openrelay` y escucha sesiones QUIC en `0.0.0.0:47000`; la unidad
-permite escribir ese directorio.
+`Restart=on-failure` restarts the process if it fails, not after a clean stop.
+No `--socket` or `--quic` is passed: the defaults are the same as in the
+foreground. On first start the daemon provisions its identity in
+`~/.config/openrelay` and listens for QUIC sessions on `0.0.0.0:47000`; the unit
+allows writing to that directory.
 
-## Hardening y por qué no rompe el arranque
+## Hardening and why it does not break startup
 
-- `NoNewPrivileges=yes`: el daemon no eleva privilegios.
-- `ProtectSystem=strict`: `/usr`, `/etc`, `/boot` y el resto del sistema quedan
-  de sólo lectura. `ReadWritePaths=%t %h/.config` devuelve escritura al
-  directorio de ejecución (donde vive `openrelay/control.sock`) y a `~/.config`,
-  donde el daemon guarda su identidad. `ExecStartPre` crea
-  `~/.config/openrelay` con modo 0700 antes de arrancar.
-- `PrivateTmp=yes`: `/tmp` privado, sin rutas compartidas entre servicios.
-- `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`: AF_UNIX para el socket
-  local; AF_INET/AF_INET6 para el endpoint QUIC si se aprovisiona.
+- `NoNewPrivileges=yes`: the daemon does not elevate privileges.
+- `ProtectSystem=strict`: `/usr`, `/etc`, `/boot` and the rest of the system stay
+  read-only. `ReadWritePaths=%t %h/.config` gives write access back to the
+  runtime directory (where `openrelay/control.sock` lives) and to `~/.config`,
+  where the daemon stores its identity. `ExecStartPre` creates
+  `~/.config/openrelay` with mode 0700 before startup.
+- `PrivateTmp=yes`: private `/tmp`, with no shared paths between services.
+- `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`: AF_UNIX for the local
+  socket; AF_INET/AF_INET6 for the QUIC endpoint if it is provisioned.
 - `ProtectKernelTunables`, `ProtectControlGroups`, `RestrictNamespaces`,
-  `RestrictSUIDSGID`, `LockPersonality`, `SystemCallArchitectures=native` y
-  `UMask=0077` cierran superficie sin tocar el camino de arranque.
+  `RestrictSUIDSGID`, `LockPersonality`, `SystemCallArchitectures=native` and
+  `UMask=0077` close surface without touching the startup path.
 
-El daemon necesita `$HOME` para guardar su identidad (`~/.config/openrelay`):
-la unidad ya lo declara en `ReadWritePaths` y crea el directorio en
-`ExecStartPre`. Si se mueve el estado con `--state-dir` o `XDG_CONFIG_HOME`,
-hay que añadir esa ruta a `ReadWritePaths`. Si se cambiara el socket a una ruta
-fuera de `%t`, habría que añadirla también.
+The daemon needs `$HOME` to store its identity (`~/.config/openrelay`): the unit
+already declares it in `ReadWritePaths` and creates the directory in
+`ExecStartPre`. If the state is moved with `--state-dir` or `XDG_CONFIG_HOME`,
+that path has to be added to `ReadWritePaths`. If the socket were moved to a path
+outside `%t`, it would have to be added too.
 
-## Desinstalar
+## Uninstall
 
 ```sh
 systemctl --user disable --now openrelay.service
@@ -103,10 +102,10 @@ rm -f ~/.config/systemd/user/openrelay.service
 systemctl --user daemon-reload
 ```
 
-El binario y el directorio `$XDG_RUNTIME_DIR/openrelay` se borran a mano si no se
-usan; el gestor no los toca.
+The binary and the `$XDG_RUNTIME_DIR/openrelay` directory are removed by hand if
+they are no longer used; the manager does not touch them.
 
-## Verificar sin instalar
+## Verify without installing
 
 ```sh
 systemd-analyze --user verify packaging/systemd/openrelay.service

@@ -86,7 +86,7 @@ impl EnrollmentToken {
         let rng = ring::rand::SystemRandom::new();
         let mut bytes = [0u8; ENROLL_TOKEN_LEN];
         ring::rand::SecureRandom::fill(&rng, &mut bytes)
-            .map_err(|_| EnrollError::Config("RNG del sistema no disponible"))?;
+            .map_err(|_| EnrollError::Config("system RNG not available"))?;
         Ok(Self(bytes))
     }
 
@@ -200,18 +200,18 @@ pub enum EnrollError {
 impl fmt::Display for EnrollError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config(reason) => write!(f, "configuración inválida: {reason}"),
-            Self::Identity(error) => write!(f, "identidad inválida: {error}"),
-            Self::Tls(detail) => write!(f, "TLS inválido: {detail}"),
-            Self::Connect(detail) => write!(f, "conexión fallida: {detail}"),
-            Self::NotReady => write!(f, "enrolamiento no listo"),
-            Self::Closed => write!(f, "enrolamiento cerrado"),
-            Self::Oversized => write!(f, "mensaje de enrolamiento demasiado grande"),
-            Self::Malformed => write!(f, "mensaje de enrolamiento malformado"),
-            Self::WindowOpen => write!(f, "ya hay una ventana de enrolamiento abierta"),
-            Self::Rejected(reason) => write!(f, "enrolamiento rechazado: {reason}"),
-            Self::Timeout => write!(f, "el enrolamiento agotó su plazo"),
-            Self::Stream(reason) => write!(f, "stream rechazado: {reason}"),
+            Self::Config(reason) => write!(f, "invalid configuration: {reason}"),
+            Self::Identity(error) => write!(f, "invalid identity: {error}"),
+            Self::Tls(detail) => write!(f, "invalid TLS: {detail}"),
+            Self::Connect(detail) => write!(f, "connection failed: {detail}"),
+            Self::NotReady => write!(f, "enrollment not ready"),
+            Self::Closed => write!(f, "enrollment closed"),
+            Self::Oversized => write!(f, "enrollment message too large"),
+            Self::Malformed => write!(f, "malformed enrollment message"),
+            Self::WindowOpen => write!(f, "an enrollment window is already open"),
+            Self::Rejected(reason) => write!(f, "enrollment rejected: {reason}"),
+            Self::Timeout => write!(f, "enrollment timed out"),
+            Self::Stream(reason) => write!(f, "stream rejected: {reason}"),
         }
     }
 }
@@ -230,7 +230,7 @@ fn enroll_transport() -> Arc<TransportConfig> {
     // el `y`. Un idle timeout corto la cerraba antes de entregar la hoja.
     config.max_idle_timeout(Some(
         quinn_proto::IdleTimeout::try_from(MAX_ENROLL_TTL + Duration::from_secs(60))
-            .expect("timeout válido"),
+            .expect("valid timeout"),
     ));
     config.max_concurrent_bidi_streams(1u32.into());
     config.max_concurrent_uni_streams(0u32.into());
@@ -419,9 +419,7 @@ impl EnrollServer {
             return Err(EnrollError::WindowOpen);
         }
         if ttl.is_zero() || ttl > MAX_ENROLL_TTL {
-            return Err(EnrollError::Config(
-                "ttl de enrolamiento fuera de 1..=300 s",
-            ));
+            return Err(EnrollError::Config("enrollment ttl out of 1..=300 s"));
         }
         self.window = Some(Window {
             token,
@@ -604,7 +602,7 @@ impl EnrollServer {
         let Some(mut conn) = self.conn.take() else {
             return Ok(());
         };
-        let handle = self.handle.expect("conexión con handle");
+        let handle = self.handle.expect("connection with handle");
 
         while let Some(event) = conn.poll_endpoint_events() {
             if let Some(event) = self.endpoint.handle_event(handle, event) {
@@ -1060,7 +1058,7 @@ impl EnrollClient {
         }
         if self.socket.is_none() {
             return Err(EnrollError::Connect(
-                "cliente sans-IO: usa send_token_async y bombea los datagramas".to_owned(),
+                "sans-IO client: use send_token_async and pump the datagrams".to_owned(),
             ));
         }
         let handshake_deadline = Instant::now() + HANDSHAKE_TIMEOUT;
@@ -1129,11 +1127,11 @@ impl EnrollClient {
         let socket = self
             .socket
             .take()
-            .ok_or(EnrollError::Connect("cliente sin socket".to_owned()))?;
+            .ok_or(EnrollError::Connect("client without socket".to_owned()))?;
         while let Some((to, bytes)) = self.poll_transmit(now) {
             socket
                 .send_to(&bytes, to)
-                .map_err(|error| EnrollError::Connect(format!("envío UDP: {error}")))?;
+                .map_err(|error| EnrollError::Connect(format!("UDP send: {error}")))?;
         }
         let mut buf = [0u8; 2048];
         match socket.recv_from(&mut buf) {
@@ -1172,7 +1170,7 @@ impl EnrollClient {
                     .conn
                     .streams()
                     .open(Dir::Bi)
-                    .ok_or(EnrollError::Stream("sin stream de enrolamiento"))?;
+                    .ok_or(EnrollError::Stream("no enrollment stream"))?;
                 self.send_stream = Some(stream);
                 stream
             }
@@ -1180,7 +1178,7 @@ impl EnrollClient {
         let mut written = 0usize;
         while written < frame.len() {
             match self.conn.send_stream(stream).write(&frame[written..]) {
-                Ok(0) | Err(_) => return Err(EnrollError::Stream("escritura rechazada")),
+                Ok(0) | Err(_) => return Err(EnrollError::Stream("write rejected")),
                 Ok(count) => written += count,
             }
         }

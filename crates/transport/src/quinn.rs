@@ -104,7 +104,7 @@ impl Default for SessionLimits {
 impl SessionLimits {
     fn validate(&self) -> Result<(), TransportError> {
         if self.idle_timeout.is_zero() || self.idle_timeout > Duration::from_secs(60) {
-            return Err(TransportError::Config("idle_timeout fuera de 1..=60 s"));
+            return Err(TransportError::Config("idle_timeout out of 1..=60 s"));
         }
         // El campo es el frame **total**: con menos bytes que el prefijo no
         // cabe ningún frame válido (payload mínimo 1).
@@ -112,14 +112,14 @@ impl SessionLimits {
             || self.max_control_frame > MAX_CONTROL_FRAME
         {
             return Err(TransportError::Config(
-                "max_control_frame fuera de 5..=16388 (total, prefijo incluido)",
+                "max_control_frame out of 5..=16388 (total, prefix included)",
             ));
         }
         if self.max_audio_datagram == 0 || self.max_audio_datagram > MAX_AUDIO_DATAGRAM {
-            return Err(TransportError::Config("max_audio_datagram fuera de límite"));
+            return Err(TransportError::Config("max_audio_datagram out of range"));
         }
         if self.max_control_streams == 0 || self.max_control_streams > 8 {
-            return Err(TransportError::Config("max_control_streams fuera de 1..=8"));
+            return Err(TransportError::Config("max_control_streams out of 1..=8"));
         }
         Ok(())
     }
@@ -256,12 +256,12 @@ pub enum RejectReason {
 impl fmt::Display for RejectReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
-            Self::Tls => "handshake TLS incompleto",
-            Self::Alpn => "ALPN distinto de openrelay-session/1",
-            Self::NoPeerCertificate => "cliente sin certificado",
-            Self::MalformedIdentity => "identidad de peer malformada",
-            Self::NoAclEntry => "identidad sin entrada en la ACL",
-            Self::IdentityQuota => "identidad con su cuota de sesiones agotada",
+            Self::Tls => "incomplete TLS handshake",
+            Self::Alpn => "ALPN other than openrelay-session/1",
+            Self::NoPeerCertificate => "client without certificate",
+            Self::MalformedIdentity => "malformed peer identity",
+            Self::NoAclEntry => "identity without an ACL entry",
+            Self::IdentityQuota => "identity has exhausted its session quota",
         };
         f.write_str(text)
     }
@@ -340,19 +340,19 @@ pub enum TransportError {
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Config(reason) => write!(f, "configuración inválida: {reason}"),
-            Self::Identity(error) => write!(f, "identidad inválida: {error}"),
-            Self::Tls(detail) => write!(f, "TLS inválido: {detail}"),
-            Self::Connect(detail) => write!(f, "conexión fallida: {detail}"),
-            Self::Unauthorized => write!(f, "sesión no autorizada"),
-            Self::Closed => write!(f, "sesión cerrada"),
-            Self::Capability(cap) => write!(f, "capacidad ausente: {cap}"),
-            Self::Audio(error) => write!(f, "audio inválido: {error}"),
-            Self::Control(error) => write!(f, "control inválido: {error:?}"),
-            Self::Datagram(reason) => write!(f, "DATAGRAM rechazado: {reason}"),
-            Self::Stream(reason) => write!(f, "stream rechazado: {reason}"),
-            Self::QueueFull => write!(f, "cola acotada llena"),
-            Self::Protocol(reason) => write!(f, "protocolo: {reason}"),
+            Self::Config(reason) => write!(f, "invalid configuration: {reason}"),
+            Self::Identity(error) => write!(f, "invalid identity: {error}"),
+            Self::Tls(detail) => write!(f, "invalid TLS: {detail}"),
+            Self::Connect(detail) => write!(f, "connection failed: {detail}"),
+            Self::Unauthorized => write!(f, "session not authorized"),
+            Self::Closed => write!(f, "session closed"),
+            Self::Capability(cap) => write!(f, "missing capability: {cap}"),
+            Self::Audio(error) => write!(f, "invalid audio: {error}"),
+            Self::Control(error) => write!(f, "invalid control: {error:?}"),
+            Self::Datagram(reason) => write!(f, "DATAGRAM rejected: {reason}"),
+            Self::Stream(reason) => write!(f, "stream rejected: {reason}"),
+            Self::QueueFull => write!(f, "bounded queue full"),
+            Self::Protocol(reason) => write!(f, "protocol: {reason}"),
         }
     }
 }
@@ -372,7 +372,7 @@ fn transport_config(
     let mut config = TransportConfig::default();
     config.max_idle_timeout(Some(
         quinn_proto::IdleTimeout::try_from(limits.idle_timeout)
-            .map_err(|_| TransportError::Config("idle_timeout inválido"))?,
+            .map_err(|_| TransportError::Config("invalid idle_timeout"))?,
     ));
     config.max_concurrent_bidi_streams(limits.max_control_streams.into());
     config.max_concurrent_uni_streams(0u32.into());
@@ -477,7 +477,7 @@ impl SessionServer {
         }
         let verifier = WebPkiClientVerifier::builder(client_roots)
             .build()
-            .map_err(|_| TransportError::Config("verificador de cliente inválido"))?;
+            .map_err(|_| TransportError::Config("invalid client verifier"))?;
         let mut tls = TlsServerConfig::builder()
             .with_client_cert_verifier(verifier)
             .with_cert_resolver(Arc::new(StaticServerCertResolver::new(identity)));
@@ -785,7 +785,7 @@ impl SessionServer {
                     .conn
                     .streams()
                     .open(Dir::Bi)
-                    .ok_or(TransportError::Stream("sin stream de control"))?;
+                    .ok_or(TransportError::Stream("no control stream"))?;
                 slot.send_stream = Some(stream);
                 stream
             }
@@ -1311,13 +1311,13 @@ fn enqueue_reply(
     max_frame: usize,
 ) -> Result<(), &'static str> {
     let Ok(frame) = wire::encode_message(reply) else {
-        return Err("respuesta de error no codificable");
+        return Err("error response not encodable");
     };
     if frame.len() > max_frame {
-        return Err("respuesta de error excede el límite");
+        return Err("error response exceeds the limit");
     }
     if !slot.control_tx.enqueue(stream, frame) {
-        return Err("demasiadas respuestas de error pendientes");
+        return Err("too many pending error responses");
     }
     Ok(())
 }
@@ -1471,7 +1471,7 @@ fn send_queued(
     }
     if queue.flush(conn).is_err() {
         queue.clear();
-        return Err(TransportError::Stream("escritura rechazada"));
+        return Err(TransportError::Stream("write rejected"));
     }
     Ok(())
 }
@@ -1590,7 +1590,7 @@ fn read_control(
                 match chunks.next(usize::MAX) {
                     Ok(Some(chunk)) => {
                         if buffers.held(stream) + data.len() + chunk.bytes.len() > max_frame {
-                            failure = Some("frame de control excede el límite");
+                            failure = Some("control frame exceeds the limit");
                             break;
                         }
                         data.extend_from_slice(&chunk.bytes);
@@ -1605,7 +1605,7 @@ fn read_control(
                     // Reset del peer: un stream de control interrumpido no deja
                     // un frame utilizable.
                     Err(ReadError::Reset(_)) => {
-                        failure = Some("stream de control reseteado por el peer");
+                        failure = Some("control stream reset by the peer");
                         break;
                     }
                 }
@@ -1620,7 +1620,7 @@ fn read_control(
         if !data.is_empty() {
             match buffers.open(stream) {
                 Some(buffer) => buffer.extend_from_slice(&data),
-                None => return ControlRead::Framing("demasiados streams de control"),
+                None => return ControlRead::Framing("too many control streams"),
             }
         }
 
@@ -1628,14 +1628,14 @@ fn read_control(
         let mut reject: Option<ControlMessage> = None;
         let mut close_with: Option<ControlMessage> = None;
         let Some(buffer) = buffers.open(stream) else {
-            return ControlRead::Framing("demasiados streams de control");
+            return ControlRead::Framing("too many control streams");
         };
         while buffer.len() >= CONTROL_LENGTH_BYTES {
             let len = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
             // El prefijo declara payload, no total: `control_prefix_fits` resta
             // el prefijo del límite total y rechaza `0` o > payload máximo.
             if !control_prefix_fits(len, max_frame) {
-                framing = Some("prefijo de longitud fuera de 1..=16384");
+                framing = Some("length prefix out of 1..=16384");
                 break;
             }
             if buffer.len() < CONTROL_LENGTH_BYTES + len {
@@ -1675,11 +1675,11 @@ fn read_control(
                         ) {
                             close_with = error.to_error_message();
                         }
-                        framing = Some("mensaje de control inválido");
+                        framing = Some("invalid control message");
                     } else {
                         reject = error.to_error_message();
                         if reject.is_none() {
-                            framing = Some("mensaje de control inválido");
+                            framing = Some("invalid control message");
                         }
                     }
                     if framing.is_some() || reject.is_some() {
@@ -1704,7 +1704,7 @@ fn read_control(
             let truncated = buffers.held(stream) > 0;
             buffers.remove(stream);
             return if truncated {
-                ControlRead::Framing("frame de control truncado")
+                ControlRead::Framing("truncated control frame")
             } else {
                 ControlRead::Eof
             };
@@ -1721,7 +1721,7 @@ fn close_reason_text(cause: &ConnectionError) -> String {
         ConnectionError::ApplicationClosed(frame) => {
             let reason = String::from_utf8_lossy(&frame.reason);
             if reason.is_empty() {
-                format!("código {}", frame.error_code)
+                format!("code {}", frame.error_code)
             } else {
                 reason.into_owned()
             }
@@ -2048,7 +2048,7 @@ impl SessionClient {
                     .conn
                     .streams()
                     .open(Dir::Bi)
-                    .ok_or(TransportError::Stream("sin stream de control"))?;
+                    .ok_or(TransportError::Stream("no control stream"))?;
                 self.send_stream = Some(stream);
                 stream
             }
@@ -2083,7 +2083,7 @@ impl SessionClient {
                     .conn
                     .streams()
                     .open(Dir::Bi)
-                    .ok_or(TransportError::Stream("sin stream de control"))?;
+                    .ok_or(TransportError::Stream("no control stream"))?;
                 self.send_stream = Some(stream);
                 stream
             }
@@ -2300,13 +2300,13 @@ impl SessionClient {
                 }
                 ControlRead::Reject(reply) => {
                     let Ok(frame) = wire::encode_message(&reply) else {
-                        return Some("respuesta de error no codificable");
+                        return Some("error response not encodable");
                     };
                     if frame.len() > max_frame {
-                        return Some("respuesta de error excede el límite");
+                        return Some("error response exceeds the limit");
                     }
                     if !self.control_tx.enqueue(stream, frame) {
-                        return Some("demasiadas respuestas de error pendientes");
+                        return Some("too many pending error responses");
                     }
                 }
             }

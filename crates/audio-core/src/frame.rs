@@ -96,73 +96,70 @@ impl fmt::Display for FrameError {
             Self::TooShort { len } => {
                 write!(
                     f,
-                    "datagrama de {len} B: no llega a la cabecera de {HEADER_LEN} B"
+                    "datagram of {len} B: shorter than the {HEADER_LEN} B header"
                 )
             }
             Self::Oversized { len } => {
                 write!(
                     f,
-                    "datagrama de {len} B: excede el máximo de {MAX_DATAGRAM_LEN} B"
+                    "datagram of {len} B: exceeds the maximum of {MAX_DATAGRAM_LEN} B"
                 )
             }
             Self::LengthMismatch { expected, actual } => {
+                write!(f, "datagram of {actual} B: expected exactly {expected} B")
+            }
+            Self::InvalidType(found) => write!(f, "type {found}: expected {TYPE_AUDIO}"),
+            Self::InvalidVersion(found) => write!(f, "version {found}: expected {VERSION}"),
+            Self::InvalidFlags { found } => {
                 write!(
                     f,
-                    "datagrama de {actual} B: se esperaba exactamente {expected} B"
+                    "flags 0x{found:02x}: bits 2-7 are reserved and must be zero"
                 )
-            }
-            Self::InvalidType(found) => write!(f, "type {found}: se esperaba {TYPE_AUDIO}"),
-            Self::InvalidVersion(found) => write!(f, "version {found}: se esperaba {VERSION}"),
-            Self::InvalidFlags { found } => {
-                write!(f, "flags 0x{found:02x}: bits 2-7 reservados en cero")
             }
             Self::InvalidHeaderLen(found) => {
-                write!(f, "header_len {found}: se esperaba {HEADER_LEN}")
+                write!(f, "header_len {found}: expected {HEADER_LEN}")
             }
-            Self::InvalidEpoch => write!(f, "epoch 0: inválido"),
+            Self::InvalidEpoch => write!(f, "epoch 0: invalid"),
             Self::InvalidSampleCount(found) => {
-                write!(f, "sample_count {found}: se esperaba {SAMPLE_COUNT}")
+                write!(f, "sample_count {found}: expected {SAMPLE_COUNT}")
             }
             Self::InvalidDuration(found) => {
-                write!(f, "duration_us {found}: se esperaba {DURATION_US}")
+                write!(f, "duration_us {found}: expected {DURATION_US}")
             }
             Self::InvalidSampleRate(found) => {
-                write!(f, "sample_rate_hz {found}: se esperaba {SAMPLE_RATE_HZ}")
+                write!(f, "sample_rate_hz {found}: expected {SAMPLE_RATE_HZ}")
             }
             Self::InvalidChannels(found) => {
-                write!(f, "channels {found}: se esperaba {CHANNELS}")
+                write!(f, "channels {found}: expected {CHANNELS}")
             }
             Self::InvalidReserved(found) => {
-                write!(f, "reserved {found}: se esperaba 0")
+                write!(f, "reserved {found}: expected 0")
             }
             Self::InvalidPayloadLen(found) => {
-                write!(f, "payload_len {found}: se esperaba {PAYLOAD_LEN}")
+                write!(f, "payload_len {found}: expected {PAYLOAD_LEN}")
             }
             Self::PayloadLength { expected, actual } => {
-                write!(f, "payload de {actual} B: se esperaban {expected} B PCM16")
+                write!(f, "payload of {actual} B: expected {expected} B of PCM16")
             }
             Self::InvalidOpusSampleCount(found) => {
-                write!(
-                    f,
-                    "sample_count {found}: en Opus sólo 120, 240 o 480 son válidos"
-                )
+                write!(f, "sample_count {found}: Opus only allows 120, 240 or 480")
             }
             Self::InvalidOpusDuration(found) => {
                 write!(
                     f,
-                    "duration_us {found}: no corresponde al sample_count del frame Opus"
+                    "duration_us {found}: does not match the sample_count of the Opus frame"
                 )
             }
             Self::InvalidOpusPayloadLen(found) => {
                 write!(
                     f,
-                    "payload_len {found}: en Opus debe estar en 1..={OPUS_MAX_PAYLOAD_LEN}"
+                    "payload_len {found}: for Opus it must be in 1..={OPUS_MAX_PAYLOAD_LEN}"
                 )
             }
             Self::PayloadLenMismatch { declared, actual } => {
                 write!(
                     f,
-                    "payload_len {declared} no coincide con {actual} B recibidos"
+                    "payload_len {declared} does not match the {actual} B received"
                 )
             }
         }

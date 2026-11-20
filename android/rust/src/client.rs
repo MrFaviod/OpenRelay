@@ -217,7 +217,7 @@ impl ProductClient {
                 let guard = self
                     .shared
                     .lock()
-                    .map_err(|_| "lock envenenado".to_string())?;
+                    .map_err(|_| "poisoned lock".to_string())?;
                 guard.hello_id.clone()
             },
             role: PeerRole::Android,
@@ -228,7 +228,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         guard.hello_sent = true;
         guard.advertised = None;
         guard.advertise()
@@ -258,7 +258,7 @@ impl ProductClient {
         gain_db: f64,
     ) -> Result<String, String> {
         if !gain_db.is_finite() {
-            return Err("gain_db no es finito".into());
+            return Err("gain_db is not finite".into());
         }
         let request_id = request_id();
         let message = ControlMessage::ConfigSet(ConfigSetMsg {
@@ -279,7 +279,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         let changed = guard.audio.choice() != choice;
         guard.audio.set_choice(choice)?;
         if changed {
@@ -298,7 +298,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         guard.return_audio.set_enabled(enabled);
         guard.advertised = None;
         guard.advertise()
@@ -309,7 +309,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         Ok(guard.return_audio.read_into(dst))
     }
 
@@ -320,17 +320,17 @@ impl ProductClient {
     /// anuncia y nuestras `capabilities` ya declararon el perfil.
     pub(crate) fn send_audio(&self, samples: &[i16]) -> Result<(), String> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err("sesión cerrada".into());
+            return Err("session closed".into());
         }
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         if guard.stop {
-            return Err("sesión cerrada".into());
+            return Err("session closed".into());
         }
         if !guard.client.is_authorized() {
-            return Err("sesión no autorizada".into());
+            return Err("session not authorized".into());
         }
         let choice = guard.audio.choice();
         let format = selected_format(
@@ -353,7 +353,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         if guard.events.is_empty() {
             Ok(None)
         } else {
@@ -369,7 +369,7 @@ impl ProductClient {
                 return Ok(event);
             }
             if Instant::now() >= deadline {
-                return Err("timeout de control".into());
+                return Err("control timeout".into());
             }
             thread::sleep(Duration::from_millis(20));
         }
@@ -383,20 +383,20 @@ impl ProductClient {
                 let mut guard = self
                     .shared
                     .lock()
-                    .map_err(|_| "lock envenenado".to_string())?;
+                    .map_err(|_| "poisoned lock".to_string())?;
                 pull_terminal(&mut guard.events)
             };
             match event {
                 Some(BridgeEvent::Authorized) => return Ok(()),
-                Some(BridgeEvent::Rejected) => return Err("handshake rechazado".into()),
-                Some(BridgeEvent::Closed) => return Err("sesión cerrada antes de autorizar".into()),
+                Some(BridgeEvent::Rejected) => return Err("handshake rejected".into()),
+                Some(BridgeEvent::Closed) => return Err("session closed before authorization".into()),
                 Some(BridgeEvent::IoFault(detail)) => {
-                    return Err(format!("fallo de IO antes de autorizar: {detail}"));
+                    return Err(format!("IO failure before authorization: {detail}"));
                 }
                 _ => {}
             }
             if Instant::now() >= deadline {
-                return Err("timeout de handshake".into());
+                return Err("handshake timeout".into());
             }
             thread::sleep(Duration::from_millis(20));
         }
@@ -416,7 +416,7 @@ impl ProductClient {
             let mut guard = self
                 .shared
                 .lock()
-                .map_err(|_| "lock envenenado".to_string())?;
+                .map_err(|_| "poisoned lock".to_string())?;
             guard.stop = true;
             guard.events.push(BridgeEvent::Closed);
         }
@@ -429,17 +429,17 @@ impl ProductClient {
 
     fn send_only(&self, message: &ControlMessage) -> Result<(), String> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err("sesión cerrada".into());
+            return Err("session closed".into());
         }
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         if guard.stop {
-            return Err("sesión cerrada".into());
+            return Err("session closed".into());
         }
         if !guard.client.is_authorized() {
-            return Err("sesión no autorizada".into());
+            return Err("session not authorized".into());
         }
         guard.client.send_control(message).map_err(show)?;
         // El hilo de IO drena `poll_transmit`; no se escribe el socket aquí
@@ -451,7 +451,7 @@ impl ProductClient {
         let mut guard = self
             .shared
             .lock()
-            .map_err(|_| "lock envenenado".to_string())?;
+            .map_err(|_| "poisoned lock".to_string())?;
         if let Some(index) = guard.events.iter().position(|event| match event {
             BridgeEvent::Ack { request_id: id, .. } | BridgeEvent::Error { request_id: id, .. } => {
                 id == request_id
@@ -466,7 +466,7 @@ impl ProductClient {
                 BridgeEvent::Closed | BridgeEvent::IoFault(_) | BridgeEvent::Rejected
             )
         }) {
-            return Err("sesión cerrada durante el control".into());
+            return Err("session closed during control".into());
         }
         Ok(None)
     }
@@ -548,7 +548,7 @@ fn io_loop(shared: Arc<Mutex<Shared>>, local: SocketAddr) {
 
 /// Aplica timeouts, publica eventos y escribe lo que el sans-IO quiera enviar.
 fn drive(shared: &Arc<Mutex<Shared>>, local: SocketAddr) -> Result<(), String> {
-    let mut guard = shared.lock().map_err(|_| "lock envenenado".to_string())?;
+    let mut guard = shared.lock().map_err(|_| "poisoned lock".to_string())?;
     if guard.stop {
         return Ok(());
     }
@@ -556,7 +556,7 @@ fn drive(shared: &Arc<Mutex<Shared>>, local: SocketAddr) -> Result<(), String> {
     if guard.client.handle_timeout(now).is_err() {
         push_event(&mut guard, BridgeEvent::IoFault("handle_timeout".into()));
         guard.stop = true;
-        return Err("timeout de transporte".into());
+        return Err("transport timeout".into());
     }
     publish(&mut guard);
     let mut batch = Vec::new();
@@ -574,7 +574,7 @@ fn drive(shared: &Arc<Mutex<Shared>>, local: SocketAddr) -> Result<(), String> {
             }
             push_event(&mut guard, BridgeEvent::IoFault(format!("send {error}")));
             guard.stop = true;
-            return Err("envío UDP falló".into());
+            return Err("UDP send failed".into());
         }
     }
     Ok(())

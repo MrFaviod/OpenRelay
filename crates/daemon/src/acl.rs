@@ -33,10 +33,10 @@ pub enum TicketError {
 impl fmt::Display for TicketError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Unknown => "ticket desconocido o ya usado",
-            Self::Expired => "ticket vencido",
-            Self::WrongIdentity => "ticket de otra identidad",
-            Self::WrongSession => "ticket de otra sesión",
+            Self::Unknown => "unknown or already used ticket",
+            Self::Expired => "expired ticket",
+            Self::WrongIdentity => "ticket for another identity",
+            Self::WrongSession => "ticket for another session",
         })
     }
 }
@@ -104,7 +104,7 @@ impl Tickets {
         } else {
             Ok(())
         };
-        let result = if outcome.is_ok() { "ok" } else { "rechazado" };
+        let result = if outcome.is_ok() { "ok" } else { "rejected" };
         self.audit.push(audit_line("ticket.redeem", pin, result));
         outcome
     }

@@ -58,11 +58,11 @@ impl fmt::Display for AlsaError {
             AlsaError::NotHwDevice(device) => {
                 write!(
                     f,
-                    "el fallback ALSA exige un dispositivo hw: explícito, no {device}"
+                    "the ALSA fallback requires an explicit hw: device, not {device}"
                 )
             }
             AlsaError::Open { device, message } => {
-                write!(f, "no se pudo abrir {device} para captura: {message}")
+                write!(f, "could not open {device} for capture: {message}")
             }
         }
     }

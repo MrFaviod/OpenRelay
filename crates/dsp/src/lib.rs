@@ -90,8 +90,8 @@ pub enum NsError {
 impl core::fmt::Display for NsError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::InvalidParams => f.write_str("parámetros de trama o frecuencia no válidos"),
-            Self::Init => f.write_str("SpeexDSP no pudo inicializar el supresor"),
+            Self::InvalidParams => f.write_str("invalid frame or rate parameters"),
+            Self::Init => f.write_str("SpeexDSP could not initialize the suppressor"),
         }
     }
 }

@@ -70,22 +70,22 @@ class LifecycleActionsTest {
             "FGS no arrancó: " + StreamService.errorState.value,
             waitUntil(8_000) { StreamService.running.value },
         )
-        assertTrue(waitUntil(3_000) { titles().contains("Silenciar") })
+        assertTrue(waitUntil(3_000) { titles().contains("Mute") })
 
-        action("Silenciar").actionIntent.send()
-        assertTrue("Silenciar por PendingIntent no mutea", waitUntil(3_000) { StreamService.muted.value })
+        action("Mute").actionIntent.send()
+        assertTrue("Mute via PendingIntent does not mute", waitUntil(3_000) { StreamService.muted.value })
         assertTrue(
-            "tras mute la notificación muestra Activar sonido: ${titles()}",
-            waitUntil(3_000) { titles().contains("Activar sonido") },
+            "after mute the notification shows Unmute: ${titles()}",
+            waitUntil(3_000) { titles().contains("Unmute") },
         )
 
-        action("Activar sonido").actionIntent.send()
-        assertTrue("Activar sonido por PendingIntent no desmutea", waitUntil(3_000) { !StreamService.muted.value })
-        assertTrue(waitUntil(3_000) { titles().contains("Silenciar") })
+        action("Unmute").actionIntent.send()
+        assertTrue("Unmute via PendingIntent does not unmute", waitUntil(3_000) { !StreamService.muted.value })
+        assertTrue(waitUntil(3_000) { titles().contains("Mute") })
 
-        action("Parar").actionIntent.send()
-        assertTrue("Parar por PendingIntent no detiene el FGS", waitUntil(5_000) { !StreamService.running.value })
-        assertTrue("la notificación tiene que retirarse tras Parar", waitUntil(3_000) { activeNotification() == null })
+        action("Stop").actionIntent.send()
+        assertTrue("Stop via PendingIntent does not stop the FGS", waitUntil(5_000) { !StreamService.running.value })
+        assertTrue("the notification must be removed after Stop", waitUntil(3_000) { activeNotification() == null })
     }
 
     /** Sin parar: la instrumentación queda viva para que el probe externo quite la tarea. */

@@ -80,11 +80,9 @@ openrelay pair
 The daemon opens a single enrollment window, prints the one-time `openrelay://pair?v=1&h=…&pin=…&t=…` URI and a QR in the terminal, then polls for the phone. When a device enrolls, the CLI prints its fingerprint and asks:
 
 ```text
-Dispositivo: 9f2c…
-¿Aprobar este dispositivo? [y/N]
+Device: 9f2c…
+Approve this device? [y/N]
 ```
-
-(Approve this device? [y/N])
 
 `y` signs a `clientAuth` leaf for the device key and hands it back over the enrollment stream; the phone then connects to the session endpoint. `n` rejects it. Flags:
 
@@ -100,10 +98,10 @@ List what is approved without talking to the daemon:
 
 ```sh
 openrelay devices
-# 9f2c…  mic=sí control_read=sí control_write=sí return_audio=no
+# 9f2c…  mic=yes control_read=yes control_write=yes return_audio=no
 ```
 
-With no approved device it prints `openrelay: no hay dispositivos aprobados` on stderr and exits 0.
+With no approved device it prints `openrelay: no approved devices` on stderr and exits 0.
 
 The list is read from `identities.json`. A device absent from it is denied by the ACL, even if it completed enrollment.
 
@@ -188,7 +186,7 @@ On a conflict the CLI exits 1, prints the JSON error on stdout and a one-line re
 ```sh
 $ openrelay config set audio.mute true --rev 7
 {"error":{"code":"conflict","current_revision":0,"message":"revision mismatch","retryable":true},"ok":false,"request_id":"cli-1234-…"}
-openrelay: el daemon devolvió error        # stderr
+openrelay: the daemon returned an error      # stderr
 ```
 
 `VALUE` is parsed as `true`/`false`, an integer, a decimal, or text, in that order. The key decides whether the value is valid. For example, `0.5` is not an integer.
@@ -203,7 +201,7 @@ openrelay: el daemon devolvió error        # stderr
 
 Running `openrelay` with no subcommand prints the usage text and exits 2; `openrelay --help` exits 0.
 
-On an error, the JSON response still goes to stdout and a short reason goes to stderr, so scripts can always parse stdout. CLI messages are currently in Spanish.
+On an error, the JSON response still goes to stdout and a short reason goes to stderr, so scripts can always parse stdout. CLI messages are in English.
 
 ## 8. Use another socket
 

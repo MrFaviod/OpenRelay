@@ -73,7 +73,7 @@ pub const STAGE_BUDGETS: [StageBudget; 5] = [
         stage: Stage::Frame,
         budget_us: 5_000,
         ceiling_us: 5_000,
-        note: "5 ms de audio por frame; duración fija del perfil v1",
+        note: "5 ms of audio per frame; fixed duration of the v1 profile",
     },
     StageBudget {
         stage: Stage::Lan,
@@ -85,7 +85,7 @@ pub const STAGE_BUDGETS: [StageBudget; 5] = [
         stage: Stage::Jitter,
         budget_us: 10_000,
         ceiling_us: 40_000,
-        note: "target por defecto del buffer; 40 ms es el máximo del contrato",
+        note: "default jitter-buffer target; 40 ms is the contract maximum",
     },
     StageBudget {
         stage: Stage::ResampleOutput,
@@ -346,7 +346,7 @@ pub const RESOURCE_CEILINGS: [ResourceCeiling; 7] = [
         resource: Resource::ArtifactBytes,
         ceiling: 8 * 1024 * 1024,
         unit: "bytes",
-        method: "tamaño del binario release desplegado, no target/",
+        method: "size of the deployed release binary, not target/",
     },
     ResourceCeiling {
         resource: Resource::ThreadsOwn,

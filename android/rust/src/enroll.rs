@@ -52,18 +52,18 @@ pub(crate) fn enroll(
     };
     let addr: SocketAddr = endpoint
         .parse()
-        .map_err(|_| "host:puerto del QR no válido".to_string())?;
-    let pin = SpkiPin::from_hex(pin_hex).ok_or("pin del QR no es 64 hex")?;
+        .map_err(|_| "QR host:port is not valid".to_string())?;
+    let pin = SpkiPin::from_hex(pin_hex).ok_or("QR pin is not 64 hex")?;
     let token = hex32(token_hex)
         .map(EnrollmentToken::from_bytes)
-        .ok_or("token del QR no es 64 hex")?;
+        .ok_or("QR token is not 64 hex")?;
     if spki_der.is_empty() {
-        return Err("SPKI del cliente vacío".into());
+        return Err("client SPKI is empty".into());
     }
     let roots = identity::root_store(std::iter::empty::<CertificateDer<'static>>())
         .map_err(|error| error.to_string())?;
     let mut client = EnrollClient::connect(roots, pin, Instant::now(), addr, host)
-        .map_err(|error| format!("conexión de enrolamiento: {error}"))?;
+        .map_err(|error| format!("enrollment connection: {error}"))?;
     let outcome = client
         .send_token(&token, &spki_der)
         .map_err(|error| format!("token: {error}"))?;

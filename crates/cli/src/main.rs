@@ -1,21 +1,21 @@
-//! `openrelay` — CLI local de administración del daemon de openrelay.
+//! `openrelay` — local administration CLI for the openrelay daemon.
 //!
-//! Uso:
+//! Usage:
 //!
 //! ```text
-//! openrelay daemon [--socket PATH]            arranca el servidor de control en primer plano
-//! openrelay status [--socket PATH]            pide el estado al daemon y lo imprime (JSON)
-//! openrelay config get [KEY] [--socket PATH]  lee una clave o el snapshot completo
-//! openrelay config set KEY VALUE --rev N      escribe una clave con revisión esperada
-//! openrelay capabilities [--socket PATH]      pide las capacidades y la revisión actual
-//! openrelay pair [--ttl 120] [--advertise HOST] [--yes]  abre una ventana y aprueba un teléfono
-//! openrelay devices                           lista las identidades aprobadas
-//! openrelay devices remove FINGERPRINT        revoca un dispositivo y cierra sus sesiones
-//! openrelay service print-unit                imprime la unidad systemd --user
+//! openrelay daemon [--socket PATH]            starts the control server in the foreground
+//! openrelay status [--socket PATH]            asks the daemon for its state and prints it (JSON)
+//! openrelay config get [KEY] [--socket PATH]  reads one key or the full snapshot
+//! openrelay config set KEY VALUE --rev N      writes one key with the expected revision
+//! openrelay capabilities [--socket PATH]      asks for capabilities and the current revision
+//! openrelay pair [--ttl 120] [--advertise HOST] [--yes]  opens a window and approves a phone
+//! openrelay devices                           lists the approved identities
+//! openrelay devices remove FINGERPRINT        revokes a device and closes its sessions
+//! openrelay service print-unit                prints the systemd --user unit
 //! ```
 //!
-//! Códigos de salida: 0 correcto; 1 el daemon no responde o devuelve error;
-//! 2 uso incorrecto.
+//! Exit codes: 0 success; 1 the daemon does not respond or returns an error;
+//! 2 incorrect usage.
 
 mod socket;
 
@@ -28,90 +28,90 @@ use openrelay_daemon::runtime::{ProvisionFiles, RuntimeConfig};
 use serde_json::{json, Value};
 
 const USAGE: &str = "\
-openrelay — CLI de administración del daemon de openrelay
+openrelay — local administration CLI for the openrelay daemon
 
-Uso:
-  openrelay daemon [--socket PATH]            arranca el servidor de control (primer plano)
-  openrelay status [--socket PATH]            muestra el estado del daemon (JSON)
-  openrelay config get [KEY] [--socket PATH]  lee una clave o todas (JSON)
-  openrelay config set KEY VALUE --rev N      escribe una clave (JSON)
-  openrelay capabilities [--socket PATH]      capacidades y revisión actual (JSON)
+Usage:
+  openrelay daemon [--socket PATH]            starts the control server (foreground)
+  openrelay status [--socket PATH]            shows the daemon state (JSON)
+  openrelay config get [KEY] [--socket PATH]  reads one key or all of them (JSON)
+  openrelay config set KEY VALUE --rev N      writes one key (JSON)
+  openrelay capabilities [--socket PATH]      capabilities and current revision (JSON)
   openrelay pair [--ttl 120] [--advertise HOST] [--yes]
-                                              QR + aprobación local de un teléfono
-  openrelay devices                           lista las identidades aprobadas
-  openrelay devices remove FINGERPRINT       revoca un dispositivo y cierra sus sesiones
-  openrelay service print-unit                imprime la unidad systemd --user
-  openrelay --help | openrelay <subcomando> --help
+                                              QR + local approval of a phone
+  openrelay devices                           lists the approved identities
+  openrelay devices remove FINGERPRINT        revokes a device and closes its sessions
+  openrelay service print-unit                prints the systemd --user unit
+  openrelay --help | openrelay <subcommand> --help
 
-Socket por defecto: $XDG_RUNTIME_DIR/openrelay/control.sock (0700 dir, 0600 socket).
+Default socket: $XDG_RUNTIME_DIR/openrelay/control.sock (0700 dir, 0600 socket).
 ";
 
 const DAEMON_USAGE: &str = "\
-Uso: openrelay daemon [--socket PATH] [--state-dir PATH] [--no-quic]
+Usage: openrelay daemon [--socket PATH] [--state-dir PATH] [--no-quic]
                  [--quic ADDR]
                  [--identity-der PATH --identity-key PATH]
                  [--client-ca PATH --client-ca-key PATH]
                  [--identities PATH --control-grants PATH]
 
-Arranca el servidor de control en primer plano. Sólo acepta conexiones del
-mismo UID. Ctrl-C para detenerlo.
+Starts the control server in the foreground. It only accepts connections from
+the same UID. Ctrl-C stops it.
 
-Por defecto aprovisiona ${XDG_CONFIG_HOME:-~/.config}/openrelay (CA local,
-certificado del servidor, identidades vacías y grants) y abre QUIC en
-0.0.0.0:47000. --state-dir cambia el directorio; los seis archivos lo
-sobreescriben. --no-quic deja el endpoint de sesión apagado.
+By default it provisions ${XDG_CONFIG_HOME:-~/.config}/openrelay (local CA,
+server certificate, empty identities and grants) and opens QUIC on
+0.0.0.0:47000. --state-dir changes the directory; the six files override it.
+--no-quic leaves the session endpoint off.
 ";
 
 const PAIR_USAGE: &str = "\
-Uso: openrelay pair [--ttl 120] [--advertise HOST] [--yes] [--socket PATH]
+Usage: openrelay pair [--ttl 120] [--advertise HOST] [--yes] [--socket PATH]
 
-Abre una ventana de emparejamiento, imprime el URI y el QR, espera a que el
-teléfono envíe su token y pide aprobación local. Con --yes aprueba el primer
-dispositivo sin preguntar. TTL en segundos (1..=300).
+Opens a pairing window, prints the URI and the QR, waits for the phone to send
+its token and asks for local approval. With --yes it approves the first device
+without asking. TTL in seconds (1..=300).
 ";
 
 const DEVICES_USAGE: &str = "\
-Uso: openrelay devices [--state-dir PATH]
+Usage: openrelay devices [--state-dir PATH]
      openrelay devices remove FINGERPRINT [--socket PATH]
 
-Sin argumentos lista las identidades aprobadas en identities.json (spki y
-capacidades). `remove` pide al daemon que borre la identidad, la saque de la
-ACL viva y cierre las sesiones abiertas de ese dispositivo.
+With no arguments it lists the approved identities in identities.json (spki and
+capabilities). `remove` asks the daemon to delete the identity, take it out of
+the live ACL and close that device's open sessions.
 ";
 
 const STATUS_USAGE: &str = "\
-Uso: openrelay status [--socket PATH]
+Usage: openrelay status [--socket PATH]
 
-Imprime la respuesta JSON completa del daemon. Sale con 1 si no responde.
+Prints the daemon's full JSON response. Exits with 1 if it does not respond.
 ";
 
 const CONFIG_USAGE: &str = "\
-Uso:
+Usage:
   openrelay config get [KEY] [--socket PATH]
   openrelay config set KEY VALUE --rev N [--socket PATH]
 
-get sin KEY devuelve el snapshot completo. set exige --rev con la revisión
-que leíste antes; si no coincide, sale con 1 y devuelve error `conflict` con
-`current_revision`. VALUE se interpreta como true/false, entero, decimal o
-texto. Un mismo request_id repetido devuelve la misma respuesta sin aplicar
-dos veces.
+get without KEY returns the full snapshot. set requires --rev with the revision
+you read before; if it does not match, it exits with 1 and returns a `conflict`
+error with `current_revision`. VALUE is interpreted as true/false, integer,
+decimal or text. Repeating the same request_id returns the same response
+without applying it twice.
 ";
 
 const CAPABILITIES_USAGE: &str = "\
-Uso: openrelay capabilities [--socket PATH]
+Usage: openrelay capabilities [--socket PATH]
 
-Imprime el mensaje `capabilities` del daemon (revisión, claves y límites).
+Prints the daemon's `capabilities` message (revision, keys and limits).
 ";
 
 const SERVICE_USAGE: &str = "\
-Uso: openrelay service print-unit
+Usage: openrelay service print-unit
 
-Imprime, sin instalarlo, el contenido de packaging/systemd/openrelay.service.
-La unidad es opcional: corre `openrelay daemon` bajo systemd --user.
+Prints, without installing it, the contents of packaging/systemd/openrelay.service.
+The unit is optional: run `openrelay daemon` under systemd --user.
 ";
 
-/// Unidad empaquetada. `include_str!` evita duplicar el archivo: lo que se
-/// imprime es exactamente lo que se distribuye.
+/// Packaged unit. `include_str!` avoids duplicating the file: what is printed
+/// is exactly what ships.
 const SERVICE_UNIT: &str = include_str!("../../../packaging/systemd/openrelay.service");
 
 fn main() -> ExitCode {
@@ -134,21 +134,21 @@ fn main() -> ExitCode {
         "devices" => cmd_devices(rest),
         "service" => cmd_service(rest),
         other => {
-            eprintln!("openrelay: subcomando desconocido: {other}\n\n{USAGE}");
+            eprintln!("openrelay: unknown subcommand: {other}\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
 }
 
-/// Opciones comunes ya separadas de los argumentos posicionales.
+/// Common options already split from the positional arguments.
 struct Opts {
     socket: PathBuf,
     rev: Option<u64>,
     positional: Vec<String>,
 }
 
-/// Parsea `[--socket PATH]`, `--rev N` (sólo si `rev_allowed`), posicionales y
-/// `--help`. `Err(code)` si ya se debe salir.
+/// Parses `[--socket PATH]`, `--rev N` (only if `rev_allowed`), positionals and
+/// `--help`. `Err(code)` when the process should exit already.
 fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, ExitCode> {
     let mut socket: Option<PathBuf> = None;
     let mut rev: Option<u64> = None;
@@ -163,19 +163,19 @@ fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, E
             "--socket" => match it.next() {
                 Some(p) => socket = Some(PathBuf::from(p)),
                 None => {
-                    eprintln!("openrelay: --socket requiere una ruta");
+                    eprintln!("openrelay: --socket requires a path");
                     return Err(ExitCode::from(2));
                 }
             },
             "--rev" if rev_allowed => match it.next().and_then(|n| n.parse::<u64>().ok()) {
                 Some(n) => rev = Some(n),
                 None => {
-                    eprintln!("openrelay: --rev requiere un entero no negativo");
+                    eprintln!("openrelay: --rev requires a non-negative integer");
                     return Err(ExitCode::from(2));
                 }
             },
             other if other.starts_with('-') && other.len() > 1 && other.parse::<f64>().is_err() => {
-                eprintln!("openrelay: argumento desconocido: {other}\n\n{usage}");
+                eprintln!("openrelay: unknown argument: {other}\n\n{usage}");
                 return Err(ExitCode::from(2));
             }
             other => positional.push(other.to_owned()),
@@ -188,7 +188,7 @@ fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, E
                 PathBuf::from(dir).join("openrelay").join("control.sock")
             }
             _ => {
-                eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
+                eprintln!("openrelay: set --socket or XDG_RUNTIME_DIR");
                 return Err(ExitCode::from(2));
             }
         },
@@ -200,12 +200,12 @@ fn parse_opts(rest: &[String], usage: &str, rev_allowed: bool) -> Result<Opts, E
     })
 }
 
-/// Opciones sin posicionales ni `--rev` (daemon, status, capabilities).
+/// Options with no positionals and no `--rev` (daemon, status, capabilities).
 fn parse_plain(rest: &[String], usage: &str) -> Result<PathBuf, ExitCode> {
     let opts = parse_opts(rest, usage, false)?;
     if !opts.positional.is_empty() {
         eprintln!(
-            "openrelay: argumento desconocido: {}\n\n{usage}",
+            "openrelay: unknown argument: {}\n\n{usage}",
             opts.positional[0]
         );
         return Err(ExitCode::from(2));
@@ -229,11 +229,11 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
         eprintln!("openrelay: {gap}");
     } else if let Some(addr) = ready.quic_addr {
         eprintln!(
-            "openrelay: QUIC en {addr} pin {}",
+            "openrelay: QUIC on {addr} pin {}",
             ready.server_pin.as_deref().unwrap_or("-")
         );
     }
-    eprintln!("openrelay: daemon escuchando en {}", path.display());
+    eprintln!("openrelay: daemon listening on {}", path.display());
     let served = socket::serve_interleaved(&path, |event| match event {
         socket::Interleave::Request {
             op,
@@ -256,7 +256,7 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
     }
 }
 
-/// Argumentos propios de `openrelay daemon`.
+/// Arguments specific to `openrelay daemon`.
 struct DaemonOpts {
     quic: Option<SocketAddr>,
     no_quic: bool,
@@ -286,7 +286,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
             match it.next() {
                 Some(path) => Ok(PathBuf::from(path)),
                 None => {
-                    eprintln!("openrelay: {name} requiere una ruta");
+                    eprintln!("openrelay: {name} requires a path");
                     Err(ExitCode::from(2))
                 }
             }
@@ -308,12 +308,12 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
             "--quic" => match it.next().and_then(|text| text.parse::<SocketAddr>().ok()) {
                 Some(addr) => quic = Some(addr),
                 None => {
-                    eprintln!("openrelay: --quic requiere host:puerto");
+                    eprintln!("openrelay: --quic requires host:port");
                     return Err(ExitCode::from(2));
                 }
             },
             other => {
-                eprintln!("openrelay: argumento desconocido: {other}\n\n{DAEMON_USAGE}");
+                eprintln!("openrelay: unknown argument: {other}\n\n{DAEMON_USAGE}");
                 return Err(ExitCode::from(2));
             }
         }
@@ -325,7 +325,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
                 PathBuf::from(dir).join("openrelay").join("control.sock")
             }
             _ => {
-                eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
+                eprintln!("openrelay: set --socket or XDG_RUNTIME_DIR");
                 return Err(ExitCode::from(2));
             }
         },
@@ -347,7 +347,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
 impl DaemonOpts {
     fn into_config(self) -> Result<RuntimeConfig, ExitCode> {
         if self.no_quic && self.quic.is_some() {
-            eprintln!("openrelay: --no-quic y --quic son excluyentes\n\n{DAEMON_USAGE}");
+            eprintln!("openrelay: --no-quic and --quic are mutually exclusive\n\n{DAEMON_USAGE}");
             return Err(ExitCode::from(2));
         }
         let any_file = self.identity_der.is_some()
@@ -382,7 +382,7 @@ impl DaemonOpts {
                 }),
                 _ => {
                     eprintln!(
-                        "openrelay: la provisión pide los seis archivos o ninguno\n\n{DAEMON_USAGE}"
+                        "openrelay: provisioning takes all six files or none\n\n{DAEMON_USAGE}"
                     );
                     return Err(ExitCode::from(2));
                 }
@@ -395,7 +395,7 @@ impl DaemonOpts {
                 None => match openrelay_daemon::provision::default_dir() {
                     Some(dir) => dir,
                     None => {
-                        eprintln!("openrelay: define --state-dir o HOME/XDG_CONFIG_HOME");
+                        eprintln!("openrelay: set --state-dir or HOME/XDG_CONFIG_HOME");
                         return Err(ExitCode::from(2));
                     }
                 },
@@ -403,7 +403,7 @@ impl DaemonOpts {
             match openrelay_daemon::provision::ensure(&dir) {
                 Ok(files) => Some(files),
                 Err(error) => {
-                    eprintln!("openrelay: provisión ({}): {error}", dir.display());
+                    eprintln!("openrelay: provision ({}): {error}", dir.display());
                     return Err(ExitCode::from(1));
                 }
             }
@@ -438,7 +438,7 @@ fn cmd_capabilities(rest: &[String]) -> ExitCode {
     }
 }
 
-/// `openrelay pair`: ventana de enrolamiento, QR y aprobación local.
+/// `openrelay pair`: enrollment window, QR and local approval.
 fn cmd_pair(rest: &[String]) -> ExitCode {
     let mut socket = default_socket();
     let mut ttl = 120u64;
@@ -454,33 +454,33 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             "--socket" => match it.next() {
                 Some(path) => socket = Some(PathBuf::from(path)),
                 None => {
-                    eprintln!("openrelay: --socket requiere una ruta");
+                    eprintln!("openrelay: --socket requires a path");
                     return ExitCode::from(2);
                 }
             },
             "--ttl" => match it.next().and_then(|n| n.parse::<u64>().ok()) {
                 Some(n) => ttl = n,
                 None => {
-                    eprintln!("openrelay: --ttl requiere segundos");
+                    eprintln!("openrelay: --ttl requires seconds");
                     return ExitCode::from(2);
                 }
             },
             "--advertise" => match it.next() {
                 Some(host) => advertise = Some(host.clone()),
                 None => {
-                    eprintln!("openrelay: --advertise requiere un host");
+                    eprintln!("openrelay: --advertise requires a host");
                     return ExitCode::from(2);
                 }
             },
             "--yes" => yes = true,
             other => {
-                eprintln!("openrelay: argumento desconocido: {other}\n\n{PAIR_USAGE}");
+                eprintln!("openrelay: unknown argument: {other}\n\n{PAIR_USAGE}");
                 return ExitCode::from(2);
             }
         }
     }
     let Some(socket) = socket else {
-        eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
+        eprintln!("openrelay: set --socket or XDG_RUNTIME_DIR");
         return ExitCode::from(2);
     };
     let mut args = json!({ "ttl_s": ttl, "owner_pid": std::process::id() });
@@ -494,9 +494,9 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    // Cierra la ventana en toda salida ordenada (EOF, rechazo, QR ilegible,
-    // error de sondeo). Ctrl-C no ejecuta `Drop`: para eso `pair.open` lleva
-    // `owner_pid` y el daemon retira la ventana cuando el proceso desaparece.
+    // Close the window on every orderly exit (EOF, rejection, unreadable QR,
+    // polling error). Ctrl-C does not run `Drop`: for that, `pair.open` carries
+    // `owner_pid` and the daemon retires the window when the process disappears.
     let mut window = PairWindow::new(&socket);
     let uri = opened["uri"].as_str().unwrap_or_default();
     let expires_at = opened["expires_at"].as_u64().unwrap_or(0);
@@ -511,7 +511,7 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     }
-    eprintln!("openrelay: esperando el teléfono; expira en {expires_at} (epoch)");
+    eprintln!("openrelay: waiting for the phone; expires at {expires_at} (epoch)");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(ttl + 5);
     loop {
         let pending = match call(&socket, "pair.pending", &Value::Null) {
@@ -523,27 +523,27 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
         };
         if let Some(first) = pending.as_array().and_then(|items| items.first()) {
             let fingerprint = first["fingerprint_hex"].as_str().unwrap_or_default();
-            println!("Dispositivo: {fingerprint}");
-            let approved = yes || confirm("¿Aprobar este dispositivo? [y/N] ");
+            println!("Device: {fingerprint}");
+            let approved = yes || confirm("Approve this device? [y/N] ");
             let (op, extra) = if approved {
                 ("pair.approve", json!({ "fingerprint_hex": fingerprint }))
             } else {
                 ("pair.reject", json!({ "fingerprint_hex": fingerprint }))
             };
-            // Aprobado y aceptado: la ventana sigue unos segundos para que el
-            // teléfono reciba su hoja por QUIC. Rechazado o error: se cierra al
-            // salir. Sólo se desarma si el daemon confirmó la aprobación.
+            // Approved and accepted: the window stays open a few seconds so the
+            // phone receives its sheet over QUIC. Rejected or error: it closes on
+            // exit. It is only disarmed if the daemon confirmed the approval.
             let result = call(&socket, op, &extra);
             if approved && result.is_ok() {
                 window.keep_after_approve(true);
             }
             return match result {
                 Ok(_) if approved => {
-                    println!("openrelay: dispositivo aprobado");
+                    println!("openrelay: device approved");
                     ExitCode::SUCCESS
                 }
                 Ok(_) => {
-                    println!("openrelay: dispositivo rechazado");
+                    println!("openrelay: device rejected");
                     ExitCode::SUCCESS
                 }
                 Err(error) => {
@@ -553,18 +553,18 @@ fn cmd_pair(rest: &[String]) -> ExitCode {
             };
         }
         if std::time::Instant::now() >= deadline {
-            eprintln!("openrelay: la ventana expiró sin solicitudes");
+            eprintln!("openrelay: the window expired with no requests");
             return ExitCode::from(1);
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
 
-/// Ventana de `pair.open` vista por el CLI: se cierra al soltarla.
+/// `pair.open` window as seen by the CLI: it closes when dropped.
 ///
-/// Cubre toda salida ordenada, incluido un `return` temprano por error. Para
-/// SIGINT/SIGTERM no hay `Drop`; esa mitad la resuelve el daemon con el
-/// `owner_pid` que viaja en `pair.open`.
+/// It covers every orderly exit, including an early `return` on error. There is
+/// no `Drop` for SIGINT/SIGTERM; that half is handled by the daemon with the
+/// `owner_pid` that travels in `pair.open`.
 struct PairWindow<'a> {
     socket: &'a Path,
     armed: bool,
@@ -578,8 +578,8 @@ impl<'a> PairWindow<'a> {
         }
     }
 
-    /// Tras aprobar, el daemon conserva la ventana unos segundos para que el
-    /// teléfono reciba su hoja por QUIC: el CLI no la cierra.
+    /// After approving, the daemon keeps the window for a few seconds so the
+    /// phone receives its sheet over QUIC: the CLI does not close it.
     fn keep_after_approve(&mut self, approved: bool) {
         self.armed = !approved;
     }
@@ -593,7 +593,7 @@ impl Drop for PairWindow<'_> {
     }
 }
 
-/// `openrelay devices`: lista `identities.json` sin hablar con el daemon.
+/// `openrelay devices`: lists `identities.json` without talking to the daemon.
 fn cmd_devices(rest: &[String]) -> ExitCode {
     if rest.first().map(String::as_str) == Some("remove") {
         return cmd_devices_remove(&rest[1..]);
@@ -609,12 +609,12 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
             "--state-dir" => match it.next() {
                 Some(path) => state_dir = Some(PathBuf::from(path)),
                 None => {
-                    eprintln!("openrelay: --state-dir requiere una ruta");
+                    eprintln!("openrelay: --state-dir requires a path");
                     return ExitCode::from(2);
                 }
             },
             other => {
-                eprintln!("openrelay: argumento desconocido: {other}\n\n{DEVICES_USAGE}");
+                eprintln!("openrelay: unknown argument: {other}\n\n{DEVICES_USAGE}");
                 return ExitCode::from(2);
             }
         }
@@ -622,7 +622,7 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
     let dir = match state_dir.or_else(openrelay_daemon::provision::default_dir) {
         Some(dir) => dir,
         None => {
-            eprintln!("openrelay: define --state-dir o HOME/XDG_CONFIG_HOME");
+            eprintln!("openrelay: set --state-dir or HOME/XDG_CONFIG_HOME");
             return ExitCode::from(2);
         }
     };
@@ -643,14 +643,14 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
     };
     let entries = doc["identities"].as_array().cloned().unwrap_or_default();
     if entries.is_empty() {
-        eprintln!("openrelay: no hay dispositivos aprobados");
+        eprintln!("openrelay: no approved devices");
         return ExitCode::SUCCESS;
     }
     for entry in entries {
         let pin = entry["spki"].as_str().unwrap_or("?");
         let flag = |name: &str| {
             if entry[name].as_bool().unwrap_or(false) {
-                "sí"
+                "yes"
             } else {
                 "no"
             }
@@ -666,7 +666,7 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// `openrelay devices remove`: pide al daemon que revoque una identidad.
+/// `openrelay devices remove`: asks the daemon to revoke an identity.
 fn cmd_devices_remove(rest: &[String]) -> ExitCode {
     let mut socket: Option<PathBuf> = None;
     let mut fingerprint: Option<String> = None;
@@ -680,28 +680,28 @@ fn cmd_devices_remove(rest: &[String]) -> ExitCode {
             "--socket" => match it.next() {
                 Some(path) => socket = Some(PathBuf::from(path)),
                 None => {
-                    eprintln!("openrelay: --socket requiere una ruta");
+                    eprintln!("openrelay: --socket requires a path");
                     return ExitCode::from(2);
                 }
             },
             other if other.starts_with('-') => {
-                eprintln!("openrelay: argumento desconocido: {other}\n\n{DEVICES_USAGE}");
+                eprintln!("openrelay: unknown argument: {other}\n\n{DEVICES_USAGE}");
                 return ExitCode::from(2);
             }
             other => {
                 if fingerprint.replace(other.to_string()).is_some() {
-                    eprintln!("openrelay: devices remove acepta un solo fingerprint");
+                    eprintln!("openrelay: devices remove accepts a single fingerprint");
                     return ExitCode::from(2);
                 }
             }
         }
     }
     let Some(fingerprint) = fingerprint else {
-        eprintln!("openrelay: devices remove requiere un fingerprint\n\n{DEVICES_USAGE}");
+        eprintln!("openrelay: devices remove requires a fingerprint\n\n{DEVICES_USAGE}");
         return ExitCode::from(2);
     };
     let Some(socket) = socket.or_else(default_socket) else {
-        eprintln!("openrelay: define --socket o XDG_RUNTIME_DIR");
+        eprintln!("openrelay: set --socket or XDG_RUNTIME_DIR");
         return ExitCode::from(2);
     };
     match call(
@@ -711,9 +711,9 @@ fn cmd_devices_remove(rest: &[String]) -> ExitCode {
     ) {
         Ok(result) => {
             let hex = result["fingerprint_hex"].as_str().unwrap_or(&fingerprint);
-            println!("openrelay: dispositivo eliminado {hex}");
+            println!("openrelay: device removed {hex}");
             println!(
-                "sesiones cerradas: {}",
+                "sessions closed: {}",
                 result["closed_sessions"].as_u64().unwrap_or(0)
             );
             ExitCode::SUCCESS
@@ -725,7 +725,7 @@ fn cmd_devices_remove(rest: &[String]) -> ExitCode {
     }
 }
 
-/// Socket de control por defecto a partir de `XDG_RUNTIME_DIR`.
+/// Default control socket from `XDG_RUNTIME_DIR`.
 fn default_socket() -> Option<PathBuf> {
     match env::var_os("XDG_RUNTIME_DIR") {
         Some(dir) if !dir.is_empty() => {
@@ -735,19 +735,19 @@ fn default_socket() -> Option<PathBuf> {
     }
 }
 
-/// Envía una operación y devuelve `result`, o el error del daemon como texto.
+/// Sends an operation and returns `result`, or the daemon error as text.
 fn call(path: &Path, op: &str, args: &Value) -> Result<Value, String> {
     let resp = socket::request(path, op, args)?;
     if resp.get("ok") == Some(&Value::Bool(true)) {
         Ok(resp.get("result").cloned().unwrap_or(Value::Null))
     } else {
         let code = resp["error"]["code"].as_str().unwrap_or("error");
-        let message = resp["error"]["message"].as_str().unwrap_or("sin detalle");
+        let message = resp["error"]["message"].as_str().unwrap_or("no detail");
         Err(format!("{code}: {message}"))
     }
 }
 
-/// Pregunta sí/no por stdin; cualquier cosa que no sea `y`/`s` es no.
+/// Asks yes/no on stdin; anything other than `y`/`s` counts as no.
 fn confirm(prompt: &str) -> bool {
     use std::io::Write;
     print!("{prompt}");
@@ -762,7 +762,7 @@ fn confirm(prompt: &str) -> bool {
     )
 }
 
-/// `openrelay service print-unit`: vuelca la unidad sin escribir ni instalar nada.
+/// `openrelay service print-unit`: dumps the unit without writing or installing anything.
 fn cmd_service(rest: &[String]) -> ExitCode {
     match rest {
         [arg] if arg == "print-unit" => {
@@ -774,11 +774,11 @@ fn cmd_service(rest: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         [] => {
-            eprintln!("openrelay: usa `openrelay service print-unit`\n\n{SERVICE_USAGE}");
+            eprintln!("openrelay: use `openrelay service print-unit`\n\n{SERVICE_USAGE}");
             ExitCode::from(2)
         }
         [other, ..] => {
-            eprintln!("openrelay: subcomando de service desconocido: {other}\n\n{SERVICE_USAGE}");
+            eprintln!("openrelay: unknown service subcommand: {other}\n\n{SERVICE_USAGE}");
             ExitCode::from(2)
         }
     }
@@ -793,7 +793,7 @@ fn cmd_config(rest: &[String]) -> ExitCode {
         Some("get") => cmd_config_get(&rest[1..]),
         Some("set") => cmd_config_set(&rest[1..]),
         _ => {
-            eprintln!("openrelay: usa `openrelay config get|set`\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: use `openrelay config get|set`\n\n{CONFIG_USAGE}");
             ExitCode::from(2)
         }
     }
@@ -808,7 +808,7 @@ fn cmd_config_get(rest: &[String]) -> ExitCode {
         [] => Value::Null,
         [k] => Value::String(k.clone()),
         _ => {
-            eprintln!("openrelay: config get admite como máximo una clave\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: config get accepts at most one key\n\n{CONFIG_USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -823,12 +823,12 @@ fn cmd_config_set(rest: &[String]) -> ExitCode {
     let (key, raw) = match opts.positional.as_slice() {
         [k, v] => (k.clone(), v.clone()),
         _ => {
-            eprintln!("openrelay: config set requiere KEY y VALUE\n\n{CONFIG_USAGE}");
+            eprintln!("openrelay: config set requires KEY and VALUE\n\n{CONFIG_USAGE}");
             return ExitCode::from(2);
         }
     };
     let Some(expected_revision) = opts.rev else {
-        eprintln!("openrelay: config set requiere --rev N\n\n{CONFIG_USAGE}");
+        eprintln!("openrelay: config set requires --rev N\n\n{CONFIG_USAGE}");
         return ExitCode::from(2);
     };
     let args = json!({
@@ -839,7 +839,7 @@ fn cmd_config_set(rest: &[String]) -> ExitCode {
     send(&opts.socket, "config.set", &args)
 }
 
-/// Interpreta VALUE de la línea de órdenes: booleano, entero, decimal o texto.
+/// Interprets VALUE from the command line: boolean, integer, decimal or text.
 fn parse_value(raw: &str) -> Value {
     match raw {
         "true" => return Value::Bool(true),
@@ -859,7 +859,7 @@ fn parse_value(raw: &str) -> Value {
     Value::String(raw.to_owned())
 }
 
-/// Envía `op` al daemon, imprime la respuesta y sale con 1 si `ok` no es true.
+/// Sends `op` to the daemon, prints the response and exits with 1 if `ok` is not true.
 fn send(path: &Path, op: &str, args: &Value) -> ExitCode {
     match socket::request(path, op, args) {
         Ok(resp) => {
@@ -867,7 +867,7 @@ fn send(path: &Path, op: &str, args: &Value) -> ExitCode {
             if resp.get("ok") == Some(&Value::Bool(true)) {
                 ExitCode::SUCCESS
             } else {
-                eprintln!("openrelay: el daemon devolvió error");
+                eprintln!("openrelay: the daemon returned an error");
                 ExitCode::from(1)
             }
         }

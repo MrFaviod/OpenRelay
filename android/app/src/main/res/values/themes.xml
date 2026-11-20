@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Tema mínimo sin ActionBar para una Activity Compose; los colores y la
-         tipografía reales los aporta Material3 en Kotlin. -->
+    <!-- Minimal theme without an ActionBar for a Compose Activity; the real
+         colors and typography come from Material3 in Kotlin. -->
     <style name="Theme.OpenRelay" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

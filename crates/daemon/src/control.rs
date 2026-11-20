@@ -113,10 +113,10 @@ pub enum ControlError {
 impl fmt::Display for ControlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unknown => f.write_str("identidad no registrada"),
-            Self::Full => f.write_str("registro de control lleno"),
-            Self::Transport(detail) => write!(f, "transporte rechazó el control: {detail}"),
-            Self::State => f.write_str("estado de control no disponible"),
+            Self::Unknown => f.write_str("identity not registered"),
+            Self::Full => f.write_str("control registry full"),
+            Self::Transport(detail) => write!(f, "transport rejected control: {detail}"),
+            Self::State => f.write_str("control state unavailable"),
         }
     }
 }
@@ -344,7 +344,7 @@ fn denied(message: &ControlMessage) -> ControlMessage {
                 ErrorCode::Internal,
                 "denied response failed",
             )
-            .expect("texto interno válido"),
+            .expect("valid internal text"),
         ),
     }
 }
@@ -353,11 +353,11 @@ fn map_transport(error: TransportError) -> ControlError {
     let detail = match error {
         TransportError::Unauthorized => return ControlError::Unknown,
         TransportError::Capability(cap) => cap,
-        TransportError::Closed => "sesión cerrada",
-        TransportError::Stream(_) => "stream de control",
-        TransportError::QueueFull => "cola de control llena",
-        TransportError::Control(_) => "frame de control inválido",
-        _ => "transporte",
+        TransportError::Closed => "session closed",
+        TransportError::Stream(_) => "control stream",
+        TransportError::QueueFull => "control queue full",
+        TransportError::Control(_) => "invalid control frame",
+        _ => "transport",
     };
     ControlError::Transport(detail)
 }

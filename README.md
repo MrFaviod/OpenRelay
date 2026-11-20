@@ -72,13 +72,13 @@ sudo ufw allow 47000:47001/udp
 openrelay pair
 ```
 
-It prints a QR code and an `openrelay://pair?...` link. In the app, tap **Emparejar con PC**, scan the QR (**Escanear QR**) or paste the link, then tap **Emparejar** and answer `y` on the PC when the fingerprint appears.
+It prints a QR code and an `openrelay://pair?...` link. In the app, tap **Pair with PC**, scan the QR (**Scan QR**) or paste the link, then tap **Pair** and answer `y` on the PC when the fingerprint appears.
 
-The app and CLI prompts are in Spanish.
+The app and the CLI prompts are in English.
 
 **3. Talk**
 
-Tap **Iniciar captura local** in the app. Select **openrelay-mic** as the microphone in your PC app.
+Tap **Start local capture** in the app. Select **openrelay-mic** as the microphone in your PC app.
 
 Useful commands:
 

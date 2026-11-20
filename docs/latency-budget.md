@@ -5,26 +5,27 @@ yet: this document sets targets and ceilings so they can be measured later, and
 declares the method for each number. No number here has been achieved,
 benchmarked, or observed on a device. The project's priority is LAN latency.
 
-## Presupuesto por etapa (propuesto)
+## Per-stage budget (proposed)
 
-Camino de extremo a extremo para frame v1 (PCM16LE mono 48 kHz, 5 ms por
-frame). `budget_us` es el objetivo de diseño y `ceiling_us` el techo aceptable;
-ambos son propuestas.
+End-to-end path for the v1 frame (PCM16LE mono 48 kHz, 5 ms per
+frame). `budget_us` is the design target and `ceiling_us` the acceptable
+ceiling; both are proposals.
 
-| Etapa | Objetivo | Techo | Método / nota |
+| Stage | Target | Ceiling | Method / note |
 |---|---:|---:|---|
-| Captura | 5 ms | 12 ms | buffer del dispositivo de origen; no medido |
-| Frame | 5 ms | 5 ms | duración fija del perfil v1; no es procesamiento medido |
-| LAN (ida) | 3 ms | 15 ms | prioridad del proyecto; sin cifras de red medidas |
-| Jitter | 10 ms | 40 ms | target por defecto; 40 ms es el máximo del contrato |
-| Resample + salida | 2 ms | 8 ms | resample adaptativo y entrega al sink; no medido |
-| **Total** | **25 ms** | **80 ms** | suma de etapas, no latencia observada |
+| Capture | 5 ms | 12 ms | source device buffer; not measured |
+| Frame | 5 ms | 5 ms | fixed duration of the v1 profile; not measured processing |
+| LAN (one way) | 3 ms | 15 ms | the project's priority; no measured network figures |
+| Jitter | 10 ms | 40 ms | default target; 40 ms is the contract maximum |
+| Resample + output | 2 ms | 8 ms | adaptive resample and delivery to the sink; not measured |
+| **Total** | **25 ms** | **80 ms** | sum of stages, not observed latency |
 
-La fila Jitter usa el target por defecto de `openrelay-audio-core` (10 ms) y su máximo
-de contrato (40 ms); no es una espera medida. La fila LAN es la prioridad: si
-una medición futura incumple, el orden de ataque es red → jitter → captura.
+The Jitter row uses the default target of `openrelay-audio-core` (10 ms) and its
+contract maximum (40 ms); it is not a measured wait. The LAN row is the
+priority: if a future measurement misses it, the order of attack is network →
+jitter → capture.
 
-El bloque siguiente es la suma de etapas del contrato; no mide latencia.
+The block below is the sum of the contract's stages; it does not measure latency.
 
 <!-- verify:latency-budget -->
 ```json
@@ -42,130 +43,132 @@ El bloque siguiente es la suma de etapas del contrato; no mide latencia.
 }
 ```
 
-## Medición
+## Measurement
 
-El presupuesto de arriba sigue siendo **propuesta, no medición**. La medición
-física requiere un dispositivo de referencia, una captura con `pw-record` y la
-evidencia guardada con hash; hasta entonces no hay resultados.
+The budget above remains a **proposal, not a measurement**. Physical
+measurement requires a reference device, a capture with `pw-record` and
+evidence stored with a hash; until then there are no results.
 
-- **Latencia extremo a extremo:** p50/p95/p99 por detección de clics y
-  correlación cruzada entre referencia y captura `pw-record`. La resolución
-  del análisis es de 1 muestra (0,0208 ms a 48 kHz); la incertidumbre física
-  se declara aparte.
-- **RTT:** se mide y reporta en su propio campo `rtt_ms`, aparte de
-  `latency_ms`. No se suma, resta ni promedia con la latencia; confundirlos
-  invalida la evidencia.
-- **Drift de 1 h:** `cargo test -p openrelay-audio-core --test drift_1h -- --ignored`
-  es la referencia simulada; la evidencia de hardware exige un stream real de
-  60 min con `ppm` y `resyncs`.
-- **Evidencia:** cada captura se guarda con su hash y el entorno (modelo, SO,
-  buffer de audio y punto de red). Sin captura física no hay cifra.
+- **End-to-end latency:** p50/p95/p99 by click detection and
+  cross-correlation between reference and `pw-record` capture. The analysis
+  resolution is 1 sample (0.0208 ms at 48 kHz); the physical uncertainty
+  is declared separately.
+- **RTT:** measured and reported in its own `rtt_ms` field, separate from
+  `latency_ms`. It is not added to, subtracted from or averaged with latency;
+  confusing them invalidates the evidence.
+- **1 h drift:** `cargo test -p openrelay-audio-core --test drift_1h -- --ignored`
+  is the simulated reference; hardware evidence requires a real 60 min stream
+  with `ppm` and `resyncs`.
+- **Evidence:** every capture is stored with its hash and the environment (model, OS,
+  audio buffer and network point). Without a physical capture there is no figure.
 
-Estado actual: **sin medición física**. No hay baseline físico ni dispositivo de referencia
-medido; estas cifras no se presentan como logradas. El README no publica cifras de
-latencia: sólo este documento las menciona, y como objetivo. Cuando exista evidencia
-válida se actualizará el bloque `verify:latency-budget`; hasta entonces conserva
-`proposed_not_measured` para no declarar mediciones inexistentes.
-## Contadores idle y streaming
+Current state: **no physical measurement**. There is no physical baseline or
+measured reference device; these figures are not presented as achieved. The README
+publishes no latency figures: only this document mentions them, and as targets.
+When valid evidence exists the `verify:latency-budget` block will be updated;
+until then it keeps `proposed_not_measured` so as not to declare measurements that do
+not exist.
 
-`openrelay_audio_core::budget` separa dos acumuladores que nunca se mezclan:
+## Idle and streaming counters
 
-- **Idle**: proceso vivo sin audio en curso. Cuenta sólo lo que el consumidor
-  observe mientras el modo está en idle.
-- **Streaming**: audio en curso. Acumula por delta las métricas reales de
-  `JitterBuffer` (frames emitidos de red, muestras, huecos, PLC, descartes) y de
-  `DriftController` (resyncs). No reimplementa el pipeline ni crea un segundo
-  contador de verdad.
+`openrelay_audio_core::budget` separates two accumulators that are never mixed:
 
-La línea base del pipeline es **una sola y compartida**: cada `observe`
-acumula el delta en el modo vigente y avanza la línea base del otro modo sin
-sumarle nada (`rebase`). Así cada delta se cuenta exactamente una vez y
-alternar `streaming → idle → streaming` no reatribuye emisiones ya contadas: si
-el buffer emitió 1, 2 y 3 frames y se observó en streaming, idle y streaming,
-los acumuladores dan 2 en streaming y 1 en idle (suma 3), no 5.
+- **Idle**: process alive with no audio in progress. Counts only what the consumer
+  observes while the mode is idle.
+- **Streaming**: audio in progress. Accumulates, by delta, the real metrics of
+  `JitterBuffer` (frames emitted from the network, samples, gaps, PLC, drops) and of
+  `DriftController` (resyncs). It does not reimplement the pipeline or create a second
+  source of truth for counters.
 
-Casos límite declarados:
+The pipeline baseline is **single and shared**: each `observe`
+accumulates the delta in the current mode and advances the other mode's baseline
+without adding anything to it (`rebase`). So each delta is counted exactly once and
+alternating `streaming → idle → streaming` does not reattribute emissions already counted: if
+the buffer emitted frames 1, 2 and 3 and was observed in streaming, idle and streaming,
+the accumulators report 2 in streaming and 1 in idle (sum 3), not 5.
 
-- **Observación repetida**: la misma instantánea sin cambios da delta cero en
-  todos los campos; no duplica el pipeline.
-- **Cambio de modo entre observaciones**: el intervalo no observado se atribuye
-  al modo vigente en la siguiente observación, porque no hay muestra intermedia
-  que lo divida. Para atribuir el límite con precisión, observa antes de cambiar
-  de modo.
-- **Saturación**: `frames`, `samples`, `gaps`, `plc_frames`, `dropped`,
-  `resyncs`, `underruns` y `overruns` saturan en `u64::MAX`; un flujo hostil no
-  desborda ni paniquea.
-- **Reinicio del pipeline**: si los contadores leídos retroceden (buffer o
-  controlador nuevos), el delta se cuenta desde cero en vez de recortarse a
-  cero; el reinicio no pierde lo nuevo ni resta lo acumulado. Un reinicio que
-  vuelve a un valor igual o mayor que la línea base no es distinguible sólo con
-  contadores y se declara como límite del método.
+Declared edge cases:
 
-Las pruebas `budget_idle_stream` cubren separación de modos, alternancia
-streaming→idle→streaming, observación repetida, reinicio y saturación.
+- **Repeated observation**: the same snapshot with no changes gives a zero delta in
+  every field; it does not duplicate the pipeline.
+- **Mode change between observations**: the unobserved interval is attributed
+  to the mode in force at the next observation, because there is no intermediate sample
+  to split it. To attribute the boundary precisely, observe before changing
+  mode.
+- **Saturation**: `frames`, `samples`, `gaps`, `plc_frames`, `dropped`,
+  `resyncs`, `underruns` and `overruns` saturate at `u64::MAX`; a hostile stream
+  neither overflows nor panics.
+- **Pipeline restart**: if the counters read go backwards (new buffer or
+  controller), the delta is counted from zero instead of being clamped to
+  zero; the restart neither loses the new data nor subtracts what was accumulated. A restart that
+  returns to a value equal to or greater than the baseline cannot be told apart by
+  counters alone and is declared a limit of the method.
 
-## Techos de recursos (propuestos)
+The `budget_idle_stream` tests cover mode separation, streaming→idle→streaming
+alternation, repeated observation, restart and saturation.
 
-| Recurso | Techo | Unidad | Método de medida |
+## Resource ceilings (proposed)
+
+| Resource | Ceiling | Unit | Measurement method |
 |---|---:|---|---|
-| RSS idle | 24 MiB | bytes | `VmRSS` de `/proc/<pid>/status` en reposo |
-| RSS streaming | 48 MiB | bytes | `VmRSS` de `/proc/<pid>/status` con audio |
-| CPU idle | 10 ms/s | ms/s | `utime+stime` de `/proc/<pid>/stat` por intervalo |
-| CPU streaming | 150 ms/s | ms/s | `utime+stime` de `/proc/<pid>/stat` por intervalo |
-| Artefacto | 8 MiB | bytes | binario release desplegado, no `target/` |
-| Hilos propios | 4 | hilos | por nombre/rol; ART/Compose/RenderThread aparte |
-| Heap de control | 64 KiB | bytes | hilo de control; no incluye audio preasignado |
+| RSS idle | 24 MiB | bytes | `VmRSS` from `/proc/<pid>/status` at rest |
+| RSS streaming | 48 MiB | bytes | `VmRSS` from `/proc/<pid>/status` with audio |
+| CPU idle | 10 ms/s | ms/s | `utime+stime` from `/proc/<pid>/stat` per interval |
+| CPU streaming | 150 ms/s | ms/s | `utime+stime` from `/proc/<pid>/stat` per interval |
+| Artifact | 8 MiB | bytes | deployed release binary, not `target/` |
+| Own threads | 4 | threads | by name/role; ART/Compose/RenderThread separately |
+| Control heap | 64 KiB | bytes | control thread; excludes preallocated audio |
 
-Los techos son cotas de propuesta. Cualquier medición futura se compara con
-`budget::check(recurso, observado)`; un exceso devuelve `Verdict::Over`, no una
-aprobación.
+The ceilings are proposal bounds. Any future measurement is compared against
+`budget::check(resource, observed)`; an excess returns `Verdict::Over`, not an
+approval.
 
-## Memoria
+## Memory
 
-Las cifras de memoria son `size_of` en compilación del estado inline, no el
-tamaño wire del frame (508 B) ni RSS. Un `AudioFrame` en memoria Rust mide 492 B
-y cada slot añade el tag de `Option` (512 B por slot), así que multiplicar 508 B
-por slot no describe la memoria real.
+The memory figures are compile-time `size_of` of the inline state, not the wire
+size of the frame (508 B) or RSS. An `AudioFrame` in Rust memory measures 492 B
+and each slot adds the `Option` tag (512 B per slot), so multiplying 508 B
+per slot does not describe the real memory.
 
-| Estado inline | Bytes (host de compilación) | Qué cuenta |
+| Inline state | Bytes (compile host) | What it counts |
 |---|---:|---|
-| `JitterBuffer` | 8872 | 16 slots con frame, último frame para PLC y contabilidad; es `AUDIO_PREALLOCATED_BYTES` |
-| `LinearResampler` | 1048 | anillo de 488 muestras y fase entre frames |
-| `DriftController` | 144 | configuración, ratio, integral y contadores |
-| **Camino de audio** | **10064** | `AUDIO_PATH_STATE_BYTES` = suma de los tres |
+| `JitterBuffer` | 8872 | 16 slots with a frame, last frame for PLC and accounting; it is `AUDIO_PREALLOCATED_BYTES` |
+| `LinearResampler` | 1048 | 488-sample ring and phase between frames |
+| `DriftController` | 144 | configuration, ratio, integral and counters |
+| **Audio path** | **10064** | `AUDIO_PATH_STATE_BYTES` = sum of the three |
 
-- **Audio preasignado**: `AUDIO_PREALLOCATED_BYTES = size_of::<JitterBuffer>()`
-  (8872 B). Se reserva una vez y no crece con el flujo.
-- **Estado del resampler y del controlador**: se declaran aparte
-  (`RESAMPLER_STATE_BYTES`, `DRIFT_STATE_BYTES`) y sólo entran en el total
-  `AUDIO_PATH_STATE_BYTES`; no se cuentan dentro del jitter buffer.
-- **Asignación transitoria en el camino de audio**: cero
+- **Preallocated audio**: `AUDIO_PREALLOCATED_BYTES = size_of::<JitterBuffer>()`
+  (8872 B). It is reserved once and does not grow with the stream.
+- **Resampler and controller state**: declared separately
+  (`RESAMPLER_STATE_BYTES`, `DRIFT_STATE_BYTES`) and only enter the total
+  `AUDIO_PATH_STATE_BYTES`; they are not counted inside the jitter buffer.
+- **Transient allocation on the audio path**: zero
   (`TRANSIENT_AUDIO_ALLOC_BYTES = 0`).
-- **Heap del hilo de control**: presupuesto separado y acotado a 64 KiB. No
-  comparte cuenta con el audio preasignado.
-- **No contado**: heap y metadatos del allocador, pilas de hilos, buffers de
-  sistema/Android y RSS. Esas cifras se miden aparte con `VmRSS` y no forman
-  parte de estas constantes.
+- **Control thread heap**: separate budget, bounded to 64 KiB. It does not
+  share an account with preallocated audio.
+- **Not counted**: allocator heap and metadata, thread stacks, system/Android
+  buffers and RSS. Those figures are measured separately with `VmRSS` and are not
+  part of these constants.
 
-Los valores de la tabla son los del host de compilación; las
-constantes se derivan con `size_of` y el test falla si dejan de coincidir.
+The table values are those of the compile host; the
+constants are derived with `size_of` and the test fails if they stop matching.
 
-## Hilos Android
+## Android threads
 
-Sólo los hilos propios de la app entran en el presupuesto: captura, red,
-consumidor de jitter y hilo de control (4). **ART, Compose y RenderThread son
-hilos externos del sistema**: se miden por separado con Perfetto o
-`dumpsys`, y este presupuesto no los suma ni los presenta como propios.
+Only the app's own threads enter the budget: capture, network,
+jitter consumer and control thread (4). **ART, Compose and RenderThread are
+external system threads**: they are measured separately with Perfetto or
+`dumpsys`, and this budget neither adds them nor presents them as its own.
 
-## Qué no es este documento
+## What this document is not
 
-- No es un benchmark ni una medición de latencia, CPU, memoria o red.
-- La simulación de drift de 1 h (`drift_1h`, marcada `#[ignore]`) verifica el
-  lazo con relojes simulados; no es una prueba de hardware ni de LAN.
-- No elige dispositivo ni teléfono de referencia: la medición física queda
-  pendiente y su referencia (modelo, SO, buffer de audio, punto de red) se
-  registrará al medir. El host de compilación es sólo el entorno donde se
-  construye y se ejecutan las pruebas.
-- No aporta cifras logradas ni convierte un criterio global en aprobación. Las
-  cifras quedan como objetivos hasta la revisión independiente y la medición
-  física.
+- It is not a benchmark or a measurement of latency, CPU, memory or network.
+- The 1 h drift simulation (`drift_1h`, marked `#[ignore]`) verifies the
+  loop with simulated clocks; it is not a hardware or LAN test.
+- It does not choose a reference device or phone: physical measurement is
+  pending and its reference (model, OS, audio buffer, network point) will be
+  recorded when measuring. The compile host is only the environment where the
+  code is built and the tests run.
+- It provides no achieved figures and does not turn a global criterion into an approval. The
+  figures remain targets until independent review and physical
+  measurement.

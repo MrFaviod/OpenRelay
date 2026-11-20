@@ -51,7 +51,7 @@ impl std::fmt::Display for SourceError {
         match self {
             SourceError::PipeWire(e) => write!(f, "pipewire: {e}"),
             SourceError::FormatPod => write!(f, "no se pudo serializar el formato S16LE mono 48k"),
-            SourceError::NotConnected => write!(f, "el stream no alcanzó el estado conectado"),
+            SourceError::NotConnected => write!(f, "the stream did not reach the connected state"),
         }
     }
 }

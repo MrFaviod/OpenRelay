@@ -150,29 +150,23 @@ impl fmt::Display for CodecError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidFrameSamples { samples } => {
-                write!(f, "tamaño de trama inválido: {samples} muestras")
+                write!(f, "invalid frame size: {samples} samples")
             }
             Self::InvalidBitrate { bitrate_bps } => write!(
                 f,
-                "bitrate inválido: {bitrate_bps} bps (rango {}..={})",
+                "invalid bitrate: {bitrate_bps} bps (range {}..={})",
                 MIN_BITRATE_BPS, MAX_BITRATE_BPS
             ),
             Self::InvalidPcmLength { expected, actual } => {
-                write!(
-                    f,
-                    "PCM inválido: se esperaban {expected} muestras, hay {actual}"
-                )
+                write!(f, "invalid PCM: expected {expected} samples, got {actual}")
             }
             Self::PacketTooLarge { len, max } => {
-                write!(f, "paquete de {len} bytes supera el máximo de {max}")
+                write!(f, "packet of {len} bytes exceeds the maximum of {max}")
             }
-            Self::Encode(error) => write!(f, "error de codificación Opus: {error}"),
-            Self::Decode(error) => write!(f, "error de decodificación Opus: {error}"),
+            Self::Encode(error) => write!(f, "Opus encode error: {error}"),
+            Self::Decode(error) => write!(f, "Opus decode error: {error}"),
             Self::UnexpectedSampleCount { expected, actual } => {
-                write!(
-                    f,
-                    "se esperaban {expected} muestras decodificadas, hay {actual}"
-                )
+                write!(f, "expected {expected} decoded samples, got {actual}")
             }
         }
     }

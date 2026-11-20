@@ -37,14 +37,14 @@ class AccessibilityTest {
                 HomeScreen(state = HomeUiState(), actions = HomeActions())
             }
         }
-        rule.onNodeWithContentDescription("Captura parada").assertIsDisplayed()
-        rule.onNodeWithContentDescription("Iniciar captura local").assertIsDisplayed()
-        rule.onNodeWithText("La conexión al PC aún no está configurada.").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Capture stopped").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Start local capture").assertIsDisplayed()
+        rule.onNodeWithText("The PC connection is not set up yet.").assertIsDisplayed()
         rule.onNodeWithTag("mic").assertIsDisplayed()
         rule.onNodeWithTag("level").assertDoesNotExist()
         rule.onNodeWithTag("mute").assertDoesNotExist()
-        rule.onNodeWithText("Sin conexión").assertDoesNotExist()
-        rule.onNodeWithText("Emparejar").assertDoesNotExist()
+        rule.onNodeWithText("No connection").assertDoesNotExist()
+        rule.onNodeWithText("Pair").assertDoesNotExist()
         rule.onNodeWithText("Transmitiendo").assertDoesNotExist()
         rule.onNodeWithText("Configurar").assertDoesNotExist()
     }
@@ -59,7 +59,7 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithContentDescription("Captura local").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Local capture").assertIsDisplayed()
         rule.onNodeWithTag("level").assertDoesNotExist()
         rule.onNodeWithTag("mute").assertIsDisplayed()
     }
@@ -75,14 +75,14 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithText("Silencio desactivado. El nivel muestra la entrada del micrófono.")
+        rule.onNodeWithText("Mute is off. The level shows the microphone input.")
             .performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("Las muestras capturadas se descartan. El nivel publicado queda en cero; el micrófono sigue abierto.")
+        rule.onNodeWithText("Captured samples are discarded. The published level stays at zero; the microphone stays open.")
             .assertDoesNotExist()
         rule.onNodeWithTag("mute").performScrollTo().performClick()
-        rule.onNodeWithText("Las muestras capturadas se descartan. El nivel publicado queda en cero; el micrófono sigue abierto.")
+        rule.onNodeWithText("Captured samples are discarded. The published level stays at zero; the microphone stays open.")
             .performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("Silencio desactivado. El nivel muestra la entrada del micrófono.")
+        rule.onNodeWithText("Mute is off. The level shows the microphone input.")
             .assertDoesNotExist()
     }
 
@@ -99,9 +99,9 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithText("Error de captura").assertDoesNotExist()
-        rule.onNodeWithText("El micrófono está denegado. Sin ese permiso no hay captura.").assertIsDisplayed()
-        rule.onNodeWithText("Conceder permiso").assertIsDisplayed().performClick()
+        rule.onNodeWithText("Capture error").assertDoesNotExist()
+        rule.onNodeWithText("Microphone access is denied. Without that permission there is no capture.").assertIsDisplayed()
+        rule.onNodeWithText("Grant permission").assertIsDisplayed().performClick()
         rule.runOnIdle { assertEquals(ErrorAction.GrantPermission, acted) }
     }
 
@@ -123,10 +123,10 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onNodeWithText("Efectiva: no disponible").assertDoesNotExist()
+        rule.onNodeWithText("Effective: unavailable").assertDoesNotExist()
         rule.onNodeWithTag("advanced-toggle").performClick()
-        rule.onNodeWithText("Efectiva: no disponible").assertIsDisplayed()
-        rule.onNodeWithText("Mover esto guarda lo que pides. No cambia el audio.").assertIsDisplayed()
+        rule.onNodeWithText("Effective: unavailable").assertIsDisplayed()
+        rule.onNodeWithText("Moving this saves what you ask for. It does not change the audio.").assertIsDisplayed()
     }
 
     @Test
@@ -139,12 +139,12 @@ class AccessibilityTest {
                 )
             }
         }
-        rule.onAllNodesWithContentDescription("Detener captura").assertCountEquals(1)
-        rule.onAllNodesWithText("Detener captura").assertCountEquals(0)
-        rule.onAllNodesWithContentDescription("Captura local").assertCountEquals(1)
-        rule.onAllNodesWithText("Captura local").assertCountEquals(0)
-        rule.onAllNodesWithContentDescription("Silenciar").assertCountEquals(1)
-        rule.onAllNodesWithText("Silenciar").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Stop capture").assertCountEquals(1)
+        rule.onAllNodesWithText("Stop capture").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Local capture").assertCountEquals(1)
+        rule.onAllNodesWithText("Local capture").assertCountEquals(0)
+        rule.onAllNodesWithContentDescription("Mute").assertCountEquals(1)
+        rule.onAllNodesWithText("Mute").assertCountEquals(0)
     }
 
     @Test
@@ -159,9 +159,9 @@ class AccessibilityTest {
                 }
             }
         }
-        rule.onNodeWithContentDescription("Captura parada").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithContentDescription("Iniciar captura local").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("La conexión al PC aún no está configurada.")
+        rule.onNodeWithContentDescription("Capture stopped").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithContentDescription("Start local capture").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("The PC connection is not set up yet.")
             .performScrollTo()
             .assertIsDisplayed()
     }

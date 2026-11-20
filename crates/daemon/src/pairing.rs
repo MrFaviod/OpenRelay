@@ -56,13 +56,13 @@ impl Pairing {
         if !self.pending.contains(&pin) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                "identidad no pendiente",
+                "identity is not pending",
             ));
         }
         let mut doc = read_doc(path)?;
         let entries = doc["identities"]
             .as_array_mut()
-            .ok_or_else(|| invalid("identities no es array"))?;
+            .ok_or_else(|| invalid("identities is not an array"))?;
         entries.retain(|entry| entry["spki"].as_str() != Some(&pin.to_hex()));
         entries.push(json!({
             "spki": pin.to_hex(),
@@ -97,7 +97,7 @@ pub fn remove_identity(path: &Path, pin: &SpkiPin) -> io::Result<()> {
     let mut doc = read_doc(path)?;
     let entries = doc["identities"]
         .as_array_mut()
-        .ok_or_else(|| invalid("identities no es array"))?;
+        .ok_or_else(|| invalid("identities is not an array"))?;
     entries.retain(|entry| entry["spki"].as_str() != Some(&pin.to_hex()));
     write_atomic(path, &doc)
 }
@@ -110,7 +110,7 @@ pub fn load(path: &Path) -> io::Result<Acl> {
         let pin = entry["spki"]
             .as_str()
             .and_then(SpkiPin::from_hex)
-            .ok_or_else(|| invalid("spki inválido"))?;
+            .ok_or_else(|| invalid("invalid spki"))?;
         let flag = |name: &str| entry[name].as_bool().unwrap_or(false);
         let mut caps = Capabilities::none();
         if flag("mic") {
@@ -136,14 +136,14 @@ fn invalid(message: &'static str) -> io::Error {
 
 fn read_doc(path: &Path) -> io::Result<Value> {
     let doc = match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str::<Value>(&text).map_err(|_| invalid("JSON inválido"))?,
+        Ok(text) => serde_json::from_str::<Value>(&text).map_err(|_| invalid("invalid JSON"))?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             json!({"version": IDENTITIES_VERSION, "identities": []})
         }
         Err(error) => return Err(error),
     };
     if doc["version"].as_u64() != Some(IDENTITIES_VERSION) || !doc["identities"].is_array() {
-        return Err(invalid("versión o forma de identidades desconocida"));
+        return Err(invalid("unknown identities version or shape"));
     }
     Ok(doc)
 }
@@ -159,7 +159,7 @@ fn write_atomic(path: &Path, doc: &Value) -> io::Result<()> {
         .create_new(true)
         .mode(0o600)
         .open(tmp)?;
-    let bytes = serde_json::to_vec_pretty(doc).map_err(|_| invalid("serialización"))?;
+    let bytes = serde_json::to_vec_pretty(doc).map_err(|_| invalid("serialization"))?;
     file.write_all(&bytes)?;
     file.sync_all()?;
     drop(file);

@@ -1,112 +1,112 @@
 # Opus codec
 
-**Estado: implementado a nivel de crate, no integrado en la sesión.** La app
-Android todavía no negocia Opus; el flujo real es PCM16 y así lo declara el
-README. El camino PCM16 fijo sigue siendo
-el contrato por defecto y no se modifica. Este documento describe
-`openrelay-codec`, sus perfiles y sus límites; no afirma calidad por escucha ni
-latencia extremo a extremo medida.
+**Status: implemented at crate level, not integrated into the session.** The
+Android app does not negotiate Opus yet; the real stream is PCM16, and the
+README says so. The fixed PCM16 path remains
+the default contract and is unchanged. This document describes
+`openrelay-codec`, its profiles and its limits; it does not claim quality by
+listening or measured end-to-end latency.
 
-## Perfiles
+## Profiles
 
-Todos los perfiles usan `opus::Application::LowDelay`
-(`OPUS_APPLICATION_RESTRICTED_LOWDELAY`): CELT únicamente, mono, 48 kHz, PCM16
-como entrada y salida.
+All profiles use `opus::Application::LowDelay`
+(`OPUS_APPLICATION_RESTRICTED_LOWDELAY`): CELT only, mono, 48 kHz, PCM16
+as input and output.
 
-| Perfil | Bloque | Muestras | Paquete a 64 kbps | Paquete a 96 kbps | Latencia algorítmica (bloque + lookahead) |
+| Profile | Block | Samples | Packet at 64 kbps | Packet at 96 kbps | Algorithmic latency (block + lookahead) |
 |---|---:|---:|---:|---:|---:|
 | `LowDelay2p5Ms` | 2.5 ms | 120 | ~20 B | ~30 B | 5.0 ms |
 | `LowDelay5Ms` | 5 ms | 240 | ~40 B | ~60 B | 7.5 ms |
 | `LowDelay10Ms` | 10 ms | 480 | ~80 B | ~120 B | 12.5 ms |
 
-- Bitrate aceptado: **64–96 kbps mono**; fuera de ese rango
-  `OpusEncoder::new` devuelve `InvalidBitrate`.
-- El bitrate es un objetivo: libopus usa VBR por defecto, así que el tamaño real
-  varía por trama. El tope duro es `MAX_PACKET_LEN` = 1200 − 28 = **1172 bytes**
-  (datagrama del transporte menos la cabecera del frame v1).
-- La latencia algorítmica es bloque + lookahead; **no es latencia extremo a
-  extremo**. El lookahead del modo restricted-lowdelay es 2.5 ms (120 muestras)
-  y está cubierto por `lookahead_is_2_5_ms`.
+- Accepted bitrate: **64–96 kbps mono**; outside that range
+  `OpusEncoder::new` returns `InvalidBitrate`.
+- The bitrate is a target: libopus uses VBR by default, so the real size
+  varies per frame. The hard cap is `MAX_PACKET_LEN` = 1200 − 28 = **1172 bytes**
+  (transport datagram minus the v1 frame header).
+- Algorithmic latency is block + lookahead; **it is not end-to-end latency**.
+  The lookahead in restricted-lowdelay mode is 2.5 ms (120 samples)
+  and is covered by `lookahead_is_2_5_ms`.
 
-## Comparación con PCM16 fijo
+## Comparison with fixed PCM16
 
-PCM16 mono 48 kHz ocupa 2 bytes por muestra: **480 bytes por trama de 5 ms =
-768 kbps** de payload, más 28 bytes de cabecera por datagrama. Opus no cambia
-el contrato de frame: si se adopta, su paquete sustituye al payload PCM16 dentro
-del mismo presupuesto de datagrama.
+PCM16 mono 48 kHz takes 2 bytes per sample: **480 bytes per 5 ms frame =
+768 kbps** of payload, plus 28 bytes of header per datagram. Opus does not change
+the frame contract: if adopted, its packet replaces the PCM16 payload inside
+the same datagram budget.
 
-| Camino | Payload 5 ms | Bitrate de payload | Datagrama con cabecera |
+| Path | 5 ms payload | Payload bitrate | Datagram with header |
 |---|---:|---:|---:|
-| PCM16 fijo | 480 B | 768 kbps | 508 B |
-| Opus 5 ms a 64 kbps | ~40 B | 64 kbps | ~68 B |
-| Opus 5 ms a 96 kbps | ~60 B | 96 kbps | ~88 B |
+| Fixed PCM16 | 480 B | 768 kbps | 508 B |
+| Opus 5 ms at 64 kbps | ~40 B | 64 kbps | ~68 B |
+| Opus 5 ms at 96 kbps | ~60 B | 96 kbps | ~88 B |
 
-La reducción de ancho de banda es de aproximadamente 8–12× en 5 ms. No se
-declara transparencia ni “mejor calidad”: Opus es un códec con pérdida y la
-comparación de calidad requiere escucha, que este entregable no incluye.
+The bandwidth reduction is roughly 8–12× at 5 ms. No
+transparency or "better quality" is claimed: Opus is a lossy codec and quality
+comparison requires listening, which this deliverable does not include.
 
-## Pérdida de paquetes: PLC, no FEC
+## Packet loss: PLC, not FEC
 
-- `OpusDecoder::decode(None)` (o `Some(&[])`) decodifica sin paquete y libopus
-  aplica **PLC** con la última duración de paquete conocida. La salida mide
-  siempre exactamente una trama del perfil.
-- El PLC depende del estado del decodificador: hay que decodificar el flujo en
-  orden y no reiniciar entre pérdidas. Una pérdida larga degrada la señal
-  oculta; el PLC no recupera el contenido perdido.
-- **FEC en banda: no disponible y no prometida.** En libopus la FEC pertenece a
-  SILK (y modos híbridos); `OPUS_APPLICATION_RESTRICTED_LOWDELAY` usa sólo CELT.
-  Este crate nunca llama a `set_inband_fec` y siempre decodifica con
-  `fec = false`. No se debe configurar el receptor esperando FEC.
+- `OpusDecoder::decode(None)` (or `Some(&[])`) decodes without a packet and libopus
+  applies **PLC** with the last known packet duration. The output is always
+  exactly one frame of the profile.
+- PLC depends on decoder state: the stream has to be decoded in
+  order and not restarted between losses. A long loss degrades the concealed
+  signal; PLC does not recover the lost content.
+- **In-band FEC: not available and not promised.** In libopus, FEC belongs to
+  SILK (and hybrid modes); `OPUS_APPLICATION_RESTRICTED_LOWDELAY` uses CELT only.
+  This crate never calls `set_inband_fec` and always decodes with
+  `fec = false`. The receiver must not be configured expecting FEC.
 
-## Entrada a 44.1 kHz
+## 44.1 kHz input
 
-libopus sólo acepta 8, 12, 16, 24 o 48 kHz; 44.1 kHz no es una tasa válida de
-entrada. Una fuente a 44.1 kHz debe remuestrearse a 48 kHz **antes** del
-codificador:
+libopus only accepts 8, 12, 16, 24 or 48 kHz; 44.1 kHz is not a valid input
+rate. A 44.1 kHz source must be resampled to 48 kHz **before** the
+encoder:
 
-- `openrelay_audio_core::LinearResampler` es un corrector de drift: su ratio está
-  clampado a `[0.98, 1.02]`, por lo que no sirve para 44.1 → 48 (ratio 1.088).
-- El remuestreo 44.1 → 48 corresponde a la etapa de captura/adaptación previa,
-  fuera de este crate. `OpusEncoder::encode` rechaza cualquier buffer que no
-  tenga exactamente las muestras del perfil a 48 kHz (`InvalidPcmLength`).
+- `openrelay_audio_core::LinearResampler` is a drift corrector: its ratio is
+  clamped to `[0.98, 1.02]`, so it cannot serve 44.1 → 48 (ratio 1.088).
+- The 44.1 → 48 resampling belongs to the earlier capture/adaptation stage,
+  outside this crate. `OpusEncoder::encode` rejects any buffer that does not
+  hold exactly the profile's samples at 48 kHz (`InvalidPcmLength`).
 
-## Fallback y rollback a PCM16
+## Fallback and rollback to PCM16
 
-El códec es **opcional**:
+The codec is **optional**:
 
-- El frame v1 y el pipeline PCM16 no dependen de `openrelay-codec`; el crate no toca
-  `openrelay-audio-core`, el transporte ni la sesión.
-- La elección de perfil y el anuncio de que se usa Opus pertenecen a la capa de
-  sesión/negociación (fuera del alcance de este crate). En v1 no hay
-  autodetección: el receptor debe saber si el payload es PCM16 u Opus.
-- **Rollback**: si el perfil no se negocia, el códec falla o la calidad no es
-  aceptable, el emisor vuelve a emitir PCM16 fijo. El receptor conserva
-  el camino PCM16 como fallback; no se requiere convertir datos ya enviados.
-- Un `OpusEncoder`/`OpusDecoder` nuevo por sesión y por dirección; no son
-  `Sync`, así que cada estado se usa desde un solo hilo a la vez.
+- The v1 frame and the PCM16 pipeline do not depend on `openrelay-codec`; the crate does not touch
+  `openrelay-audio-core`, the transport or the session.
+- Profile selection and the announcement that Opus is in use belong to the
+  session/negotiation layer (outside this crate's scope). In v1 there is no
+  autodetection: the receiver must know whether the payload is PCM16 or Opus.
+- **Rollback**: if the profile is not negotiated, the codec fails or the quality is not
+  acceptable, the sender goes back to emitting fixed PCM16. The receiver keeps
+  the PCM16 path as a fallback; data already sent does not have to be converted.
+- A new `OpusEncoder`/`OpusDecoder` per session and per direction; they are not
+  `Sync`, so each state is used from one thread at a time.
 
 ## API
 
-- `CodecProfile::{LowDelay2p5Ms, LowDelay5Ms, LowDelay10Ms}` con
-  `samples_per_frame()`, `frame_duration_us()`, `from_frame_samples()` y `ALL`.
+- `CodecProfile::{LowDelay2p5Ms, LowDelay5Ms, LowDelay10Ms}` with
+  `samples_per_frame()`, `frame_duration_us()`, `from_frame_samples()` and `ALL`.
 - `OpusEncoder::new(profile, bitrate_bps)`, `encode(&[i16]) -> Vec<u8>`,
   `lookahead_samples()`, `reset()`.
 - `OpusDecoder::new(profile)`, `decode(Option<&[u8]>) -> Vec<i16>`, `reset()`.
-- Errores en `CodecError` (sin `thiserror`): tamaños y bitrates inválidos,
-  longitudes PCM incorrectas, paquete demasiado grande y errores de libopus.
+- Errors in `CodecError` (no `thiserror`): invalid sizes and bitrates,
+  wrong PCM lengths, packet too large and libopus errors.
 
-## Dependencias y licencias
+## Dependencies and licenses
 
-| Componente | Versión | Licencia | Nota |
+| Component | Version | License | Note |
 |---|---|---|---|
-| `opus` (crate) | =0.3.0 | MIT OR Apache-2.0 | bindings seguros |
-| `audiopus_sys` | 0.2.2 | ISC | FFI y build de libopus |
-| `libopus` (bundled) | según `audiopus_sys` | BSD-3-Clause | compilado con CMake |
+| `opus` (crate) | =0.3.0 | MIT OR Apache-2.0 | safe bindings |
+| `audiopus_sys` | 0.2.2 | ISC | FFI and libopus build |
+| `libopus` (bundled) | per `audiopus_sys` | BSD-3-Clause | built with CMake |
 
-El build requiere CMake y un compilador de C. Nuestro crate mantiene
-`unsafe_code = "forbid"`; el `unsafe` vive sólo en las dependencias FFI.
+The build requires CMake and a C compiler. Our crate keeps
+`unsafe_code = "forbid"`; `unsafe` lives only in the FFI dependencies.
 
-## Verificación
+## Verification
 
 ```sh
 cargo test --locked -p openrelay-codec --test codec_profiles
@@ -114,8 +114,8 @@ cargo clippy -p openrelay-codec -- -D warnings
 cargo fmt -p openrelay-codec -- --check
 ```
 
-`codec_profiles` cubre: roundtrip en 2.5/5/10 ms y bitrates 64/80/96 kbps,
-rechazo de tamaños y bitrates inválidos, PLC con longitud correcta, paquete
-dentro de 1200 − 28 bytes, SNR/energía frente a un seno y lookahead de 2.5 ms.
-Pasar estas pruebas no demuestra calidad perceptual, latencia E2E ni
-interoperabilidad de red.
+`codec_profiles` covers: roundtrip at 2.5/5/10 ms and bitrates 64/80/96 kbps,
+rejection of invalid sizes and bitrates, PLC with the correct length, a packet
+within 1200 − 28 bytes, SNR/energy against a sine and a 2.5 ms lookahead.
+Passing these tests does not prove perceptual quality, E2E latency or
+network interoperability.

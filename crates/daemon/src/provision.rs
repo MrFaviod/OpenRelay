@@ -144,5 +144,5 @@ fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
 }
 
 fn config_error(error: rcgen::Error) -> io::Error {
-    io::Error::other(format!("generación de certificados: {error}"))
+    io::Error::other(format!("certificate generation: {error}"))
 }

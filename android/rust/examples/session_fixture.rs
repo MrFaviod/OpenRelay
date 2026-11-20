@@ -52,7 +52,7 @@ fn main() {
             }
         }
         None => {
-            eprintln!("uso: session_fixture <directorio> | --self-check");
+            eprintln!("usage: session_fixture <directory> | --self-check");
             std::process::exit(2);
         }
     }
@@ -169,7 +169,7 @@ fn read_spki(dir: &std::path::Path) -> Result<Vec<u8>, String> {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    Err("el test no entregó el SPKI".into())
+    Err("the test did not deliver the SPKI".into())
 }
 
 /// Hoja `clientAuth` cuyo SPKI es el del dispositivo. La firma la pone la CA.
@@ -190,12 +190,12 @@ fn issue_client_leaf(ca: &Ca, spki: &[u8]) -> Result<rcgen::Certificate, String>
 fn p256_point(spki: &[u8]) -> Result<Vec<u8>, String> {
     if spki.len() != SPKI_LEN || spki[..POINT_OFFSET] != P256_SPKI_PREFIX {
         return Err(format!(
-            "SPKI no es P-256 sin comprimir ({} bytes)",
+            "SPKI is not uncompressed P-256 ({} bytes)",
             spki.len()
         ));
     }
     if spki[POINT_OFFSET] != 0x04 {
-        return Err("punto P-256 comprimido o inválido".into());
+        return Err("compressed or invalid P-256 point".into());
     }
     Ok(spki[POINT_OFFSET..].to_vec())
 }
@@ -367,7 +367,7 @@ fn to_hex(bytes: &[u8]) -> String {
 
 fn unhex(text: &str) -> Result<Vec<u8>, String> {
     if text.len() % 2 != 0 {
-        return Err("hex impar".into());
+        return Err("odd hex length".into());
     }
     (0..text.len())
         .step_by(2)

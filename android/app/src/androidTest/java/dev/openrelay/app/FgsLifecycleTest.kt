@@ -141,22 +141,22 @@ class FgsLifecycleTest {
         val notification = activeNotification()
         assertNotNull("tiene que haber notificación de FGS", notification)
         val texts = notificationText(notification!!)
-        assertTrue(texts.any { it.contains("Parar") || it.contains("micrófono") })
+        assertTrue(texts.any { it.contains("Stop") || it.contains("microphone") })
         val actions = notification.actions?.map { it.title?.toString() }.orEmpty()
-        assertTrue("acción Parar: $actions", actions.any { it == "Parar" })
-        assertTrue("acción Silenciar: $actions", actions.any { it == "Silenciar" })
+        assertTrue("Stop action: $actions", actions.any { it == "Stop" })
+        assertTrue("Mute action: $actions", actions.any { it == "Mute" })
 
         StreamService.mute(context)
         assertTrue(waitUntil(2_000) { StreamService.muted.value })
         // La notificación se publica en el hilo principal después del comando.
         assertTrue(waitUntil(2_000) {
             val titles = activeNotification()?.actions?.map { it.title?.toString() }.orEmpty()
-            titles.any { it == "Activar sonido" }
+            titles.any { it == "Unmute" }
         })
         val muted = activeNotification()
         val mutedActions = muted?.actions?.map { it.title?.toString() }.orEmpty()
-        assertTrue("tras mute la acción pasa a Activar sonido: $mutedActions",
-            mutedActions.any { it == "Activar sonido" })
+        assertTrue("after mute the action becomes Unmute: $mutedActions",
+            mutedActions.any { it == "Unmute" })
 
         StreamService.stop(context)
         assertTrue(waitUntil(4_000) { !StreamService.running.value })
@@ -183,7 +183,7 @@ class FgsLifecycleTest {
         assertFalse(StreamService.running.value)
         val error = StreamService.errorState.value
         assertNotNull(error)
-        assertTrue(error!!.contains("micrófono"))
+        assertTrue(error!!.contains("Microphone"))
     }
 
     @Test
@@ -212,7 +212,7 @@ class FgsLifecycleTest {
         )
         assertTrue(
             "el aviso de visibilidad queda para la UI: " + StreamService.notificationWarning.value,
-            StreamService.notificationWarning.value.contains("notificaciones"),
+            StreamService.notificationWarning.value.contains("Notifications"),
         )
         // La notificación se construye igual; el sistema puede no mostrarla.
         val built = StreamService.pending(context, StreamService.ACTION_STOP, 9)

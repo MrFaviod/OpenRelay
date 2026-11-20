@@ -55,20 +55,20 @@ fn run() -> Result<(), String> {
     let mut expect_refused = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--uri" => uri = Some(args.next().ok_or("--uri requiere el URI")?),
-            "--identity" => identity_path = Some(args.next().ok_or("--identity requiere ruta")?),
+            "--uri" => uri = Some(args.next().ok_or("--uri requires the URI")?),
+            "--identity" => identity_path = Some(args.next().ok_or("--identity requires a path")?),
             "--save-identity" => {
-                save_identity = Some(args.next().ok_or("--save-identity requiere ruta")?)
+                save_identity = Some(args.next().ok_or("--save-identity requires a path")?)
             }
             "--seconds" => {
                 seconds = args
                     .next()
-                    .ok_or("--seconds requiere un número")?
+                    .ok_or("--seconds requires a number")?
                     .parse()
-                    .map_err(|_| "--seconds inválido")?
+                    .map_err(|_| "--seconds invalid")?
             }
             "--expect-refused" => expect_refused = true,
-            other => return Err(format!("argumento desconocido: {other}")),
+            other => return Err(format!("unknown argument: {other}")),
         }
     }
 
@@ -77,14 +77,14 @@ fn run() -> Result<(), String> {
         return connect_and_stream(saved, expect_refused, seconds);
     }
 
-    let uri = uri.ok_or("falta --uri o --identity")?;
+    let uri = uri.ok_or("missing --uri or --identity")?;
     let pair = PairUri::parse(&uri)?;
     let now = Instant::now();
 
     // Identidad del teléfono: clave ECDSA P-256 y certificado autofirmado. El
     // daemon sólo recibe el SPKI y emite la hoja; la clave no sale de aquí.
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
-        .map_err(|error| format!("clave P-256: {error}"))?;
+        .map_err(|error| format!("P-256 key: {error}"))?;
     let mut params = CertificateParams::new(vec!["openrelay-fake-phone".to_owned()])
         .map_err(|e| e.to_string())?;
     params
@@ -92,7 +92,7 @@ fn run() -> Result<(), String> {
         .push(DnType::CommonName, "openrelay-fake-phone");
     let cert = params
         .self_signed(&key)
-        .map_err(|error| format!("certificado: {error}"))?;
+        .map_err(|error| format!("certificate: {error}"))?;
     let spki_der = identity::extract_spki_der(cert.der().as_ref())
         .map_err(|error| format!("SPKI: {error}"))?
         .to_vec();
@@ -100,16 +100,16 @@ fn run() -> Result<(), String> {
     let roots = Arc::new(RootCertStore::empty());
     let mut client =
         EnrollClient::connect(roots, pair.server_pin, now, pair.enroll_addr, SERVER_NAME)
-            .map_err(|error| format!("enrolamiento: {error}"))?;
+            .map_err(|error| format!("enrollment: {error}"))?;
     eprintln!(
-        "fake_phone: enrolándose contra {} (token de la ventana del QR)",
+        "fake_phone: enrolling against {} (token from the QR window)",
         pair.enroll_addr
     );
     let outcome = client
         .send_token(&pair.token, &spki_der)
         .map_err(|error| format!("token: {error}"))?;
     eprintln!(
-        "fake_phone: hoja emitida ({} bytes), CA de sesión {} bytes, puerto {}",
+        "fake_phone: leaf issued ({} bytes), session CA {} bytes, port {}",
         outcome.client_leaf_der.len(),
         outcome.session_ca_der.len(),
         outcome.session_port
@@ -123,7 +123,7 @@ fn run() -> Result<(), String> {
         ],
         signer,
     )
-    .map_err(|error| format!("identidad de sesión: {error}"))?;
+    .map_err(|error| format!("session identity: {error}"))?;
 
     let saved = SavedIdentity {
         pkcs8_der: key.serialize_der(),
@@ -137,7 +137,7 @@ fn run() -> Result<(), String> {
     };
     if let Some(path) = save_identity {
         save(&path, &saved)?;
-        eprintln!("fake_phone: identidad guardada en {path}");
+        eprintln!("fake_phone: identity saved to {path}");
     }
 
     let mut session = SessionClient::connect(
@@ -149,8 +149,8 @@ fn run() -> Result<(), String> {
         saved.session_addr,
         SERVER_NAME,
     )
-    .map_err(|error| format!("sesión: {error}"))?;
-    eprintln!("fake_phone: sesión QUIC hacia {}", saved.session_addr);
+    .map_err(|error| format!("session: {error}"))?;
+    eprintln!("fake_phone: QUIC session to {}", saved.session_addr);
     stream(&mut session, seconds, expect_refused)
 }
 
@@ -191,17 +191,17 @@ fn load_identity(path: &str) -> Result<SavedIdentity, String> {
         doc[name]
             .as_str()
             .map(str::to_owned)
-            .ok_or_else(|| format!("{path}: falta {name}"))
+            .ok_or_else(|| format!("{path}: missing {name}"))
     };
     Ok(SavedIdentity {
         pkcs8_der: from_hex(&field("pkcs8_hex")?)?,
         leaf_der: from_hex(&field("leaf_hex")?)?,
         ca_der: from_hex(&field("ca_hex")?)?,
         server_pin: SpkiPin::from_hex(&field("server_pin")?)
-            .ok_or_else(|| format!("{path}: pin inválido"))?,
+            .ok_or_else(|| format!("{path}: invalid pin"))?,
         session_addr: field("session_addr")?
             .parse()
-            .map_err(|_| format!("{path}: session_addr inválido"))?,
+            .map_err(|_| format!("{path}: invalid session_addr"))?,
     })
 }
 
@@ -211,7 +211,7 @@ fn connect_and_stream(
     seconds: f64,
 ) -> Result<(), String> {
     let key = KeyPair::try_from(saved.pkcs8_der.as_slice())
-        .map_err(|error| format!("clave guardada: {error}"))?;
+        .map_err(|error| format!("saved key: {error}"))?;
     let signer = private_key_signer(&key)?;
     let session_identity = identity::certified_key(
         vec![
@@ -220,7 +220,7 @@ fn connect_and_stream(
         ],
         signer,
     )
-    .map_err(|error| format!("identidad guardada: {error}"))?;
+    .map_err(|error| format!("saved identity: {error}"))?;
     let mut session = SessionClient::connect(
         Arc::new(session_identity),
         Arc::new(RootCertStore::empty()),
@@ -230,8 +230,8 @@ fn connect_and_stream(
         saved.session_addr,
         SERVER_NAME,
     )
-    .map_err(|error| format!("sesión: {error}"))?;
-    eprintln!("fake_phone: reconectando a {}", saved.session_addr);
+    .map_err(|error| format!("session: {error}"))?;
+    eprintln!("fake_phone: reconnecting to {}", saved.session_addr);
     stream(&mut session, seconds, expect_refused)
 }
 
@@ -244,7 +244,7 @@ fn stream(session: &mut SessionClient, seconds: f64, expect_refused: bool) -> Re
     let socket = UdpSocket::bind(("0.0.0.0", 0)).map_err(|error| format!("socket: {error}"))?;
     socket
         .set_read_timeout(Some(Duration::from_millis(2)))
-        .map_err(|error| format!("timeout UDP: {error}"))?;
+        .map_err(|error| format!("UDP timeout: {error}"))?;
 
     let deadline = Instant::now() + Duration::from_secs_f64(seconds.max(1.0));
     let auth_deadline = Instant::now() + Duration::from_secs(6);
@@ -270,7 +270,7 @@ fn stream(session: &mut SessionClient, seconds: f64, expect_refused: bool) -> Re
                     error.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) => {}
-            Err(error) => return Err(format!("lectura UDP: {error}")),
+            Err(error) => return Err(format!("UDP read: {error}")),
         }
         let _ = session.handle_timeout(Instant::now());
 
@@ -280,21 +280,21 @@ fn stream(session: &mut SessionClient, seconds: f64, expect_refused: bool) -> Re
                     let pin: String = server.to_hex();
                     if expect_refused {
                         eprintln!(
-                            "fake_phone: TLS establecido (servidor {}); esperando autorización de aplicación",
+                            "fake_phone: TLS established (server {}); waiting for application authorization",
                             &pin[..12]
                         );
                     } else {
-                        eprintln!("fake_phone: sesión autorizada, servidor {}", &pin[..12]);
+                        eprintln!("fake_phone: session authorized, server {}", &pin[..12]);
                     }
                     authorized_at = Some(Instant::now());
                 }
                 ClientEvent::Rejected(reason) => {
-                    eprintln!("fake_phone: rechazado por el servidor: {reason}");
+                    eprintln!("fake_phone: rejected by the server: {reason}");
                     closed = true;
                 }
                 ClientEvent::Closed => {
-                    let reason = session.close_reason().unwrap_or("sin motivo").to_owned();
-                    eprintln!("fake_phone: sesión cerrada por el servidor ({reason})");
+                    let reason = session.close_reason().unwrap_or("no reason").to_owned();
+                    eprintln!("fake_phone: session closed by the server ({reason})");
                     closed = true;
                 }
             }
@@ -302,31 +302,31 @@ fn stream(session: &mut SessionClient, seconds: f64, expect_refused: bool) -> Re
 
         if expect_refused {
             if closed {
-                let reason = session.close_reason().unwrap_or("sin motivo");
+                let reason = session.close_reason().unwrap_or("no reason");
                 if reason == "unauthorized" {
                     println!(
-                        "REFUSED: el servidor rechazó la sesión en la autorización (unauthorized)"
+                        "REFUSED: the server rejected the session at authorization (unauthorized)"
                     );
                     return Ok(());
                 }
                 return Err(format!(
-                    "el servidor cerró la sesión pero no como rechazo de ACL ({reason})"
+                    "the server closed the session but not as an ACL rejection ({reason})"
                 ));
             }
             if Instant::now() >= auth_deadline {
-                return Err("el servidor no rechazó la sesión en 6 s".to_owned());
+                return Err("the server did not reject the session within 6 s".to_owned());
             }
             continue;
         }
 
         if authorized_at.is_none() {
             if Instant::now() >= auth_deadline {
-                return Err("el servidor no autorizó la sesión en 6 s".to_owned());
+                return Err("the server did not authorize the session within 6 s".to_owned());
             }
             continue;
         }
         if closed {
-            return Err("la sesión se cerró mientras se enviaba audio".to_owned());
+            return Err("the session closed while sending audio".to_owned());
         }
         if Instant::now() >= deadline {
             break;
@@ -372,13 +372,13 @@ impl PairUri {
     fn parse(uri: &str) -> Result<Self, String> {
         let rest = uri
             .strip_prefix("openrelay://pair?")
-            .ok_or("el URI no es openrelay://pair?…")?;
+            .ok_or("the URI is not openrelay://pair?…")?;
         let mut host = None;
         let mut pin = None;
         let mut token = None;
         let mut version = None;
         for pair in rest.split('&') {
-            let (key, value) = pair.split_once('=').ok_or("parámetro sin '='")?;
+            let (key, value) = pair.split_once('=').ok_or("parameter without '='")?;
             match key {
                 "v" => version = Some(value.to_owned()),
                 "h" => host = Some(value.to_owned()),
@@ -388,15 +388,15 @@ impl PairUri {
             }
         }
         if version.as_deref() != Some("1") {
-            return Err(format!("versión de URI no soportada: {version:?}"));
+            return Err(format!("unsupported URI version: {version:?}"));
         }
         let enroll_addr: SocketAddr = host
-            .ok_or("falta h")?
+            .ok_or("missing h")?
             .parse()
-            .map_err(|_| "h no es HOST:PORT")?;
-        let server_pin = SpkiPin::from_hex(&pin.ok_or("falta pin")?).ok_or("pin inválido")?;
-        let raw = from_hex(&token.ok_or("falta t")?)?;
-        let bytes: [u8; 32] = raw.try_into().map_err(|_| "token de 32 bytes")?;
+            .map_err(|_| "h is not HOST:PORT")?;
+        let server_pin = SpkiPin::from_hex(&pin.ok_or("missing pin")?).ok_or("invalid pin")?;
+        let raw = from_hex(&token.ok_or("missing t")?)?;
+        let bytes: [u8; 32] = raw.try_into().map_err(|_| "token must be 32 bytes")?;
         Ok(Self {
             enroll_addr,
             server_pin,
@@ -421,12 +421,12 @@ fn to_hex(bytes: &[u8]) -> String {
 
 fn from_hex(text: &str) -> Result<Vec<u8>, String> {
     if text.len() % 2 != 0 {
-        return Err("hex impar".to_owned());
+        return Err("odd-length hex".to_owned());
     }
     (0..text.len())
         .step_by(2)
         .map(|index| {
-            u8::from_str_radix(&text[index..index + 2], 16).map_err(|_| "hex inválido".to_owned())
+            u8::from_str_radix(&text[index..index + 2], 16).map_err(|_| "invalid hex".to_owned())
         })
         .collect()
 }

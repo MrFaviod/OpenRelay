@@ -1,43 +1,43 @@
-# Configuración v1 — requested/effective y claves locales
+# Configuration v1 — requested/effective and local keys
 
 The app exposes mute and a gain slider. Gain is stored and not applied yet. Return audio is not available.
 
-## 1. Modelo
+## 1. Model
 
-- Toda operación lleva `request_id`, y `config.set` exige `expected_revision`.
-- El daemon responde `ack` con tres cosas separadas:
-  - **`requested`**: lo que el cliente pidió;
-  - **`effective`**: lo que el daemon aplicó realmente (puede diferir por límites del dispositivo/SO);
-  - **`revision`**: la revisión resultante.
-- `applied: true` significa que el estado cambió y la revisión avanzó +1. `applied: false` significa que el valor efectivo ya era el actual; no hay cambio de revisión.
-- Un conflicto de revisión no aplica nada y devuelve `error` con `conflict` y `current_revision`.
-- No hay aplicación parcial: si una clave o un valor es inválido, la operación completa se rechaza.
-- La revisión es **por proceso del daemon**; no se promete monotonicidad entre reinicios. Al reconectar, el cliente pide el snapshot (`config.get` con `key: null`).
+- Every operation carries `request_id`, and `config.set` requires `expected_revision`.
+- The daemon answers `ack` with three separate things:
+  - **`requested`**: what the client asked for;
+  - **`effective`**: what the daemon actually applied (it may differ because of device/OS limits);
+  - **`revision`**: the resulting revision.
+- `applied: true` means the state changed and the revision advanced by +1. `applied: false` means the effective value was already the current one; the revision does not change.
+- A revision conflict applies nothing and returns `error` with `conflict` and `current_revision`.
+- There is no partial application: if a key or a value is invalid, the whole operation is rejected.
+- The revision is **per daemon process**; monotonicity across restarts is not promised. On reconnect, the client asks for the snapshot (`config.get` with `key: null`).
 
-## 2. Claves v1
+## 2. v1 keys
 
-| Clave | Tipo | Rango / valores | Default | Alcance | Notas |
+| Key | Type | Range / values | Default | Scope | Notes |
 |---|---|---|---|---|---|
-| `audio.sample_rate_hz` | integer | `48000` (constante en v1) | `48000` | shared | El remoto puede leerla; en v1 no hay otra tasa. `effective` puede reflejar la tasa real del dispositivo. |
-| `audio.frame_duration_ms` | integer | `5` (constante en v1) | `5` | shared | Un frame = 240 muestras a 48 kHz. |
-| `audio.gain_db` | number | `-24.0..=24.0`, múltiplo de `0.5` | `0.0` | shared | Ganancia de captura; el valor efectivo puede quedar limitado por el dispositivo. |
-| `audio.mute` | boolean | `true` / `false` | `false` | shared | Silencia el flujo; no detiene el micrófono ni el FGS. |
-| `audio.jitter_target_ms` | integer | `5..=40` | `10` | shared | Objetivo del jitter buffer del receptor Linux. |
-| `audio.return_enabled` | boolean | `true` / `false` | `false` | **local** | Habilita el retorno de audio Linux→Android; apagado por defecto. Ver [`return-audio.md`](return-audio.md). |
-| `ui.theme` | string | `system`, `light`, `dark` | `system` | **local** | Preferencia visual del dispositivo; no se comparte. |
-| `ui.text_scale` | number | `1.0..=2.0` | `1.0` | **local** | Accesibilidad local; no se comparte. |
-| `device.local_volume` | number | `0.0..=1.0` | `1.0` | **local** | Volumen local del dispositivo; no es ganancia del flujo. |
-| `device.model` | string | ≤64 caracteres | — | **readonly** | Informativa; el remoto no puede escribirla. |
+| `audio.sample_rate_hz` | integer | `48000` (constant in v1) | `48000` | shared | The remote end can read it; v1 has no other rate. `effective` may reflect the device's real rate. |
+| `audio.frame_duration_ms` | integer | `5` (constant in v1) | `5` | shared | One frame = 240 samples at 48 kHz. |
+| `audio.gain_db` | number | `-24.0..=24.0`, multiple of `0.5` | `0.0` | shared | Capture gain; the effective value may be limited by the device. |
+| `audio.mute` | boolean | `true` / `false` | `false` | shared | Mutes the stream; it does not stop the microphone or the FGS. |
+| `audio.jitter_target_ms` | integer | `5..=40` | `10` | shared | Target of the Linux receiver's jitter buffer. |
+| `audio.return_enabled` | boolean | `true` / `false` | `false` | **local** | Enables Linux→Android audio return; off by default. See [`return-audio.md`](return-audio.md). |
+| `ui.theme` | string | `system`, `light`, `dark` | `system` | **local** | Device visual preference; not shared. |
+| `ui.text_scale` | number | `1.0..=2.0` | `1.0` | **local** | Local accessibility; not shared. |
+| `device.local_volume` | number | `0.0..=1.0` | `1.0` | **local** | Device local volume; it is not stream gain. |
+| `device.model` | string | ≤64 characters | — | **readonly** | Informational; the remote end cannot write it. |
 
-Reglas:
+Rules:
 
-- Las claves **local** y **readonly** nunca se aceptan por el canal remoto: `config.set` sobre ellas devuelve `local_key` (local) o `denied` (readonly) y **no** aplica nada. El panel Android las gestiona en su propio almacenamiento; la CLI local puede leerlas si el daemon las expone, pero no forman parte de la configuración compartida.
-- `mic.start`, `mic.stop` y `permission.request` **no son claves de configuración** ni acciones remotas. Son acciones locales del dispositivo Android; no existe mensaje de control que las ejecute en v1.
-- `audio.gain_db` no es `device.local_volume`: la primera afecta al flujo capturado; la segunda es reproducción local y no se comparte.
-- `audio.return_enabled` es **local del daemon** y no se comparte: el panel Android no la escribe por el canal remoto. El retorno además exige que ambos extremos anuncien la feature `audio.return-pcm16-48k-mono`; sin las dos condiciones el daemon no envía audio de retorno (§ [return-audio.md](return-audio.md)).
-- El valor efectivo de `audio.sample_rate_hz` y `audio.frame_duration_ms` se publica para diagnóstico; en v1 debe ser 48000 y 5. Si el dispositivo no puede, la sesión no se autoriza con ese formato (no se inventa un remuestreo silencioso en el contrato).
+- **local** and **readonly** keys are never accepted over the remote channel: `config.set` on them returns `local_key` (local) or `denied` (readonly) and applies **nothing**. The Android panel manages them in its own storage; the local CLI can read them if the daemon exposes them, but they are not part of the shared configuration.
+- `mic.start`, `mic.stop` and `permission.request` are **not configuration keys** and not remote actions. They are local actions of the Android device; no control message executes them in v1.
+- `audio.gain_db` is not `device.local_volume`: the first affects the captured stream; the second is local playback and is not shared.
+- `audio.return_enabled` is **local to the daemon** and is not shared: the Android panel does not write it over the remote channel. Return also requires both ends to advertise the `audio.return-pcm16-48k-mono` feature; without both conditions the daemon sends no return audio (§ [return-audio.md](return-audio.md)).
+- The effective value of `audio.sample_rate_hz` and `audio.frame_duration_ms` is published for diagnostics; in v1 it must be 48000 and 5. If the device cannot, the session is not authorized with that format (the contract does not invent a silent resample).
 
-## 3. Ejemplo de intercambio
+## 3. Exchange example
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17",
@@ -52,7 +52,7 @@ Reglas:
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
 ```
 
-Conflicto de revisión:
+Revision conflict:
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-18",
@@ -60,19 +60,19 @@ Conflicto de revisión:
                "current_revision": 8 } }
 ```
 
-Clave local:
+Local key:
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-19",
   "payload": { "code": "local_key", "message": "key is local to the device", "retryable": false } }
 ```
 
-## 4. Archivo local
+## 4. Local file
 
-Propuesta: `$XDG_CONFIG_HOME/openrelay/config.toml`, sin secretos, escritura atómica y permisos del usuario.
+Proposal: `$XDG_CONFIG_HOME/openrelay/config.toml`, no secrets, atomic writes and user permissions.
 
 ```toml
-# Sólo configuración compartida y preferencias locales del daemon Linux.
+# Shared configuration and local preferences of the Linux daemon only.
 [audio]
 sample_rate_hz = 48000
 frame_duration_ms = 5
@@ -86,27 +86,27 @@ theme = "system"
 text_scale = 1.0
 ```
 
-- Claves desconocidas o fuera de rango ⇒ el daemon no arranca con esa configuración y reporta el error; no se ignora en silencio.
-- El archivo no contiene token de enrolamiento, claves privadas, ACL ni material de identidad. Esos viven en el estado protegido del daemon, no en `config.toml`.
-- Los valores por defecto se aplican sólo si la clave falta; un valor inválido nunca se sustituye por el default en silencio.
+- Unknown keys or values out of range ⇒ the daemon does not start with that configuration and reports the error; nothing is ignored silently.
+- The file contains no enrollment token, private keys, ACL or identity material. Those live in the daemon's protected state, not in `config.toml`.
+- Defaults are applied only when the key is missing; an invalid value is never silently replaced by the default.
 
-## 5. Validación y errores
+## 5. Validation and errors
 
-| Situación | Resultado |
+| Situation | Result |
 |---|---|
-| Clave inexistente | `invalid` (no retryable) |
-| Clave local/readonly por canal remoto | `local_key` / `denied` (no retryable) |
-| Tipo incorrecto | `invalid` (no retryable) |
-| Valor fuera de rango o no múltiplo de 0.5 en `gain_db` | `invalid` (no retryable) |
-| `expected_revision` distinto | `conflict` (retryable tras releer) |
-| `request_id` reutilizado con otro payload | `request_id_reuse` (no retryable) |
-| Valor igual al efectivo actual | `ack` con `applied: false`, sin cambio de revisión |
+| Key does not exist | `invalid` (not retryable) |
+| local/readonly key over the remote channel | `local_key` / `denied` (not retryable) |
+| Wrong type | `invalid` (not retryable) |
+| Value out of range or not a multiple of 0.5 in `gain_db` | `invalid` (not retryable) |
+| `expected_revision` differs | `conflict` (retryable after re-reading) |
+| `request_id` reused with another payload | `request_id_reuse` (not retryable) |
+| Value equal to the current effective value | `ack` with `applied: false`, no revision change |
 
-El catálogo completo y el mapeo a códigos de salida CLI están en [`contracts/errors.md`](../contracts/errors.md).
+The full catalogue and the mapping to CLI exit codes are in [`contracts/errors.md`](../contracts/errors.md).
 
-## 6. Límites
+## 6. Limits
 
-- Máximo **32** claves declaradas en `capabilities.config_keys`.
-- `request_id` de 1 a 64 caracteres; `key` de 1 a 64 caracteres con patrón `^[a-z][a-z0-9_]*(\.[a-z0-9_]+){0,3}$`.
-- Strings de valor ≤1024 caracteres; números en el rango declarado por clave.
-- La caché de idempotencia es de 64 entradas y 60 s por sesión (ver [`protocol.md`](protocol.md) §6).
+- At most **32** keys declared in `capabilities.config_keys`.
+- `request_id` from 1 to 64 characters; `key` from 1 to 64 characters matching `^[a-z][a-z0-9_]*(\.[a-z0-9_]+){0,3}$`.
+- Value strings ≤1024 characters; numbers within the range declared per key.
+- The idempotency cache holds 64 entries for 60 s per session (see [`protocol.md`](protocol.md) §6).

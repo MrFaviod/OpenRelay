@@ -1,5 +1,5 @@
 [Unit]
-Description=openrelay — daemon local (socket de control y sesiones QUIC)
+Description=openrelay — local daemon (control socket and QUIC sessions)
 
 [Service]
 Type=exec
@@ -7,9 +7,9 @@ ExecStart=%h/.local/bin/openrelay daemon
 Restart=on-failure
 RestartSec=2s
 
-# El daemon escribe el socket en %t y su identidad en ~/.config/openrelay;
-# el resto del sistema queda de sólo lectura. ExecStartPre crea el directorio
-# de estado antes de que ProtectSystem=strict lo intente escribir.
+# The daemon writes its socket to %t and its identity to ~/.config/openrelay;
+# the rest of the system stays read-only. ExecStartPre creates the state
+# directory before ProtectSystem=strict tries to write it.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
