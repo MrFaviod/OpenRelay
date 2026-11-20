@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Fuente PipeWire nativa y SPSC fija de openrelay (unico unsafe confinado al FFI de PipeWire)"
+description = "Native PipeWire source and fixed SPSC queue for OpenRelay."
 
 [features]
 default = []

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "CLI local de administración del daemon de openrelay (binario `openrelay`)"
+description = "Command-line client for the OpenRelay daemon."
 
 [[bin]]
 name = "openrelay"

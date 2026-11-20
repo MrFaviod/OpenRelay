@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Daemon mínimo de openrelay: sesión QUIC autorizada -> frame -> jitter -> fuente PipeWire (sin unsafe)"
+description = "OpenRelay daemon: authorized sessions to audio frames to a PipeWire source."
 
 [dependencies]
 openrelay-audio-core = { path = "../audio-core" }
@@ -26,7 +26,7 @@ time = "=0.3.36"
 
 [features]
 default = []
-# Retorno de audio Linux→Android (F8/T24, D-08). Apagado por defecto: sin esta
+# Retorno de audio Linux→Android. Apagado por defecto: sin esta
 # feature el módulo de retorno no existe en el binario.
 return-audio = []
 # Compila SpeexDSP dentro de openrelay-dsp y habilita el NS opcional de sesión.

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Códec Opus restricted-lowdelay (2.5/5/10 ms) mono 48 kHz para openrelay"
+description = "Opus encoder and decoder for OpenRelay."
 
 [dependencies]
 opus = "=0.3.0"

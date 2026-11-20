@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Control y wire de control de openrelay v1 (sin red, sin codec, sin criptografia)"
+description = "OpenRelay v1 control messages and wire types."
 
 [dependencies]
 serde = { version = "=1.0.210", default-features = false, features = ["std"] }

@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.80"
 license = "MIT"
 publish = false
-description = "Puente JNI de test: identidad mTLS de cliente desde AndroidKeyStore "
+description = "JNI bridge for the OpenRelay Android app."
 
 # Crate FUERA del workspace raíz: lleva su propio Cargo.lock.
 [workspace]

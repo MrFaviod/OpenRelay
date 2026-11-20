@@ -1,6 +1,6 @@
-# Política de dependencias de openrelay (cargo-deny, propuesta; no ejecutada en T05).
-# El core de F1 no tiene dependencias externas: este archivo fija el criterio
-# para cuando se incorporen candidatos del ledger.
+# Política de dependencias de openrelay (cargo-deny).
+# El core no tiene dependencias externas: este archivo fija el criterio
+# para cuando se incorporen nuevas dependencias.
 [graph]
 all-features = true
 

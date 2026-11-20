@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Transporte QUIC, identidad mTLS y frontera de enrolamiento de openrelay (sin Tokio)"
+description = "QUIC transport, mTLS identity and enrollment boundary for OpenRelay."
 
 [dependencies]
 openrelay-audio-core = { path = "../audio-core" }
