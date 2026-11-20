@@ -54,7 +54,7 @@ openrelay status | jq .
 
 ```json
 {"ok":true,"request_id":"cli-1234-…","result":{
-  "version":"0.2.1","uptime_s":42,"sessions":1,
+  "version":"0.2.2","uptime_s":42,"sessions":1,
   "quic":"0.0.0.0:47000",
   "pipewire":{"ok":true},
   "pair":{"open":false,"pending":0,"expires_at":null}}}
@@ -62,7 +62,7 @@ openrelay status | jq .
 
 | Field | Meaning |
 |---|---|
-| `version` | daemon version (`0.2.1` in this release) |
+| `version` | daemon version (`0.2.2` in this release) |
 | `uptime_s` | seconds since the daemon started |
 | `sessions` | authorized sessions alive right now (one per streaming phone) |
 | `quic` | session bind address, or `null` when `--no-quic` |
@@ -156,7 +156,7 @@ This lists every key with its type, range and scope, plus the current `revision`
 | `device.local_volume` | number | 0.0 … 1.0 | local | device playback volume, not stream gain |
 | `device.model` | string | ≤ 64 characters | readonly | reported model, informational |
 
-Only `shared` keys accept `config set`. A `local` key answers `local_key` and a `readonly` key answers `denied`; the daemon and the app own those. In v0.2.1 the daemon also has no hardware applicator, so **every** write answers `unsupported` — even a valid write to a `shared` key — and leaves the revision untouched. Reads work for every key.
+Only `shared` keys accept `config set`. A `local` key answers `local_key` and a `readonly` key answers `denied`; the daemon and the app own those. In v0.2.2 the daemon also has no hardware applicator, so **every** write answers `unsupported` — even a valid write to a `shared` key — and leaves the revision untouched. Reads work for every key.
 
 Defaults and ownership are in [config-schema.md](config-schema.md).
 

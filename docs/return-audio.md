@@ -1,6 +1,6 @@
 # Linux→Android audio return
 
-**Status: not available in 0.2.1.** The code exists in the daemon behind the `return-audio` feature, off by default. The logic lives in `crates/daemon/src/return_audio.rs`, the monitor capture in `crates/audio-linux/src/monitor.rs`, and the gate in the daemon runtime.
+**Status: not available in 0.2.2.** The code exists in the daemon behind the `return-audio` feature, off by default. The logic lives in `crates/daemon/src/return_audio.rs`, the monitor capture in `crates/audio-linux/src/monitor.rs`, and the gate in the daemon runtime.
 
 ## What it is
 
@@ -30,7 +30,7 @@ To turn it off:
 
 Before enabling return, the Android end must show an echo/feedback warning: audio playing on the device can re-enter through its microphone and feed back. Without that warning, return is not enabled. The warning is the Android client's responsibility; the contract does not replace it.
 
-## Not available in 0.2.1
+## Not available in 0.2.2
 
 The transport requires the `return_audio` ACL capability for `send_audio` (in
 addition to the two opt-in conditions). Although `pairing::approve` knows how to

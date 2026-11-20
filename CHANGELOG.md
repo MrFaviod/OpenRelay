@@ -2,6 +2,12 @@
 
 All notable changes to OpenRelay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-11-20
+
+### Changed
+
+- The app and the CLI are now in English.
+
 ## [0.2.1] - 2026-11-20
 
 ### Added
@@ -29,6 +35,7 @@ All notable changes to OpenRelay. The format follows [Keep a Changelog](https://
 
 First preview.
 
+[0.2.2]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/MrFaviod/OpenRelay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MrFaviod/OpenRelay/releases/tag/v0.1.0

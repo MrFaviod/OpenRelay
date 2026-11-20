@@ -225,7 +225,7 @@ private fun onMic(context: Context, running: Boolean, ask: (String) -> Unit) {
     }
 }
 
-/** QR del PC: sólo QR, sin sonido y con el prompt en español. */
+/** QR from the PC: QR only, no audio, prompt in English. */
 private fun scanOptions(context: Context): ScanOptions = ScanOptions()
     .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
     .setPrompt(context.getString(R.string.pairing_scan))
