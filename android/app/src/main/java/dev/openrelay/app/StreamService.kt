@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -249,24 +250,60 @@ class StreamService : Service() {
                             }
                             active.close()
                             link = null
+                            activeLink = null
+                            _sessionActive.set(false)
+                            _returnActive.set(false)
+                            _gainEffective.set(null)
                             _link.set(getString(R.string.link_offline, detail))
                             nextAttempt = System.currentTimeMillis() + backoffMs
                         } else {
                             // El envío puede aceptarse en el buffer local aunque
                             // el daemon ya haya cerrado o rechazado la sesión.
                             // Los eventos nativos son la señal fiable.
-                            val event = active.poll()
-                            if (event == "closed" || event == "rejected" || event.startsWith("io")) {
-                                val detail = when (event) {
-                                    "rejected" -> getString(R.string.link_refused)
-                                    "closed" -> getString(R.string.link_closed)
-                                    else -> getString(R.string.link_unknown_error)
+                            val event = ControlEvent.parse(active.poll())
+                            when {
+                                event == null -> {}
+                                event.kind == "ack" -> {
+                                    if (event.revision >= 0) linkRevision = event.revision
+                                    if (event.requestId == pendingGain) pendingGain = null
+                                    if (event.requestedJson.contains("audio.gain_db")) {
+                                        _gainEffective.set(effectiveGainDb(event.effectiveJson))
+                                    }
                                 }
-                                active.close()
-                                link = null
-                                _link.set(getString(R.string.link_offline, detail))
-                                nextAttempt = System.currentTimeMillis() + backoffMs
-                                backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
+                                event.kind == "error" -> {
+                                    if (event.currentRevision >= 0) {
+                                        linkRevision = event.currentRevision
+                                    }
+                                    if (event.code == "conflict" &&
+                                        event.requestId == pendingGain &&
+                                        event.currentRevision >= 0
+                                    ) {
+                                        // El PC cambió la revisión antes de mover
+                                        // el slider: se reenvía el mismo valor.
+                                        pendingGain = active.configSetGain(
+                                            event.currentRevision,
+                                            pendingGainDb.toDouble(),
+                                        )
+                                    }
+                                }
+                                event.kind == "closed" ||
+                                    event.kind == "rejected" ||
+                                    event.kind == "io" -> {
+                                    val detail = when (event.kind) {
+                                        "rejected" -> getString(R.string.link_refused)
+                                        "closed" -> getString(R.string.link_closed)
+                                        else -> getString(R.string.link_unknown_error)
+                                    }
+                                    active.close()
+                                    link = null
+                                    activeLink = null
+                                    _sessionActive.set(false)
+                                    _returnActive.set(false)
+                                    _gainEffective.set(null)
+                                    _link.set(getString(R.string.link_offline, detail))
+                                    nextAttempt = System.currentTimeMillis() + backoffMs
+                                    backoffMs = (backoffMs * 2).coerceAtMost(BACKOFF_MAX_MS)
+                                }
                             }
                         }
                     }
@@ -274,6 +311,10 @@ class StreamService : Service() {
             }
         } finally {
             link?.close()
+            activeLink = null
+            _sessionActive.set(false)
+            _returnActive.set(false)
+            _gainEffective.set(null)
             _link.set("")
         }
     }
@@ -302,6 +343,12 @@ class StreamService : Service() {
                 client.close()
                 return null
             }
+            // La sesión queda publicada para que la UI pueda pedir ganancia; la
+            // revisión arranca en 0, el default del catálogo.
+            activeLink = client
+            _sessionActive.set(true)
+            linkRevision = 0L
+            _gainEffective.set(null)
             _link.set(getString(R.string.link_sending, pairing.host))
             client
         } catch (t: Throwable) {
@@ -646,6 +693,8 @@ class StreamService : Service() {
         private val _errorState = AppState<String?>(null)
         private val _notificationWarning = AppState("")
         private val _link = AppState("")
+        private val _sessionActive = AppState(false)
+        private val _returnActive = AppState(false)
 
         /** true sólo tras startForeground aceptado y native start OK. */
         val running: AppState<Boolean> = _running
@@ -672,6 +721,40 @@ class StreamService : Service() {
          */
         val link: AppState<String> = _link
 
+        /**
+         * true mientras hay una sesión autorizada con el PC. El control de
+         * retorno sólo se habilita con una sesión viva: sin ella no hay a dónde
+         * devolver el audio.
+         */
+        val sessionActive: AppState<Boolean> = _sessionActive
+
+        /**
+         * true mientras el hilo de retorno está enganchado y la salida arrancó.
+         * No es el opt-in: es el estado observado del bombeo.
+         */
+        val returnActive: AppState<Boolean> = _returnActive
+
+        /** Sesión viva, publicada para que la UI pida ganancia. Null sin enlace. */
+        @Volatile private var activeLink: SessionClient? = null
+
+        /** Revisión que el último ACK o conflicto reportó. 0 al abrir. */
+        @Volatile private var linkRevision = 0L
+
+        /**
+         * Set de gain en vuelo: `request_id` y valor pedido. Un conflicto de
+         * revisión se reenvía una vez con la revisión que reporta el PC.
+         */
+        @Volatile private var pendingGain: String? = null
+        @Volatile private var pendingGainDb = 0
+
+        private val _gainEffective = AppState<Int?>(null)
+
+        /**
+         * Ganancia efectiva que confirmó el PC. null mientras no haya ACK: la
+         * UI dice "unavailable" y no inventa un valor aplicado.
+         */
+        val gainEffective: AppState<Int?> = _gainEffective
+
         fun start(context: Context) {
             stopRequestedFlag.set(false)
             _errorState.set(null)
@@ -690,6 +773,23 @@ class StreamService : Service() {
 
         fun unmute(context: Context) {
             dispatch(context, ACTION_UNMUTE, foreground = false)
+        }
+
+        /**
+         * Pide `audio.gain_db` a la sesión abierta con la revisión que el
+         * cliente cree vigente. false si no hay sesión: el pedido queda local y
+         * la UI no debe afirmar que el PC lo recibió.
+         */
+        fun requestGain(db: Int): Boolean {
+            val link = activeLink ?: return false
+            val id = link.configSetGain(linkRevision, db.toDouble())
+            if (id.isEmpty() || id.startsWith("ERR")) {
+                Log.w(TAG, "gain set refused: $id")
+                return false
+            }
+            pendingGain = id
+            pendingGainDb = db
+            return true
         }
 
         /**
@@ -737,10 +837,33 @@ class StreamService : Service() {
                 }
                 val pump = ReturnPump(session, playback)
                 returnPump = pump
-                if (pump.start()) return true
+                if (pump.start()) {
+                    _returnActive.set(true)
+                    return true
+                }
                 returnPump = null
+                _returnActive.set(false)
                 return false
             }
+        }
+
+        /**
+         * Engancha el retorno a la sesión viva. false sin sesión o si el
+         * bombeo no arranca: la UI no debe decir que el retorno está activo.
+         */
+        fun attachReturnToActiveSession(playback: PlaybackEngine): Boolean {
+            val session = activeLink ?: return false
+            return attachReturnPlayback(session, playback)
+        }
+
+        /**
+         * Apaga el retorno y avisa al PC con `setReturnAudio(false)`. Sin
+         * sesión sólo para el bombeo: no hay a quién avisar.
+         */
+        fun detachReturnAndNotify(): Boolean {
+            detachReturnPlayback()
+            val session = activeLink ?: return false
+            return session.setReturnAudio(false) == NATIVE_OK
         }
 
         /** Suelta el retorno: para el hilo y la salida. Idempotente. */
@@ -748,6 +871,7 @@ class StreamService : Service() {
             synchronized(gate) {
                 returnPump?.stop()
                 returnPump = null
+                _returnActive.set(false)
             }
         }
 
@@ -774,6 +898,8 @@ class StreamService : Service() {
             _errorState.set(null)
             _notificationWarning.set("")
             _link.set("")
+            _sessionActive.set(false)
+            _returnActive.set(false)
             ActivityPresence.shown.set(false)
         }
     }
@@ -797,6 +923,9 @@ internal object ActivityPresence {
         shown.set(false)
     }
 }
+
+/** dB enteros del JSON de `effective` de un ACK de `audio.gain_db`. */
+internal fun effectiveGainDb(json: String): Int? = json.trim().toDoubleOrNull()?.roundToInt()
 
 /**
  * Valor observable sin coroutines. No es kotlinx.coroutines.flow.StateFlow:

@@ -102,13 +102,6 @@ openrelay devices remove <fingerprint>   # unpair a phone
 
 More in the [CLI guide](docs/cli-quickstart.md).
 
-## Not there yet
-
-- The gain slider in the app doesn't change the volume yet.
-- Mute only works from the phone.
-- Audio from the PC back to the phone isn't available.
-- The APK is a debug build, not on the Play Store.
-
 Tried it on your phone and distro? [Open an issue](https://github.com/MrFaviod/OpenRelay/issues) with what worked and what didn't.
 
 ## Build from source

@@ -154,6 +154,63 @@ sudo firewall-cmd --reload
 > [!NOTE]
 > The v0.2.2 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC — paste the `openrelay://pair` link or scan the QR — and streams the microphone to the PC as PCM16.
 
+### Build a signed release APK
+
+The release build is signed with a **local development key**. This is **not** a Play Store
+submission and the key is not an upload key for any store: it only makes the APK
+installable and verifiable, so it can be sideloaded and checked with `apksigner`.
+
+1. Create the keystore once. It lives in `android/release.keystore`, which `.gitignore`
+   covers (`*.keystore`), so it is never committed:
+
+   ```sh
+   cd android
+   keytool -genkeypair -v -keystore release.keystore -storetype PKCS12 \
+     -alias openrelay-release -keyalg RSA -keysize 2048 -validity 10000 \
+     -storepass openrelay-dev -keypass openrelay-dev \
+     -dname "CN=OpenRelay Development, OU=Local build, O=OpenRelay, L=Dev, ST=Dev, C=AR"
+   ```
+
+   The password and alias above are **development-only credentials, not secrets**.
+   Do not reuse this keystore for any published app or store upload.
+
+2. Provide the signing values, either as environment variables or by copying
+   `android/release-signing.properties.example` to `android/release-signing.properties`
+   (also ignored by git). Environment variables win when both are present:
+
+   ```sh
+   export OPENRELAY_RELEASE_STORE_FILE=release.keystore
+   export OPENRELAY_RELEASE_STORE_PASSWORD=openrelay-dev
+   export OPENRELAY_RELEASE_KEY_ALIAS=openrelay-release
+   export OPENRELAY_RELEASE_KEY_PASSWORD=openrelay-dev
+   ```
+
+   `OPENRELAY_RELEASE_STORE_FILE` is resolved against the `android/` directory.
+   If any of the four values is missing, `assembleRelease` stops with an explicit
+   error instead of producing `app-release-unsigned.apk` or falling back to the
+   debug key.
+
+3. Build the release APK:
+
+   ```sh
+   cd android
+   ./gradlew assembleRelease
+   ```
+
+   Output: `android/app/build/outputs/apk/release/app-release.apk`.
+
+4. Verify the signature and the manifest before installing:
+
+   ```sh
+   APK=android/app/build/outputs/apk/release/app-release.apk
+   "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+   "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -1
+   ```
+
+   `apksigner` prints `Verifies`, and the certificate DN must read
+   `CN=OpenRelay Development`, never `CN=Android Debug`. The badging line must show
+   `package: name='dev.openrelay.app'` and the current `versionName`.
+
 ## Pair a phone
 
 1. Check that the daemon answers (`openrelay status`) and that UDP **47000-47001** is open in the host firewall ([Firewall](#firewall)).

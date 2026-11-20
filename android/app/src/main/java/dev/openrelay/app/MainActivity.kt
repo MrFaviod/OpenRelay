@@ -64,8 +64,9 @@ import dev.openrelay.app.ui.reduce
  *
  * Con la captura en marcha el silencio del servicio drena las muestras y
  * publica nivel 0. Sin captura, el silencio es sólo lo pedido: no hay nivel
- * que bajar. La ganancia del avanzado es lo pedido. El servicio no aplica
- * ganancia, así que la efectiva permanece null. La versión sale de
+ * que bajar. La ganancia del avanzado se envía al PC con la sesión abierta; la
+ * efectiva sólo se muestra cuando el ACK del daemon la confirma. La versión
+ * sale de
  * [PackageManager], no de BuildConfig, que este módulo no genera.
  */
 class MainActivity : ComponentActivity() {
@@ -111,6 +112,9 @@ private fun HomeRoute(resumeTick: Int) {
     val errorText by collect(StreamService.errorState)
     val notificationWarning by collect(StreamService.notificationWarning)
     val linkText by collect(StreamService.link)
+    val gainEffective by collect(StreamService.gainEffective)
+    val sessionActive by collect(StreamService.sessionActive)
+    val returnActive by collect(StreamService.returnActive)
     val pairingState by collect(PairingFlow.state)
     val pairing = remember(resumeTick, pairingState) { PairingStore(context).load() }
     val versionName = remember { installedVersionName(context) }
@@ -161,6 +165,9 @@ private fun HomeRoute(resumeTick: Int) {
         level = level,
         errorText = errorText,
         micGranted = Permissions.hasRecordAudio(context),
+        gainEffectiveDb = gainEffective,
+        returnOn = returnActive,
+        returnAvailable = sessionActive,
         notificationWarning = notificationWarning,
         notificationRequestable = notificationRequestable,
         linkText = linkText.ifEmpty {
@@ -189,8 +196,32 @@ private fun HomeRoute(resumeTick: Int) {
                         }
                     }
                 },
-                onGainChange = { db -> local = reduce(local, HomeEvent.SetGainRequested(db)) },
+                onGainChange = { db ->
+                    val next = reduce(local, HomeEvent.SetGainRequested(db))
+                    local = next
+                    // Sin sesión abierta el pedido queda local: requestGain
+                    // devuelve false y la UI no finge que el PC lo recibió.
+                    StreamService.requestGain(next.gainRequestedDb)
+                },
                 onToggleAdvanced = { local = reduce(local, HomeEvent.ToggleAdvanced) },
+                onReturnChange = { on ->
+                    if (on) {
+                        // El diálogo de eco ya se confirmó: sin ese aviso
+                        // PlaybackEngine.start devuelve
+                        // ERROR_FEEDBACK_NOT_ACKNOWLEDGED y no arranca.
+                        val playback = PlaybackEngine()
+                        playback.acknowledgeFeedbackWarning()
+                        playback.enabled = true
+                        if (!StreamService.attachReturnToActiveSession(playback)) {
+                            playback.destroy()
+                            Toast.makeText(context, R.string.return_failed, Toast.LENGTH_LONG)
+                                .show()
+                        }
+                    } else {
+                        // Para el bombeo y avisa al PC con setReturnAudio(false).
+                        StreamService.detachReturnAndNotify()
+                    }
+                },
                 onNotificationAction = {
                     if (notificationRequestable && canAskNotifications()) {
                         notificationLauncher.launch(Permissions.POST_NOTIFICATIONS)
@@ -267,6 +298,9 @@ internal fun present(
     level: Float,
     errorText: String?,
     micGranted: Boolean,
+    gainEffectiveDb: Int? = null,
+    returnOn: Boolean = false,
+    returnAvailable: Boolean = false,
     notificationWarning: String = "",
     notificationRequestable: Boolean = false,
     linkText: String = "",
@@ -285,7 +319,9 @@ internal fun present(
         level = if (muted) 0f else level.coerceIn(0f, 1f),
         levelAvailable = running,
         error = serviceError ?: fresh.error,
-        gainEffectiveDb = null,
+        gainEffectiveDb = gainEffectiveDb,
+        returnOn = returnOn,
+        returnAvailable = returnAvailable,
         notificationWarning = notificationWarning,
         notificationRequestable = notificationRequestable && notificationWarning.isNotEmpty(),
     )

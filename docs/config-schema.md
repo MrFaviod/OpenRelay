@@ -1,6 +1,6 @@
 # Configuration v1 — requested/effective and local keys
 
-The app exposes mute and a gain slider. Gain is stored and not applied yet. Return audio is not available.
+The app exposes mute and a gain slider. Gain and mute are applied by the daemon's audio path: gain scales the PCM16 samples published on the virtual microphone, and PC-side mute cuts that microphone. Return audio is opt-in: it needs the `return-audio` Cargo feature (off by default), a `return_audio` grant and `audio.return_enabled = true`.
 
 ## 1. Model
 
@@ -34,7 +34,7 @@ Rules:
 - **local** and **readonly** keys are never accepted over the remote channel: `config.set` on them returns `local_key` (local) or `denied` (readonly) and applies **nothing**. The Android panel manages them in its own storage; the local CLI can read them if the daemon exposes them, but they are not part of the shared configuration.
 - `mic.start`, `mic.stop` and `permission.request` are **not configuration keys** and not remote actions. They are local actions of the Android device; no control message executes them in v1.
 - `audio.gain_db` is not `device.local_volume`: the first affects the captured stream; the second is local playback and is not shared.
-- `audio.return_enabled` is **local to the daemon** and is not shared: the Android panel does not write it over the remote channel. Return also requires both ends to advertise the `audio.return-pcm16-48k-mono` feature; without both conditions the daemon sends no return audio (§ [return-audio.md](return-audio.md)).
+- `audio.return_enabled` is **local to the daemon** and is not shared: the Android panel does not write it over the remote channel. Return also requires both ends to advertise the `audio.return-pcm16-48k-mono` feature; without both conditions the daemon sends no return audio (§ [return-audio.md](return-audio.md)). The ACL side is `openrelay devices grant <fingerprint> return`, and the daemon must be built with the `return-audio` Cargo feature, which is off by default.
 - The effective value of `audio.sample_rate_hz` and `audio.frame_duration_ms` is published for diagnostics; in v1 it must be 48000 and 5. If the device cannot, the session is not authorized with that format (the contract does not invent a silent resample).
 
 ## 3. Exchange example

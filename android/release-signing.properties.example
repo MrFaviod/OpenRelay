@@ -1,0 +1,9 @@
+# Release signing for LOCAL builds only. Copy to android/release-signing.properties
+# (ignored by git) or export the same values as OPENRELAY_RELEASE_* variables.
+#
+# This key is a development key: it makes the release APK installable and
+# verifiable. It is NOT a Play Store upload key and must never be reused as one.
+storeFile=release.keystore
+storePassword=openrelay-dev
+keyAlias=openrelay-release
+keyPassword=openrelay-dev

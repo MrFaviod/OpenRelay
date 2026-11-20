@@ -49,6 +49,13 @@ data class HomeUiState(
      * muestras que silenciar ni nivel que bajar.
      */
     val muted: Boolean = false,
+    /**
+     * true mientras el hilo de retorno está enganchado. Lo publica el servicio:
+     * la UI no lo enciende por su cuenta.
+     */
+    val returnOn: Boolean = false,
+    /** true con sesión autorizada: sin ella el control de retorno no sirve. */
+    val returnAvailable: Boolean = false,
     val versionName: String = "",
 )
 

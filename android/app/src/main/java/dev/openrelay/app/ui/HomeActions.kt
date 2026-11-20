@@ -17,6 +17,9 @@ package dev.openrelay.app.ui
  * - [onNotificationAction]: si el pedido de POST_NOTIFICATIONS todavía es
  *   legal, lo lanza. Si ya se denegó, abre los ajustes de notificaciones.
  *   Denegar no para la captura.
+ * - [onReturnChange]: true sólo después de que el usuario confirme el aviso de
+ *   eco; enciende la salida y la engancha a la sesión activa. false para el
+ *   bombeo y avisa al PC con `setReturnAudio(false)`.
  *
  * La Activity observa [dev.openrelay.app.StreamService] (`running`, `muted`,
  * `level`, `errorState`, `notificationWarning`) y lo traduce a [HomeUiState].
@@ -28,6 +31,8 @@ data class HomeActions(
     val onGainChange: (Int) -> Unit = {},
     val onToggleAdvanced: () -> Unit = {},
     val onNotificationAction: () -> Unit = {},
+    /** Enciende o apaga el retorno PC→teléfono. */
+    val onReturnChange: (Boolean) -> Unit = {},
     /** Abre el escáner de QR (pide cámara sólo entonces). */
     val onScanQr: () -> Unit = {},
     /** Empareja con el URI pegado. */

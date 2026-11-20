@@ -39,6 +39,7 @@ Usage:
   openrelay pair [--ttl 120] [--advertise HOST] [--yes]
                                               QR + local approval of a phone
   openrelay devices                           lists the approved identities
+  openrelay devices grant FINGERPRINT return  allows Linux→Android return audio
   openrelay devices remove FINGERPRINT        revokes a device and closes its sessions
   openrelay service print-unit                prints the systemd --user unit
   openrelay --help | openrelay <subcommand> --help
@@ -72,11 +73,14 @@ without asking. TTL in seconds (1..=300).
 
 const DEVICES_USAGE: &str = "\
 Usage: openrelay devices [--state-dir PATH]
+     openrelay devices grant FINGERPRINT return [--state-dir PATH]
      openrelay devices remove FINGERPRINT [--socket PATH]
 
 With no arguments it lists the approved identities in identities.json (spki and
-capabilities). `remove` asks the daemon to delete the identity, take it out of
-the live ACL and close that device's open sessions.
+capabilities). `grant ... return` turns on the `return_audio` capability for an
+already approved device; the daemon reads identities.json at startup, so restart
+it for a live session to pick the flag up. `remove` asks the daemon to delete
+the identity, take it out of the live ACL and close that device's open sessions.
 ";
 
 const STATUS_USAGE: &str = "\
@@ -598,6 +602,9 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
     if rest.first().map(String::as_str) == Some("remove") {
         return cmd_devices_remove(&rest[1..]);
     }
+    if rest.first().map(String::as_str) == Some("grant") {
+        return cmd_devices_grant(&rest[1..]);
+    }
     let mut state_dir: Option<PathBuf> = None;
     let mut it = rest.iter();
     while let Some(arg) = it.next() {
@@ -664,6 +671,69 @@ fn cmd_devices(rest: &[String]) -> ExitCode {
         );
     }
     ExitCode::SUCCESS
+}
+
+/// `openrelay devices grant`: turns on `return_audio` in `identities.json`.
+fn cmd_devices_grant(rest: &[String]) -> ExitCode {
+    let mut state_dir: Option<PathBuf> = None;
+    let mut positional: Vec<&str> = Vec::new();
+    let mut it = rest.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--help" | "-h" => {
+                print!("{DEVICES_USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "--state-dir" => match it.next() {
+                Some(path) => state_dir = Some(PathBuf::from(path)),
+                None => {
+                    eprintln!("openrelay: --state-dir requires a path");
+                    return ExitCode::from(2);
+                }
+            },
+            other if other.starts_with('-') => {
+                eprintln!("openrelay: unknown argument: {other}\n\n{DEVICES_USAGE}");
+                return ExitCode::from(2);
+            }
+            other => positional.push(other),
+        }
+    }
+    let (fingerprint, capability) = match positional.as_slice() {
+        [fingerprint, "return"] => (*fingerprint, "return"),
+        [_, other] => {
+            eprintln!("openrelay: unknown capability: {other} (use `return`)\n\n{DEVICES_USAGE}");
+            return ExitCode::from(2);
+        }
+        _ => {
+            eprintln!(
+                "openrelay: devices grant requires FINGERPRINT and `return`\n\n{DEVICES_USAGE}"
+            );
+            return ExitCode::from(2);
+        }
+    };
+    let dir = match state_dir.or_else(openrelay_daemon::provision::default_dir) {
+        Some(dir) => dir,
+        None => {
+            eprintln!("openrelay: set --state-dir or HOME/XDG_CONFIG_HOME");
+            return ExitCode::from(2);
+        }
+    };
+    let path = dir.join("identities.json");
+    match openrelay_daemon::pairing::grant_return_audio(&path, fingerprint) {
+        Ok(true) => {
+            println!("openrelay: {capability} granted to {fingerprint}");
+            println!("openrelay: restart the daemon so the live ACL reloads it");
+            ExitCode::SUCCESS
+        }
+        Ok(false) => {
+            println!("openrelay: {capability} was already granted to {fingerprint}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("openrelay: {}: {error}", path.display());
+            ExitCode::from(1)
+        }
+    }
 }
 
 /// `openrelay devices remove`: asks the daemon to revoke an identity.

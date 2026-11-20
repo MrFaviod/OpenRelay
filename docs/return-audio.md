@@ -1,6 +1,6 @@
 # Linux→Android audio return
 
-**Status: not available in 0.2.2.** The code exists in the daemon behind the `return-audio` feature, off by default. The logic lives in `crates/daemon/src/return_audio.rs`, the monitor capture in `crates/audio-linux/src/monitor.rs`, and the gate in the daemon runtime.
+**Status: opt-in, off by default.** The sender lives behind the `return-audio` Cargo feature and needs three independent permissions (feature, configuration, ACL capability). The logic lives in `crates/daemon/src/return_audio.rs`, the monitor capture in `crates/audio-linux/src/monitor.rs`, and the gate in the daemon runtime.
 
 ## What it is
 
@@ -30,15 +30,35 @@ To turn it off:
 
 Before enabling return, the Android end must show an echo/feedback warning: audio playing on the device can re-enter through its microphone and feed back. Without that warning, return is not enabled. The warning is the Android client's responsibility; the contract does not replace it.
 
-## Not available in 0.2.2
+## Granting the capability
 
 The transport requires the `return_audio` ACL capability for `send_audio` (in
-addition to the two opt-in conditions). Although `pairing::approve` knows how to
-persist the `return_audio` flag in the identities file and `pairing::load` reads
-it back, no product path grants it: the app does not advertise the feature and
-the CLI exposes no command to grant it. Granting it requires calling
-`pairing::approve` with `Capabilities::with_return_audio()` from an approval
-flow that does not exist yet.
+addition to the two opt-in conditions above). Grant it to an already paired
+phone from the CLI on the daemon machine:
+
+```console
+$ openrelay devices grant <fingerprint-hex> return
+openrelay: return granted to <fingerprint-hex>
+```
+
+`devices` prints each phone's `return_audio=` flag, so the grant can be checked
+without opening the identities file. The command writes `identities.json`
+(0600) and the daemon reads it at startup: **restart the daemon** after
+granting. Running the command twice is idempotent (`already granted`). The
+command only grants `return`; `mic`, `control_read` and `control_write` are
+left untouched.
+
+## Turning it on from the app
+
+The Android app has the switch under **Advanced → Return audio**. It is only
+enabled while a session with the PC is open; without one, the app says so
+instead of pretending. Turning it on first shows the echo warning described
+above; only after the user confirms does the app acknowledge the warning,
+enable the playback engine and attach it to the live session. Turning it off
+stops the return pump and tells the PC with `setReturnAudio(false)`.
+
+The app does not enable return by itself: the switch reflects the observed
+pump state, not a stored preference.
 
 ## Out of scope
 

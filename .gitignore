@@ -9,6 +9,7 @@
 
 # Android build output and local SDK/IDE state
 /android/.gradle/
+/android/.kotlin/
 /android/.idea/
 /android/local.properties
 /android/**/build/
@@ -50,6 +51,10 @@ __pycache__/
 *.p12
 *.jks
 *.keystore
+# Release signing material for local builds: development-only key and its
+# credentials file. Neither is a production secret, neither is committed.
+/android/release.keystore
+/android/release-signing.properties
 
 # Local daemon state and per-machine configuration
 /.openrelay/

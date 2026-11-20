@@ -202,6 +202,34 @@ impl SharedControl {
         )
     }
 
+    /// Is the effective `audio.mute` value `true`?
+    ///
+    /// The CLI or the app writes it through `config.set`; the audio path reads
+    /// it every tick. If the state cannot be read the answer is `false`: a
+    /// poisoned lock must not silence the virtual microphone.
+    pub fn muted(&self) -> bool {
+        let Ok(key) = ConfigKey::new("audio.mute") else {
+            return false;
+        };
+        matches!(
+            self.state.snapshot().get(&key),
+            Some(ConfigValue::Bool(true))
+        )
+    }
+
+    /// Ganancia efectiva en dB que el runtime aplica a las muestras del
+    /// micrófono. `0.0` si el estado no se puede leer: el audio no se amplifica
+    /// solo.
+    pub fn gain_db(&self) -> f32 {
+        let Ok(key) = ConfigKey::new("audio.gain_db") else {
+            return 0.0;
+        };
+        match self.state.snapshot().get(&key) {
+            Some(ConfigValue::Number(db)) if db.is_finite() => *db as f32,
+            _ => 0.0,
+        }
+    }
+
     /// Registro con el que se construyó. Sirve para registrar después.
     pub fn registry_mut(&mut self) -> &mut ControlRegistry {
         // Un pin nuevo no tiene sesión; uno ya visto conserva la suya y
@@ -367,4 +395,65 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openrelay_proto::wire::{decode_message, encode_frame, AckMsg};
+
+    /// Política de producto mínima: deja pasar sólo `audio.return_enabled`.
+    ///
+    /// No es la del producto (hoy `UnsupportedPolicy`): fija el contrato que
+    /// esa política tiene que cumplir para que `config set` encienda el
+    /// retorno de verdad.
+    struct ReturnEnabledPolicy;
+
+    impl EffectivePolicy for ReturnEnabledPolicy {
+        fn effective(
+            &self,
+            key: &ConfigKey,
+            requested: &ConfigValue,
+        ) -> Result<ConfigValue, ErrorCode> {
+            if key.as_str() == "audio.return_enabled" {
+                Ok(requested.clone())
+            } else {
+                Err(ErrorCode::Unsupported)
+            }
+        }
+    }
+
+    fn set_frame(request_id: &str, value: bool, revision: u64) -> Vec<u8> {
+        let json = format!(
+            r#"{{"schema_version":"openrelay.control/v1","type":"config.set","request_id":"{request_id}","expected_revision":{revision},"payload":{{"key":"audio.return_enabled","value":{value}}}}}"#
+        );
+        encode_frame(json.as_bytes()).expect("frame")
+    }
+
+    #[test]
+    fn config_set_audio_return_enabled_applies_when_the_policy_allows_it() {
+        let mut control =
+            SharedControl::with_policy(ControlRegistry::new(), Box::new(ReturnEnabledPolicy));
+        control
+            .open_local(IdentityGrant {
+                device_id: "openrelay-cli-local".into(),
+                role: PeerRole::LinuxCli,
+                actions: vec![RemoteAction::ConfigRead, RemoteAction::ConfigWrite],
+            })
+            .expect("local session");
+        assert!(!control.return_enabled(), "apagado por defecto");
+
+        let on = decode_message(&set_frame("r-1", true, 0)).expect("frame");
+        let outcome = control.local_call(&on).expect("local call");
+        assert!(
+            matches!(outcome.response, Some(ControlMessage::Ack(AckMsg { .. }))),
+            "el set se confirma"
+        );
+        assert_eq!(control.revision(), 1, "una revisión por set aplicado");
+        assert!(control.return_enabled(), "el valor efectivo es el pedido");
+
+        let off = decode_message(&set_frame("r-2", false, 1)).expect("frame");
+        control.local_call(&off).expect("local call");
+        assert!(!control.return_enabled(), "también se apaga");
+    }
 }

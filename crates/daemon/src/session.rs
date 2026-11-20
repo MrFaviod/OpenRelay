@@ -71,6 +71,8 @@ pub struct SessionAudioStats {
     pub dropped_reordered: u64,
     /// Frames descartados por exceder la cadencia sostenida de la sesión.
     pub dropped_cadence: u64,
+    /// Blocks dropped because the effective `audio.mute` was on.
+    pub dropped_muted: u64,
     /// Huecos mayores que la ventana o flags `discontinuity`.
     pub discontinuities: u64,
     /// Cambios de época observados.
@@ -154,6 +156,11 @@ impl SessionAudio {
     /// Contadores acumulados.
     pub const fn stats(&self) -> SessionAudioStats {
         self.stats
+    }
+
+    /// Counts the blocks the runtime dropped because of `audio.mute`.
+    pub fn note_muted(&mut self, frames: u64) {
+        self.stats.dropped_muted += frames;
     }
 
     /// Procesa un datagrama ya parseado y devuelve las muestras a reproducir.

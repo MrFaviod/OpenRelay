@@ -155,16 +155,18 @@ This lists every key with its type, range and scope, plus the current `revision`
 |---|---|---|---|---|
 | `audio.sample_rate_hz` | integer | 48000 (fixed) | shared | sample rate |
 | `audio.frame_duration_ms` | integer | 5 (fixed) | shared | frame size |
-| `audio.gain_db` | number | −24 … 24, step 0.5 | shared | capture gain; stored but **not applied yet** (no sample scaling) |
-| `audio.mute` | boolean | | shared | phone-side mute: muted frames are not sent; there is no PC-side mute |
+| `audio.gain_db` | number | −24 … 24, step 0.5 | shared | capture gain; the daemon scales PCM16 samples by 10^(dB/20) before publishing them on the virtual microphone |
+| `audio.mute` | boolean | | shared | phone-side and PC-side mute: muted frames are not sent, and the PC side cuts the daemon's virtual microphone |
 | `audio.jitter_target_ms` | integer | 5 … 40 | shared | Linux jitter buffer target |
-| `audio.return_enabled` | boolean | | local | audio back to the phone; **not available in this version** |
+| `audio.return_enabled` | boolean | | local | audio back to the phone; needs the `return-audio` Cargo feature (off by default) and `openrelay devices grant <fingerprint> return` |
 | `ui.theme` | string | `system`, `light`, `dark` | local | app appearance |
 | `ui.text_scale` | number | 1.0 … 2.0 | local | app text size |
 | `device.local_volume` | number | 0.0 … 1.0 | local | device playback volume, not stream gain |
 | `device.model` | string | ≤ 64 characters | readonly | reported model, informational |
 
-Only `shared` keys accept `config set`. A `local` key answers `local_key` and a `readonly` key answers `denied`; the daemon and the app own those. In v0.2.2 the daemon also has no hardware applicator, so **every** write answers `unsupported` — even a valid write to a `shared` key — and leaves the revision untouched. Reads work for every key.
+`openrelay config set audio.mute true --rev N` mutes the daemon's virtual microphone from the PC; the phone's own mute stays independent. The audio path applies `audio.gain_db`, `audio.mute` and `audio.return_enabled`; every other shared key answers `unsupported` and leaves the revision untouched.
+
+`audio.return_enabled` is a local key, not shared. Grant the phone the capability first with `openrelay devices grant <fingerprint> return` (it persists `return_audio` and requires a daemon restart), then `openrelay config set audio.return_enabled true --rev N`. The daemon must be built with the `return-audio` Cargo feature, which is off by default. A local key written over the remote channel answers `local_key`; a readonly key answers `denied`. Reads work for every key.
 
 Defaults and ownership are in [config-schema.md](config-schema.md).
 

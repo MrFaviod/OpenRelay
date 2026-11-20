@@ -87,6 +87,34 @@ impl Pairing {
     }
 }
 
+/// Concede `return_audio` a una identidad ya aprobada.
+///
+/// `fingerprint_hex` es el SPKI tal como lo imprime `openrelay devices`.
+/// Conserva el resto de capacidades tal como están en el archivo. Devuelve
+/// `Ok(true)` si el flag pasó de apagado a encendido y `Ok(false)` si ya
+/// estaba. Un pin que no está en `identities.json` es `NotFound`: conceder a
+/// ciegas inventaría una identidad que nadie aprobó.
+pub fn grant_return_audio(path: &Path, fingerprint_hex: &str) -> io::Result<bool> {
+    let pin = SpkiPin::from_hex(fingerprint_hex)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid fingerprint"))?;
+    let mut doc = read_doc(path)?;
+    let entries = doc["identities"]
+        .as_array_mut()
+        .ok_or_else(|| invalid("identities is not an array"))?;
+    let entry = entries
+        .iter_mut()
+        .find(|entry| entry.get("spki").and_then(Value::as_str) == Some(&pin.to_hex()))
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "identity is not approved")
+        })?;
+    if entry.get("return_audio").and_then(Value::as_bool) == Some(true) {
+        return Ok(false);
+    }
+    entry["return_audio"] = Value::Bool(true);
+    write_atomic(path, &doc)?;
+    Ok(true)
+}
+
 /// Borra la identidad `pin` de `identities.json`, conservando el resto.
 ///
 /// Un pin ausente no es error: el resultado es el mismo (sin entrada). La ACL
@@ -181,6 +209,62 @@ mod tests {
 
     fn pin(byte: u8) -> SpkiPin {
         SpkiPin::from_spki_der(&[byte; 40])
+    }
+
+    #[test]
+    fn approve_without_the_flag_leaves_return_audio_false_and_grant_sets_it() {
+        let path = scratch("grant");
+        let device = pin(3);
+        let mut pairing = Pairing::new();
+        pairing.observe(&EnrollmentEvent::Accepted(device));
+        pairing
+            .approve(
+                device,
+                Capabilities::none()
+                    .with_mic()
+                    .with_control_read()
+                    .with_control_write(),
+                &path,
+            )
+            .expect("aprobar");
+        assert!(
+            !load(&path)
+                .expect("cargar")
+                .capabilities(&device)
+                .expect("identidad")
+                .return_audio(),
+            "sin la bandera el flag queda en false"
+        );
+
+        assert!(
+            grant_return_audio(&path, &device.to_hex()).expect("conceder"),
+            "el primer grant cambia el flag"
+        );
+        let caps = load(&path).expect("recargar").capabilities(&device).expect("identidad");
+        assert!(caps.return_audio(), "el flag queda guardado");
+        assert!(caps.mic(), "el resto de capacidades se conserva");
+        assert!(caps.control_write(), "control_write se conserva");
+        assert!(
+            !grant_return_audio(&path, &device.to_hex()).expect("conceder dos veces"),
+            "un segundo grant es idempotente"
+        );
+    }
+
+    #[test]
+    fn grant_return_audio_rejects_an_unknown_pin() {
+        let path = scratch("grant-unknown");
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "version": IDENTITIES_VERSION,
+                "identities": [],
+            }))
+            .expect("json"),
+        )
+        .expect("identidades");
+
+        let error = grant_return_audio(&path, &pin(4).to_hex()).expect_err("pin ausente");
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 
     #[test]

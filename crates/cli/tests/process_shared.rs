@@ -218,13 +218,14 @@ fn process_shares_revision_between_cli_and_quic() {
     let (daemon, printed) = start(&dir, &sock);
     assert_eq!(printed, server_pin.to_hex());
 
-    // Sin aplicador de hardware el set del CLI se rechaza con `unsupported`.
+    // `audio.mute` has an applicator: the CLI write is applied and moves the
+    // shared revision.
     let first = cli(
         &sock,
         &["config", "set", "audio.mute", "true", "--rev", "0"],
     );
-    assert_eq!(first["ok"], false, "{first}");
-    assert_eq!(first["error"]["code"], "unsupported", "{first}");
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["result"]["revision"], 1, "{first}");
 
     let client_cert = fs::read(dir.path("client.der")).unwrap();
     let client_key = fs::read(dir.path("client.key")).unwrap();
@@ -264,9 +265,9 @@ fn process_shares_revision_between_cli_and_quic() {
 
     let set = ControlMessage::ConfigSet(ConfigSetMsg {
         request_id: "quic-1".to_string(),
-        expected_revision: 0,
-        key: ConfigKey::new("audio.mute").expect("clave"),
-        value: ConfigValue::Bool(false),
+        expected_revision: 1,
+        key: ConfigKey::new("audio.jitter_target_ms").expect("clave"),
+        value: ConfigValue::Integer(10),
     });
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut reply = None;
@@ -283,6 +284,6 @@ fn process_shares_revision_between_cli_and_quic() {
     }
 
     let caps = cli(&sock, &["capabilities"]);
-    assert_eq!(caps["result"]["revision"], 0, "{caps}");
+    assert_eq!(caps["result"]["revision"], 1, "{caps}");
     drop(daemon);
 }

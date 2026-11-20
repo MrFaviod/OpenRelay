@@ -21,10 +21,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "return-audio")]
 use openrelay_audio_linux::monitor::MonitorSource;
-use openrelay_audio_linux::{init as audio_init, PipeWireSource};
+use openrelay_audio_linux::{init as audio_init, ring::SampleProducer, PipeWireSource};
 #[cfg(feature = "return-audio")]
 use openrelay_proto::control::Feature;
-use openrelay_proto::control::{ErrorCode, PeerRole, RemoteAction};
+use openrelay_proto::control::{ConfigKey, ConfigValue, EffectivePolicy, ErrorCode, PeerRole, RemoteAction};
 use openrelay_proto::wire::{decode_frame, encode_message, ControlMessage};
 use openrelay_transport::enrollment::{EnrollOutcome, EnrollReject, EnrollServer, EnrollmentToken};
 use openrelay_transport::identity::{self, SpkiPin};
@@ -40,7 +40,7 @@ use crate::control::{ControlError, ControlRegistry, IdentityGrant, SharedControl
 use crate::pairing::{self, Pairing};
 #[cfg(feature = "return-audio")]
 use crate::return_audio::{effective_local_features, should_send, ReturnEmitter, RETURN_EPOCH};
-use crate::session::{SessionAudio, SessionAudioStats};
+use crate::session::{DecodedAudio, SessionAudio, SessionAudioStats};
 
 /// Tope de una línea de control que llega por el socket Unix.
 const MAX_LINE: usize = 64 * 1024;
@@ -180,6 +180,27 @@ struct EnrollWindow {
     owner: Option<u32>,
 }
 
+/// Daemon product policy: only the keys the audio path honours.
+///
+/// `audio.gain_db`, `audio.mute` and `audio.return_enabled` take the requested
+/// value. Everything else keeps the fail-closed `UnsupportedPolicy` behaviour:
+/// `config.set` answers `unsupported` and does not move the revision.
+#[derive(Debug, Clone, Copy, Default)]
+struct ProductPolicy;
+
+impl EffectivePolicy for ProductPolicy {
+    fn effective(
+        &self,
+        key: &ConfigKey,
+        requested: &ConfigValue,
+    ) -> Result<ConfigValue, ErrorCode> {
+        match key.as_str() {
+            "audio.gain_db" | "audio.mute" | "audio.return_enabled" => Ok(requested.clone()),
+            _ => Err(ErrorCode::Unsupported),
+        }
+    }
+}
+
 /// Proceso dueño del estado. El socket Unix y el UDP de QUIC los atiende el
 /// mismo hilo: el estado de control no es `Send` y no se parte en dos.
 pub struct ProductRuntime {
@@ -207,7 +228,7 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
         (None, _) => None,
     };
 
-    let mut control = SharedControl::new(registry);
+    let mut control = SharedControl::with_policy(registry, Box::new(ProductPolicy));
     control
         .open_local(IdentityGrant {
             device_id: config.local_device_id.clone(),
@@ -895,6 +916,11 @@ impl ProductRuntime {
             .poll(&mut quic.server, &live)
             .map_err(RuntimeError::Control)?;
         flush_transmit(&quic.socket, &mut quic.server)?;
+        // The mute belongs to the PC and is re-read every tick: a CLI
+        // `config.set` cuts the virtual microphone without touching the phone mute.
+        let muted = self.control.muted();
+        // La ganancia efectiva se relee en cada vuelta, por el mismo motivo.
+        let gain_db = self.control.gain_db();
         for session in live {
             let negotiated = match quic.server.identity(session) {
                 Some(pin) => self.control.opus_negotiated(&pin),
@@ -913,11 +939,17 @@ impl ProductRuntime {
                 continue;
             }
             while let Some(payload) = server.recv_audio_payload(session) {
-                if let Ok(frames) = state.handle(payload, now_us) {
-                    if let Some(source) = pipewire.as_mut() {
-                        for frame in frames {
-                            let _ = source.producer().push_slice(&frame.samples);
-                        }
+                if let Ok(mut frames) = state.handle(payload, now_us) {
+                    for frame in &mut frames {
+                        scale_gain(&mut frame.samples, gain_db);
+                    }
+                    let dropped = deliver_decoded(
+                        pipewire.as_mut().map(PipeWireSource::producer),
+                        &frames,
+                        muted,
+                    );
+                    if dropped > 0 {
+                        state.note_muted(dropped);
                     }
                 }
             }
@@ -945,6 +977,49 @@ impl ProductRuntime {
             .get(&session)
             .map(SessionAudio::stats)
     }
+}
+
+/// Escala un bloque PCM16 por `gain_db` y satura a los extremos del tipo.
+///
+/// `0.0` dB es identidad: el bloque no se toca. El factor es `10^(db/20)`; el
+/// redondeo va al entero más cercano y un pico que no cabe se recorta, no
+/// envuelve. El silencio sigue siendo silencio.
+fn scale_gain(samples: &mut [i16], gain_db: f32) {
+    if gain_db == 0.0 {
+        return;
+    }
+    let factor = 10f32.powf(gain_db / 20.0);
+    if !factor.is_finite() {
+        return;
+    }
+    for sample in samples.iter_mut() {
+        let scaled = f32::from(*sample) * factor;
+        *sample = scaled
+            .round()
+            .clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16;
+    }
+}
+
+/// Writes decoded samples to the virtual microphone.
+///
+/// With an effective `audio.mute` of `true` the ring is not touched: every
+/// block is dropped and the number of dropped blocks is returned so it can be
+/// counted in [`SessionAudioStats::dropped_muted`]. Once mute is off, the ring
+/// receives samples again on the next tick.
+fn deliver_decoded(
+    producer: Option<&mut SampleProducer>,
+    frames: &[DecodedAudio],
+    muted: bool,
+) -> u64 {
+    if muted {
+        return frames.len() as u64;
+    }
+    if let Some(producer) = producer {
+        for frame in frames {
+            let _ = producer.push_slice(&frame.samples);
+        }
+    }
+    0
 }
 
 /// Sesiones elegibles para el retorno en esta vuelta.
@@ -1208,18 +1283,116 @@ mod tests {
     }
 
     #[test]
-    fn without_provision_quic_stays_off_and_set_is_refused_without_applicator() {
+    fn product_policy_applies_mute_and_leaves_other_keys_unsupported() {
         let (mut runtime, ready) = start(&RuntimeConfig::default()).expect("local start");
         assert!(!runtime.quic_enabled());
         assert!(ready.quic_gap.is_some());
         assert!(ready.server_pin.is_none());
-        // Sin aplicador de hardware no hay ACK: el set se rechaza y la
-        // revisión no se mueve.
+        assert!(!runtime.control.muted(), "mute starts off");
+
+        // `audio.mute` is effective: the set is applied, the revision moves and
+        // the stored value is true.
         let set = runtime.local_line(
             r#"{"request_id":"t-1","op":"config.set","args":{"key":"audio.mute","value":true,"expected_revision":0}}"#,
         );
-        assert_eq!(set["ok"], false, "{set}");
-        assert_eq!(set["error"]["code"], "unsupported", "{set}");
-        assert_eq!(runtime.revision(), 0);
+        assert_eq!(set["ok"], true, "{set}");
+        assert_eq!(set["result"]["revision"], 1, "{set}");
+        assert_eq!(runtime.revision(), 1);
+        assert!(runtime.control.muted(), "the audio path reads the mute");
+
+        let get = runtime.local_line(
+            r#"{"request_id":"t-2","op":"config.get","args":{"key":"audio.mute"}}"#,
+        );
+        assert_eq!(get["ok"], true, "{get}");
+        assert_eq!(
+            get["result"]["payload"]["effective"]["value"], true,
+            "effective mute is true: {get}"
+        );
+
+        // A key the audio path does not honour stays fail-closed and does not
+        // move the revision.
+        let other = runtime.local_line(
+            r#"{"request_id":"t-3","op":"config.set","args":{"key":"audio.jitter_target_ms","value":10,"expected_revision":1}}"#,
+        );
+        assert_eq!(other["ok"], false, "{other}");
+        assert_eq!(other["error"]["code"], "unsupported", "{other}");
+        assert_eq!(runtime.revision(), 1, "{other}");
+    }
+
+    /// `audio.gain_db` tiene aplicador: el set se acepta, la revisión sube y el
+    /// efectivo que lee el bombeo es el pedido. Una clave sin aplicador sigue
+    /// respondiendo `unsupported` sin mover la revisión.
+    #[test]
+    fn gain_set_is_applied_and_other_keys_stay_unsupported() {
+        let (mut runtime, _) = start(&RuntimeConfig::default()).expect("local start");
+        let set = runtime.local_line(
+            r#"{"request_id":"g-1","op":"config.set","args":{"key":"audio.gain_db","value":6.0,"expected_revision":0}}"#,
+        );
+        assert_eq!(set["ok"], true, "{set}");
+        assert_eq!(set["result"]["revision"], 1, "{set}");
+        assert_eq!(set["result"]["payload"]["applied"], true, "{set}");
+        assert_eq!(
+            set["result"]["payload"]["effective"]["value"], 6.0,
+            "effective is what was asked: {set}"
+        );
+        assert_eq!(runtime.revision(), 1, "{set}");
+        assert_eq!(runtime.control.gain_db(), 6.0);
+
+        let other = runtime.local_line(
+            r#"{"request_id":"g-2","op":"config.set","args":{"key":"audio.jitter_target_ms","value":10,"expected_revision":1}}"#,
+        );
+        assert_eq!(other["ok"], false, "{other}");
+        assert_eq!(other["error"]["code"], "unsupported", "{other}");
+        assert_eq!(runtime.revision(), 1, "{other}");
+    }
+
+    /// `0` dB es identidad; `+6` dB duplica y satura sin envolver; `-6` dB
+    /// reduce a la mitad; el silencio no deja de ser silencio.
+    #[test]
+    fn gain_scales_pcm16_and_saturates_without_wrapping() {
+        let unity = [i16::MIN, -1000, 0, 1000, i16::MAX];
+        let mut unchanged = unity;
+        scale_gain(&mut unchanged, 0.0);
+        assert_eq!(unchanged, unity, "0 dB is identity");
+
+        let mut louder = [1000i16, 20000, i16::MAX, -1000, -20000];
+        scale_gain(&mut louder, 6.0);
+        assert_eq!(louder[0], 1995, "+6 dB is about 2x");
+        assert_eq!(louder[1], i16::MAX, "positive peaks saturate");
+        assert_eq!(louder[2], i16::MAX, "full scale does not wrap");
+        assert_eq!(louder[3], -1995, "+6 dB keeps the sign");
+        assert_eq!(louder[4], i16::MIN, "negative peaks saturate");
+
+        let mut quieter = [1000i16, -1000, i16::MAX];
+        scale_gain(&mut quieter, -6.0);
+        assert_eq!(quieter[0], 501, "-6 dB is about half");
+        assert_eq!(quieter[1], -501, "-6 dB keeps the sign");
+        assert_eq!(quieter[2], 16422, "-6 dB scales full scale down");
+
+        let mut silence = [0i16; 4];
+        scale_gain(&mut silence, 12.0);
+        assert_eq!(silence, [0i16; 4], "silence stays silent");
+    }
+
+    #[test]
+    fn muted_samples_do_not_reach_the_ring_and_come_back_when_unmuted() {
+        let (mut producer, consumer) = openrelay_audio_linux::ring::ring(480);
+        let frames = [DecodedAudio {
+            epoch: 7,
+            seq: 1,
+            samples: vec![123i16; 240],
+        }];
+        let mut audio = SessionAudio::new(false);
+
+        let dropped = deliver_decoded(Some(&mut producer), &frames, true);
+        audio.note_muted(dropped);
+        assert_eq!(dropped, 1);
+        assert_eq!(audio.stats().dropped_muted, 1, "mute discard is counted");
+        assert_eq!(consumer.available(), 0, "muted: nothing reaches the ring");
+
+        let dropped = deliver_decoded(Some(&mut producer), &frames, false);
+        audio.note_muted(dropped);
+        assert_eq!(dropped, 0);
+        assert_eq!(consumer.available(), 240, "unmuted: samples flow again");
     }
 }

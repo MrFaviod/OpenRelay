@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,11 +26,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -455,6 +458,7 @@ private fun AdvancedSection(state: HomeUiState, actions: HomeActions) {
         }
         if (state.advancedExpanded) {
             GainBlock(state, actions)
+            ReturnBlock(state, actions)
         }
     }
 }
@@ -493,6 +497,79 @@ private fun GainBlock(state: HomeUiState, actions: HomeActions) {
                 .fillMaxWidth()
                 .semantics { contentDescription = requested }
                 .testTag("gain"),
+        )
+    }
+}
+
+/**
+ * Control del retorno PC→teléfono. Encender pide confirmar el aviso de eco:
+ * el altavoz puede volver a entrar por el micrófono. Sin sesión el switch queda
+ * deshabilitado y el texto dice por qué.
+ */
+@Composable
+private fun ReturnBlock(state: HomeUiState, actions: HomeActions) {
+    var confirming by remember { mutableStateOf(false) }
+    val label = stringResource(R.string.return_title)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = label, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = stringResource(R.string.return_honesty),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Switch(
+                checked = state.returnOn,
+                enabled = state.returnAvailable,
+                onCheckedChange = { on ->
+                    if (on) confirming = true else actions.onReturnChange(false)
+                },
+                modifier = Modifier
+                    .semantics { contentDescription = label }
+                    .testTag("return-switch"),
+            )
+            Text(
+                text = stringResource(if (state.returnOn) R.string.return_on else R.string.return_off),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (!state.returnAvailable) {
+            Text(
+                text = stringResource(R.string.return_needs_session),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text(text = stringResource(R.string.return_echo_title)) },
+            text = { Text(text = stringResource(R.string.return_echo_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirming = false
+                        actions.onReturnChange(true)
+                    },
+                ) {
+                    Text(text = stringResource(R.string.return_echo_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = false }) {
+                    Text(text = stringResource(R.string.return_echo_cancel))
+                }
+            },
         )
     }
 }

@@ -1343,11 +1343,15 @@ impl ControlSession {
             }
         };
         match spec.scope {
-            ConfigScope::Local => {
+            // A local key is the daemon owner's: the remote panel cannot write
+            // it, but the local CLI (same machine, already authorized on the
+            // Unix socket) is exactly who owns these values.
+            ConfigScope::Local if self.peer.role().is_remote() => {
                 let response = error(&set.request_id, ErrorCode::LocalKey, "config key is local");
                 self.cache.store(&set.request_id, &op, &response, now_ms);
                 return Outcome::reply(response);
             }
+            ConfigScope::Local => {}
             ConfigScope::Readonly => {
                 let response = error(&set.request_id, ErrorCode::Denied, "config key is readonly");
                 self.cache.store(&set.request_id, &op, &response, now_ms);

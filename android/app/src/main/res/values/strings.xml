@@ -62,9 +62,19 @@
     <string name="advanced_show">Advanced</string>
     <string name="advanced_hide">Hide advanced</string>
     <string name="gain_title">Gain</string>
-    <string name="gain_honesty">Moving this saves what you ask for. It does not change the audio.</string>
+    <string name="gain_honesty">Sent to the PC. Changes the microphone volume when a session is open.</string>
     <string name="gain_requested">Requested: %1$d dB</string>
     <string name="gain_effective">Effective: %1$d dB</string>
     <string name="gain_effective_unavailable">Effective: unavailable</string>
+    <string name="return_title">Return audio</string>
+    <string name="return_honesty">Plays the PC audio on this phone while a session is open.</string>
+    <string name="return_needs_session">Start the microphone and wait for the session with the PC.</string>
+    <string name="return_on">On</string>
+    <string name="return_off">Off</string>
+    <string name="return_echo_title">Echo warning</string>
+    <string name="return_echo_body">Phone audio can come back through the microphone. Use headphones or lower the volume before turning this on.</string>
+    <string name="return_echo_confirm">Turn on</string>
+    <string name="return_echo_cancel">Cancel</string>
+    <string name="return_failed">The session did not accept return audio. The PC may not have granted the capability.</string>
     <string name="version_label">Version %1$s</string>
 </resources>

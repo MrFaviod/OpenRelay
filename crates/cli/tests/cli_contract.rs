@@ -197,9 +197,16 @@ fn daemon_has_no_tcp_listeners() {
 /// Clave compartida real del catálogo (`audio.gain_db`: número, paso 0.5).
 const KEY: &str = "audio.gain_db";
 
+/// Clave shared válida que la política de producto no aplica.
+const UNAPPLIED_KEY: &str = "audio.jitter_target_ms";
+
 fn set_line(id: &str, rev: u64, value: &str) -> String {
+    set_line_for(KEY, id, rev, value)
+}
+
+fn set_line_for(key: &str, id: &str, rev: u64, value: &str) -> String {
     format!(
-        r#"{{"request_id":"{id}","op":"config.set","args":{{"key":"{KEY}","value":{value},"expected_revision":{rev}}}}}"#
+        r#"{{"request_id":"{id}","op":"config.set","args":{{"key":"{key}","value":{value},"expected_revision":{rev}}}}}"#
     )
 }
 
@@ -244,18 +251,18 @@ fn config_set_without_applicator_is_unsupported_without_mutation() {
     let _d = start_daemon(&sock);
 
     // Sin aplicador de hardware el set no se aplica: error honesto, sin ACK.
-    let refused = raw_request(&sock, &set_line("set-1", 0, "3.5"));
+    let refused = raw_request(&sock, &set_line_for(UNAPPLIED_KEY, "set-1", 0, "20"));
     assert_eq!(refused["request_id"], "set-1");
     assert_eq!(refused["ok"], false, "{refused}");
     assert_eq!(refused["error"]["code"], "unsupported", "{refused}");
 
-    let got = raw_request(&sock, &get_line("get-1", Some(KEY)));
+    let got = raw_request(&sock, &get_line("get-1", Some(UNAPPLIED_KEY)));
     assert_eq!(got["ok"], true, "{got}");
     assert_eq!(got["result"]["revision"], 0);
-    assert_eq!(got["result"]["payload"]["effective"]["value"], 0.0);
+    assert_eq!(got["result"]["payload"]["effective"]["value"], 10);
 
     let out = Command::new(OPENRELAY)
-        .args(["config", "get", KEY, "--socket"])
+        .args(["config", "get", UNAPPLIED_KEY, "--socket"])
         .arg(&sock)
         .output()
         .expect("ejecutar openrelay config get");
@@ -268,7 +275,15 @@ fn config_set_cli_refusal_exits_one_without_mutation() {
     let _d = start_daemon(&sock);
 
     let out = Command::new(OPENRELAY)
-        .args(["config", "set", KEY, "-6", "--rev", "0", "--socket"])
+        .args([
+            "config",
+            "set",
+            UNAPPLIED_KEY,
+            "20",
+            "--rev",
+            "0",
+            "--socket",
+        ])
         .arg(&sock)
         .output()
         .expect("ejecutar openrelay config set");
@@ -289,12 +304,42 @@ fn repeated_request_id_replays_refusal_without_applying() {
     let sock = tmp.0.join("openrelay").join("control.sock");
     let _d = start_daemon(&sock);
 
-    let first = raw_request(&sock, &set_line("idem-1", 0, "3.5"));
-    let again = raw_request(&sock, &set_line("idem-1", 0, "3.5"));
+    let first = raw_request(&sock, &set_line_for(UNAPPLIED_KEY, "idem-1", 0, "20"));
+    let again = raw_request(&sock, &set_line_for(UNAPPLIED_KEY, "idem-1", 0, "20"));
     assert_eq!(first, again);
     assert_eq!(first["error"]["code"], "unsupported", "{first}");
     let caps = raw_request(&sock, r#"{"request_id":"cap-i","op":"capabilities"}"#);
     assert_eq!(caps["result"]["revision"], 0, "{caps}");
+}
+#[test]
+fn config_set_gain_db_is_applied_and_moves_the_revision() {
+    let tmp = TempDir::new("gain");
+    let sock = tmp.0.join("openrelay").join("control.sock");
+    let _d = start_daemon(&sock);
+
+    let out = Command::new(OPENRELAY)
+        .args(["config", "set", KEY, "6", "--rev", "0", "--socket"])
+        .arg(&sock)
+        .output()
+        .expect("ejecutar openrelay config set");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout JSON");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["result"]["revision"], 1, "{v}");
+
+    let got = raw_request(&sock, &get_line("gain-get-1", Some(KEY)));
+    assert_eq!(got["ok"], true, "{got}");
+    assert_eq!(got["result"]["revision"], 1, "{got}");
+    assert_eq!(
+        got["result"]["payload"]["effective"]["value"].as_f64(),
+        Some(6.0),
+        "{got}"
+    );
 }
 #[test]
 fn unknown_key_and_invalid_value_return_correlated_errors() {
@@ -385,4 +430,53 @@ fn slow_unterminated_line_is_rejected_as_too_large() {
     let v: serde_json::Value = serde_json::from_str(resp.trim_end()).expect("respuesta JSON");
     assert_eq!(v["ok"], false);
     assert_eq!(v["error"]["code"], "too_large");
+}
+
+/// `devices grant ... return` es el camino de producto: escribe el flag en
+/// `identities.json` (lo que lee el daemon al arrancar) y no toca el resto de
+/// capacidades. Volver a pedirlo es idempotente.
+#[test]
+fn devices_grant_return_persists_the_capability() {
+    let dir = TempDir::new("grant-return");
+    let hex = "aa".repeat(32);
+    let identities = dir.0.join("identities.json");
+    fs::write(
+        &identities,
+        format!(
+            r#"{{"version":1,"identities":[{{"spki":"{hex}","mic":true,"control_read":true,"control_write":true,"return_audio":false}}]}}"#
+        ),
+    )
+    .expect("identities.json");
+
+    let grant = Command::new(OPENRELAY)
+        .args(["devices", "grant", &hex, "return", "--state-dir"])
+        .arg(&dir.0)
+        .output()
+        .expect("ejecutar grant");
+    assert!(
+        grant.status.success(),
+        "grant falló: {}",
+        String::from_utf8_lossy(&grant.stderr)
+    );
+
+    let doc: serde_json::Value =
+        serde_json::from_slice(&fs::read(&identities).expect("releer")).expect("json");
+    assert_eq!(doc["identities"][0]["return_audio"], true, "{doc}");
+    assert_eq!(doc["identities"][0]["mic"], true, "el resto se conserva: {doc}");
+    assert_eq!(
+        doc["identities"][0]["control_write"], true,
+        "el resto se conserva: {doc}"
+    );
+
+    let again = Command::new(OPENRELAY)
+        .args(["devices", "grant", &hex, "return", "--state-dir"])
+        .arg(&dir.0)
+        .output()
+        .expect("ejecutar grant otra vez");
+    assert!(again.status.success(), "segundo grant falló");
+    assert!(
+        String::from_utf8_lossy(&again.stdout).contains("already granted"),
+        "{}",
+        String::from_utf8_lossy(&again.stdout)
+    );
 }
