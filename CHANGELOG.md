@@ -2,6 +2,27 @@
 
 All notable changes to OpenRelay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-20
+
+Documentation now matches what was executed. No protocol change.
+
+### Added
+
+- `openrelay devices remove <fingerprint>`: revokes an approved phone, removes it from `identities.json`, drops it from the live ACL and closes its session.
+- `openrelay status` reports sessions alive right now instead of a cumulative counter.
+- `scripts/e2e/run.sh`: end-to-end harness on `ubuntu:24.04` with PipeWire, WirePlumber and pipewire-pulse, `install.sh` from a local tarball, and a synthetic phone; 28 checks ending in `E2E: PASS`.
+- Docs: the emulator real-app run with measured RMS/frequency, and an explicit list of what is still unproven.
+
+### Changed
+
+- Android build `versionName 0.2.1`, `versionCode 3`.
+- `install.sh` checks the downloaded binary for `libpipewire` and `libopus` **before** installing and aborts with the package names unless `OPENRELAY_FORCE=1`.
+- Documentation corrections: `audio.gain_db` is stored but not applied; `audio.mute` is phone-side only; Opus is not negotiated by the app (PCM16 in practice); latency figures are targets, not measurements; return audio is not available; every `config set` answers `unsupported`; the systemd unit writes both `$XDG_RUNTIME_DIR` and `~.config`.
+
+### Fixed
+
+- The Android app reports a closed or rejected session instead of showing a dead link, and reconnects on its own after a daemon restart.
+
 ## [0.2.0] - 2026-11-19
 
 Pairing and streaming work end to end.
@@ -40,5 +61,6 @@ First developer preview.
 - Optional SpeexDSP noise suppression and opt-in audio return to the phone.
 - `install.sh`, systemd `--user` unit, release tarballs.
 
+[0.2.1]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/MrFaviod/OpenRelay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MrFaviod/OpenRelay/releases/tag/v0.1.0

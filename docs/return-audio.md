@@ -26,6 +26,11 @@ Para apagarlo:
 - Pon `audio.return_enabled = false` (o elimina la clave, que ya vale `false` por defecto).
 - El daemon se compila con la feature de Cargo `return-audio`, **apagada por defecto**; un binario sin ella no puede emitir retorno aunque la config lo pida.
 
+En v0.2.1 el retorno **no está disponible en el producto**: `config set` responde
+`unsupported` para cualquier clave (no hay aplicador), la app no anuncia la
+feature y el CLI no concede la capacidad ACL `return_audio`. Lo descrito aquí es
+el diseño del crate, no una función que se pueda activar hoy.
+
 ## Aviso de eco
 
 Antes de activar el retorno, el extremo Android debe mostrar un aviso de eco/feedback: el audio que suena en el dispositivo puede volver a entrar por su micrófono y realimentarse. Sin ese aviso, el retorno no se activa. El aviso es responsabilidad del cliente Android; el contrato no lo sustituye.

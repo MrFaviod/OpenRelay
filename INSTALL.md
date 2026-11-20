@@ -50,28 +50,29 @@ What it does, step by step:
 2. Resolves the latest release, or the one in `OPENRELAY_VERSION`.
 3. Downloads `openrelay-<version>-<target>.tar.gz` and `SHA256SUMS`.
 4. **Verifies the checksum.** On a mismatch it stops and installs nothing.
-5. Installs `openrelay` into `~.local/bin` (mode 0755) and `openrelay.service` into `~.config/systemd/user/`. It does **not** enable the unit.
-6. Warns you about any missing shared library or a `PATH` that lacks `~.local/bin`.
+5. Checks the downloaded binary for missing shared libraries (`libpipewire`, `libopus`) **before installing** and aborts with the package names unless `OPENRELAY_FORCE=1` is set.
+6. Installs `openrelay` into `~.local/bin` (mode 0755) and `openrelay.service` into `~.config/systemd/user/`. It does **not** enable the unit, and it warns if `~.local/bin` is not in your `PATH`.
 
 It never uses `sudo`, and by default it writes only under your home directory.
 
 | Variable | Effect |
 |---|---|
-| `OPENRELAY_VERSION=v0.2.0` | install a specific release |
+| `OPENRELAY_VERSION=v0.2.1` | install a specific release |
 | `OPENRELAY_BIN_DIR=/some/dir` | install the binary somewhere else |
 | `OPENRELAY_NO_UNIT=1` | skip the systemd unit |
+| `OPENRELAY_FORCE=1` | install even when `libpipewire` or `libopus` is missing |
 | `OPENRELAY_UNINSTALL=1` | remove the binary and the unit |
 
 Example:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | OPENRELAY_VERSION=v0.2.0 sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | OPENRELAY_VERSION=v0.2.1 sh
 ```
 
 ## Linux: manual install from a release
 
 ```sh
-VERSION=0.2.0
+VERSION=0.2.1
 TARGET=x86_64-unknown-linux-gnu # or aarch64-unknown-linux-gnu
 BASE=https://github.com/MrFaviod/OpenRelay/releases/download/v$VERSION
 
@@ -87,7 +88,7 @@ install -Dm0644 "openrelay-$VERSION/openrelay.service" ~.config/systemd/user/ope
 The release tarball contains four files:
 
 ```text
-openrelay-0.2.0
+openrelay-0.2.1
   openrelay the daemon and CLI
   openrelay.service optional systemd --user unit
   README.md packaging notes
@@ -118,7 +119,7 @@ Logs go to the user journal:
 journalctl --user -u openrelay.service -f
 ```
 
-The unit runs with your own UID and a hardened sandbox (`ProtectSystem=strict`, `NoNewPrivileges`, and so on). It can only write to `$XDG_RUNTIME_DIR`. To keep it running after you log out, `loginctl enable-linger $USER` is needed, and that may require an administrator. Details are in [docs/systemd.md](docs/systemd.md).
+The unit runs with your own UID and a hardened sandbox (`ProtectSystem=strict`, `NoNewPrivileges`, and so on). It can only write to `$XDG_RUNTIME_DIR` and `~.config` (`ReadWritePaths=%t %h.config`): the control socket lives in the former and the daemon identity in `~.config/openrelay`. To keep it running after you log out, `loginctl enable-linger $USER` is needed, and that may require an administrator. Details are in [docs/systemd.md](docs/systemd.md).
 
 ## Firewall
 
@@ -149,13 +150,13 @@ sudo firewall-cmd --reload
 3. Launch **OpenRelay** and grant the microphone permission. Notification permission is optional, but it lets you stop and mute from the shade.
 
 > [!NOTE]
-> The v0.2.0 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs by QR and streams the microphone to the PC.
+> The v0.2.1 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC (a pasted `openrelay://pair` URI is the proven path; QR scanning from a camera is untested on a physical phone) and streams the microphone to the PC as PCM16.
 
 ## Pair a phone
 
 1. Check that the daemon answers (`openrelay status`) and that UDP **47000-47001** is open in the host firewall ([Firewall](#firewall)).
 2. On the PC run `openrelay pair`. `--ttl N` sets the window in seconds (1-300, default 120); `--advertise IP` overrides the LAN address put in the QR when the PC has several interfaces (an IP literal, not a hostname); `--yes` approves the first phone without asking.
-3. The terminal prints an `openrelay://pair?v=1&h=…` URI and a QR. In the app tap **Emparejar con PC** and scan it, or paste the URI when the camera is unavailable.
+3. The terminal prints an `openrelay://pair?v=1&h=…` URI and a QR. In the app tap **Emparejar con PC** and paste the URI (the proven path). Scanning the QR with the camera is implemented but untested on a physical phone.
 4. The phone shows **Esperando aprobación en la PC…**. The PC prints the device fingerprint (`Dispositivo: …`) and asks `¿Aprobar este dispositivo? [y/N]`; answer `y`.
 5. The app switches to **Emparejado con** the host address. Start capture: the app shows **Enviando a** the host and the PC's `openrelay status` reports one session with `pipewire: {"ok": true}`.
 6. On Linux, choose **`openrelay-mic`** as the microphone in your conferencing or recording app. `openrelay devices` lists the paired identity and its capabilities.

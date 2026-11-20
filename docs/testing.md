@@ -1,5 +1,10 @@
 # Pruebas extremo a extremo (audio real)
 
+Dos pruebas cubren el camino completo: el arnés sintético `scripts/e2e/run.sh` y
+una corrida de la app Android real sobre un emulador. Sólo lo que ambas (o una, con
+su alcance declarado) observaron se presenta como probado; el resto queda en
+[Qué no está probado](#qué-no-está-probado).
+
 `scripts/e2e/run.sh` levanta un contenedor `ubuntu:24.04` (arm64) con una
 sesión D-Bus, PipeWire, WirePlumber y pipewire-pulse corriendo como el usuario
 sin privilegios `relay`, compila OpenRelay, lo instala con `install.sh` desde un
@@ -59,6 +64,38 @@ Variables útiles: `IMAGE` (tag de la imagen, por defecto
   vivas; ahora informa las vivas y `devices remove` se refleja de inmediato.
 - `install.sh` acepta `OPENRELAY_BASE_URL` para instalar desde un directorio
   local (`file://…`) sin tocar el código de descarga.
+
+## App real en un emulador (Android 16 arm64)
+
+La app Android real (APK debug) corrió en un contenedor Android con Android 16
+arm64. El micrófono se alimentó por un HAL simulado desde un FIFO con un tono de
+440 Hz. El emparejamiento se hizo pegando la URI `openrelay://pair` (no con la
+cámara). Resultados observados:
+
+- `pw-record` desde `openrelay-mic`: RMS −21.08 dBFS, tono en ~440 Hz
+  (autocorrelación 440.37 Hz); `parec` desde la misma fuente: RMS −21.72 dBFS.
+- `audio.stats`: `pcm16_frames` creciendo durante el flujo.
+- `openrelay devices remove <fingerprint>`: la app mostró
+  «Sin conexión: sesión cerrada antes de autorizar» y no volvió a conectar.
+- `kill` del daemon y reinicio: la app reconectó sola en ~2 s y el audio siguió.
+- Arreglo asociado (commit `8a02ce8`): la app ahora informa sesiones cerradas o
+  rechazadas en vez de quedarse mostrando un enlace muerto.
+
+## Qué no está probado
+
+Estas capacidades no tienen evidencia de ejecución y no deben presentarse como
+funcionales en la documentación:
+
+- Escaneo de QR con cámara física (sólo se pegó la URI; el escaneo de cámara no
+  se ejercitó en un teléfono real).
+- Teléfono físico por Wi-Fi (la corrida fue en un emulador en el mismo host).
+- Latencia extremo a extremo, batería y consumo.
+- Varios teléfonos transmitiendo a la vez.
+- La unidad `systemd --user` ejecutando el daemon bajo una sesión de escritorio
+  real.
+- `audio.gain_db`: la app guarda el valor pero ninguna muestra se escala.
+- Opus: el decodificador existe y se prueba, pero la app no lo negocia; el flujo
+  real es PCM16.
 
 ## Última ejecución PASS
 

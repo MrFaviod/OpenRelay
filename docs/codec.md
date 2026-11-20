@@ -1,9 +1,11 @@
 # Códec Opus
 
-**Estado: implementado a nivel de crate, no integrado en la sesión.** El camino
-PCM16 fijo de sigue siendo el contrato por defecto y no se modifica. Este
-documento describe `openrelay-codec`, sus perfiles y sus límites; no afirma calidad
-por escucha ni latencia extremo a extremo medida.
+**Estado: implementado a nivel de crate, no integrado en la sesión.** La app
+Android todavía no negocia Opus; el flujo real es PCM16 y así lo declaran el
+README y la matriz de compatibilidad. El camino PCM16 fijo de sigue siendo
+el contrato por defecto y no se modifica. Este documento describe
+`openrelay-codec`, sus perfiles y sus límites; no afirma calidad por escucha ni
+latencia extremo a extremo medida.
 
 ## Perfiles
 

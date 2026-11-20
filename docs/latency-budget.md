@@ -68,7 +68,8 @@ arnés vive en `tools/measure/` y la evidencia en `artifacts/latency/`.
   cuenta como evidencia.
 
 Estado actual: **sin medición física**. No hay baseline físico ni dispositivo de referencia
-medido; estas cifras no se presentan como logradas. Cuando exista evidencia
+medido; estas cifras no se presentan como logradas. El README no publica cifras de
+latencia: sólo este documento las menciona, y como objetivo. Cuando exista evidencia
 válida se actualizará el bloque `verify:latency-budget`; hasta entonces conserva
 `proposed_not_measured` para no declarar mediciones inexistentes.
 
