@@ -1,13 +1,8 @@
 # ADR-0002 — Identidad de cliente: mTLS con firma externa, y su límite Android
 
-- **Estado: propuesto y condicionado. pending. No cierra.**
-- **Ámbito:** `crates/transport` (identidad, sesión, enrolamiento), corte.
+- **Estado:** Accepted in part; pairing as shipped is described in docs/security/pairing.md.
 - **Fecha:** 2026-11-14.
-- **Decide:** («¿cómo se autentica el cliente Android sin exportar la clave
-  de Keystore?») — **parcialmente**: se fija el camino, no se acredita Android.
-- **Relacionado:** [ADR-0001](0001-transport.md)
-  [emparejamiento](../security/pairing.md)
-  [modelo de amenaza](../security/threat-model.md), [protocolo v1](../protocol.md).
+- **Relacionado:** [ADR-0001](0001-transport.md), [emparejamiento](../security/pairing.md), [modelo de amenaza](../security/threat-model.md), [protocolo v1](../protocol.md).
 
 ## 1. Contexto
 
@@ -21,9 +16,8 @@ de cliente: son de este ADR.
 La restricción dura es Android: una clave de `AndroidKeyStore` **no es
 exportable**. Cualquier diseño que necesite los bytes de la clave privada en
 memoria del proceso queda descartado de entrada. `verify_peer(true)` por sí solo
-no acredita un cliente, y el plan ya registró que en quiche esa opción **aún
-acepta clientes sin certificado** si no se comprueba `peer_cert`
-explícitamente.
+no acredita un cliente, y en quiche esa opción **aún acepta clientes sin
+certificado** si no se comprueba `peer_cert` explícitamente.
 
 ## 2. Decisión
 
@@ -59,7 +53,7 @@ explícitamente.
 | 0-RTT | `max_early_data_size = 0` / `enable_early_data = false` | Igual |
 | Audio/control/ticket | Rechazado con cierre `0x210` | Permitido según capacidades |
 
-El cliente de enrolamiento valida el **pin del certificado efímero antes de
+El cliente de enrolamiento valida el **pin del certificado del servidor antes de
 enviar el token**: `EnrollClient::connect` construye el verificador con pin y el
 token sólo se escribe en `send_token`, que exige `is_ready`. Un pin incorrecto
 aborta el handshake y el token nunca sale del dispositivo.
@@ -73,8 +67,8 @@ aborta el handshake y el token nunca sale del dispositivo.
   el enum y en el `match`, pero hoy es inalcanzable por esa ruta.
 - Comparación en tiempo constante; motivos de rechazo acotados:
   `NoWindow`, `Expired`, `Reused`, `Mismatch`, `Version`, `Malformed`.
-- El enrolamiento **no crea identidad persistente ni ACL**: eso queda para
-  . `EnrollmentEvent::Accepted` no provisiona nada.
+- El enrolamiento sólo entrega el pin aprobado: `EnrollmentEvent::Accepted` no
+  provisiona nada por sí mismo.
 - `EnrollmentToken` no imprime su valor en `Debug`.
 
 ### 2.3 Parser SPKI
@@ -93,7 +87,7 @@ parser estándar en vez de offsets propios.
 
 ## 3. Lo que Android todavía no acredita
 
-Este ADR **no** cierra. Lo que existe es el gancho, no el puente:
+Este ADR fija el camino, no el puente:
 
 - **No hay puente JNI.** No se escribió ninguna clase Kotlin/Java que implemente
   `Signature.getInstance("SHA256withECDSA")` sobre una `PrivateKeyEntry` de
@@ -103,88 +97,46 @@ Este ADR **no** cierra. Lo que existe es el gancho, no el puente:
 - **No hay clave no exportable probada.** El firmador de host tiene la clave en
   memoria; demuestra el contrato del trait, no la propiedad de no exportación.
 
-Por eso el estado es pendiente, y ninguna prueba de este corte puede presentarse como
-.
-
-## 4. Requisitos observables
-
-| # | Requisito | Cómo se comprueba | Evidencia |
-|---|---|---|---|
-| I1 | Sesión sin certificado de cliente rechazada | `session_without_client_certificate_is_rejected` | Verde |
-| I2 | Certificado válido sin entrada en ACL denegado | `valid_certificate_without_acl_is_denied` | Verde |
-| I3 | Pin de servidor incorrecto falla antes de autorizar | `wrong_server_pin_fails_before_authorization` | Verde |
-| I4 | Certificado de servidor caducado rechazado | `expired_server_certificate_is_rejected` | Verde |
-| I5 | Cliente con certificado de CA ajena rechazado | `client_certificate_from_foreign_ca_is_rejected` | Verde |
-| I6 | Ancla de enrolamiento no autoriza sesión | `enrollment_anchor_does_not_authorize_session` | Verde |
-| I7 | Firmador externo invocado en el `CertificateVerify` | `assert!(signer.signatures > 0)` en cliente y servidor | Verde (firmador de test) |
-| I8 | Pin SPKI coincide con oráculo OpenSSL independiente | `pin_coincide_con_sha256_de_spki_openssl` | Verde |
-| I9 | DER malformado, truncado, bytes extra y longitud no mínima rechazados | `identity_pin`: vector `30 83 00 01 80`, cuerpo original 384B byteidéntico y longitud consistente; original aceptado | Padre 11 PASS, exit0; negativo no-canónico aislado corregido durante consolidación |
-| I10 | `keys_match` impide firmar con clave distinta de la certificada | lectura de `identity::certified_key` | Presente en código |
-| I11 | Enrolamiento acepta token válido **sin** certificado de cliente | `enrollment_accepts_valid_token_without_client_certificate` | Verde |
-| I12 | Pin erróneo aborta **antes** de enviar el token | `wrong_pin_aborts_before_sending_token` | Verde |
-| I13 | Ventana caducada y token que no coincide, rechazados | `expired_window_is_rejected`, `wrong_token_is_rejected` | Verde |
-| I13b | Un segundo intento con la misma ventana se rechaza | ruta real: tras aceptar, `self.window = None`; el reintento cae en `EnrollReject::NoWindow` | Rechazo observable; **la variante `Reused` no es alcanzable hoy** |
-| I14 | Audio, control y ticket rechazados en enrolamiento | `audio_control_and_ticket_are_rejected_on_enroll` | Verde |
-| I15 | Clave de Keystore no exportable firmando el handshake en Android | ejecución en dispositivo con clave generada en Keystore | **Pendiente — ** |
-| I16 | Revocación de identidad cierra sesiones e invalida tickets | prueba de revocación | **Pendiente — ** |
-
-Las suites se ejecutaron con `cargo test --locked -p openrelay-transport`: 11 pruebas
-de `identity_pin`, 8 de `enrollment_boundary` y 7 de `tls_identity_gate`
-26 pasadas y exit 0 en el corte del padre.
-
-## 5. Alternativas rechazadas
+## 4. Alternativas rechazadas
 
 | Alternativa | Motivo |
 |---|---|
-| **Exportar la clave de Keystore a PEM** | Keystore no exporta claves privadas; copiar un PEM es exactamente lo que el plan prohíbe. No aprobado. |
+| **Exportar la clave de Keystore a PEM** | Keystore no exporta claves privadas; copiar un PEM es exactamente lo que el diseño prohíbe. No aprobado. |
 | **Secreto en almacenamiento interno cifrado como fallback** | Cambia la promesa: la clave ya no es hardware no exportable. Exigiría aprobación explícita y un ADR propio; no es default. |
 | **Identidad app-layer con challenge-response** | Prevista como camino alternativo si no hay puente de firma; exige un protocolo de autenticación estándar completo, revisado y ligado al canal TLS; disponer de `export_keying_material` no define por sí solo ese protocolo. No se elige mientras el camino mTLS sea viable. |
-| **`verify_peer(true)` como sustituto de mTLS** | No acredita cliente: sigue aceptando conexiones sin certificado. Prohibido por I3 del modelo de amenaza. |
+| **`verify_peer(true)` como sustituto de mTLS** | No acredita cliente: sigue aceptando conexiones sin certificado. Prohibido por el modelo de amenaza. |
 | **TOFU silencioso** | Prohibido: una identidad desconocida no se acepta ni se recuerda sin aprobación local. |
 | **0-RTT con reanudación** | Prohibido; además deshabilitado en ambos extremos. |
 | **Certificado autofirmado por el cliente sin CA** | Sin ancla de confianza no hay autoridad que emitir ni revocar. |
 
-## 6. Riesgos y límites declarados
+## 5. Riesgos y límites declarados
 
 - **El pin SPKI identifica la clave, no el dispositivo.** Un mismo certificado
   copiado a otro dispositivo da el mismo pin. La defensa es que la clave no sea
-  exportable; mientras eso no se acredite en Android (I15), la propiedad no está
+  exportable; mientras eso no se acredite en Android, la propiedad no está
   probada.
-- **La ACL es un mapa en memoria** indexado por pin. No hay persistencia
-  revocación ni cuotas por identidad en este corte; ambas son.
-- **Cobertura host acotada:** capabilities parciales y entrada ACL sin grants tienen cinco pruebas públicas; cuatro runners adicionales comprueban cola vacía para audio/control válidos denegados y controles positivos. Padre GREEN y review dirigida sin findings, cierre36d6cd1. Intento adversarial con early data dispuesto observa ausencia de tickets y tipo0RTT en la primera flight de reconexión, con handshake completo; store siempre descarta y contador take acumulado no prueba consulta nueva. No acredita rechazo de datagrama0RTT entrante ni imposibilidad global de reanudación.
+- **La ACL es un mapa en memoria** indexado por pin. La persistencia, la
+  revocación y las cuotas por identidad se apoyan en el archivo de identidades
+  del daemon y en `openrelay devices remove`.
 - **`Capabilities` se evalúa en el servidor por operación** (`mic`
   `control_read`, `control_write`, `return_audio`), no en el cliente. Un cliente
   malicioso que abra un stream antes de autorizar recibe cierre `0x103`.
 - **Sin cuotas medidas por identidad.** El modelo de amenaza pide «límites
   numéricos de flood y cuotas por identidad» con valores medidos; aquí sólo hay
-  los topes de §2.2 de ADR-0001, que son estructurales.
+  los topes estructurales de ADR-0001.
 - **La ventana de enrolamiento admite un solo cliente** y no tiene límite de
   intentos por IP; `attempts` cuenta intentos pero no los limita.
 - **`EnrollReject::Reused` no es alcanzable hoy.** Tras aceptar, la ventana pasa
   a `None`, así que el reintento se reporta como `NoWindow`. El rechazo es
   correcto (el segundo intento no entra), pero el motivo declarado en el enum no
-  se ejerce: o se conserva la ventana marcada como usada, o se retira la
-  variante. No se cambió en este corte porque toca código, no documentación.
+  se ejerce.
 
-## 7. Lo que este ADR no decide
+## 6. Lo que este ADR no decide
 
-- Persistencia de identidad, revocación y tickets:.
-- Formato exacto del QR y de los mensajes de emparejamiento:.
+- Persistencia de identidad, revocación y tickets.
+- Formato exacto del QR y de los mensajes de emparejamiento.
 - Almacenamiento de la CA local en Android y su provisión.
-- **No se declara cerrada**, ni, ni el protocolo congelado.
-
-## 8. Condiciones para pasar a «aceptado»
-
-1. **:** puente JNI real que firme con una clave `AndroidKeyStore` no
-   exportable y complete el handshake contra el daemon en un dispositivo; con
-   negativos y revisión del puente.
-2. **I15 verde** con la clave generada en el dispositivo, no importada.
-3. Contrato JNI/ABI definido antes de escribirlo y base disponible.
-4. Revisión independiente del rango completo y gate del padre sobre HEAD
-   congelado.
-
-Si no se puede cumplir, la salida **no** es exportar la clave: es elegir el
-camino app-layer estándar revisado con binding TLS, o declarar la limitación
-explícitamente en una revisión de este ADR. Cualquiera de las dos exige
-aprobación, no default.
+- El puente de firma Android queda como trabajo futuro; si no se puede cumplir
+  la salida **no** es exportar la clave: es elegir el camino app-layer estándar
+  revisado con binding TLS, o declarar la limitación explícitamente en una
+  revisión de este ADR.

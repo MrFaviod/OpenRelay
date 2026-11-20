@@ -1,58 +1,59 @@
-# Protocolo `openrelay` v1 — control y audio
+# `openrelay` v1 protocol — control and audio
 
+**Status: Wire contract v1.** This document and the three schemas in [`contracts/`](../contracts/) remain the authority for what is sent, what the limits are, and what is rejected. The crates implement it; they do not extend it. Transport, identity and pairing are specified separately.
 
-Alcance: una sesión autorizada Android → Linux. El audio viaja en datagramas no fiables; el control viaja en un stream fiable. **No se define códec, handshake TLS, descubrimiento ni API administrativa remota.**
+Scope: an authorized Android → Linux session. Audio travels in unreliable datagrams; control travels on a reliable stream. **This document does not define the codec, the TLS handshake, discovery or a remote administrative API.**
 
-## 1. Términos
+## 1. Terms
 
-| Término | Significado |
+| Term | Meaning |
 |---|---|
-| Daemon | Proceso Linux, autoridad única de configuración y revisión. |
-| Cliente | Android (sesión remota) o CLI local (Unix socket). |
-| Sesión | Conexión autenticada y autorizada del cliente al endpoint `session`. |
-| Enrolamiento | Ventana local y endpoint `enroll`; no transporta audio ni control operativo. |
-| `request_id` | Identificador de operación para ACK, error e idempotencia. |
-| `revision` | Contador monotónico de configuración del daemon. |
-| Época | Generación de un flujo de audio; cambia al reiniciar o reconfigurar el camino de audio. |
+| Daemon | Linux process, sole authority for configuration and revision. |
+| Client | Android (remote session) or local CLI (Unix socket). |
+| Session | Authenticated and authorized connection from the client to the `session` endpoint. |
+| Enrollment | Local window and `enroll` endpoint; it carries no audio or operational control. |
+| `request_id` | Operation identifier for ACK, error and idempotency. |
+| `revision` | Monotonic configuration counter of the daemon. |
+| Epoch | Generation of an audio stream; changes when the audio path restarts or is reconfigured. |
 
-## 2. Canales
+## 2. Channels
 
-| Canal | Transporte | Fiabilidad | Contenido |
+| Channel | Transport | Reliability | Content |
 |---|---|---|---|
-| Control | Stream fiable (QUIC stream en el candidato) | Entrega ordenada; errores explícitos | Mensajes JSON de este documento |
-| Audio | Datagramas (QUIC DATAGRAM en el candidato) | Sin retransmisión; descarte permitido | Un frame PCM16 por datagrama |
+| Control | Reliable stream (QUIC stream in the current transport) | Ordered delivery; explicit errors | JSON messages from this document |
+| Audio | Datagrams (QUIC DATAGRAM in the current transport) | No retransmission; discard allowed | One PCM16 frame per datagram |
 
-- El audio **nunca** se envía por el stream de control ni el control por datagramas de audio.
-- El control **no** se usa para transportar audio ni para «recuperar» frames perdidos.
-- El endpoint `enroll` sólo habla mensajes de enrolamiento; audio, control y tickets se rechazan allí (ver [`security/pairing.md`](security/pairing.md)).
+- Audio is **never** sent on the control stream, and control is never sent in audio datagrams.
+- Control is **not** used to carry audio or to "recover" lost frames.
+- The `enroll` endpoint only speaks enrollment messages; audio, control and tickets are rejected there (see [`security/pairing.md`](security/pairing.md)).
 
-## 3. Framing de control
+## 3. Control framing
 
-Cada mensaje de control ocupa exactamente un frame del stream:
+Each control message occupies exactly one stream frame:
 
 ```text
 +----------------+----------------------------------------+
-| u32 BE length | length bytes de JSON UTF-8 |
+| u32 BE length | length bytes of UTF-8 JSON |
 +----------------+----------------------------------------+
 ```
 
-| Campo | Tipo | Límite |
+| Field | Type | Limit |
 |---|---|---|
-| `length` | entero sin signo, big-endian | `1..=16384` |
-| payload | JSON UTF-8 | hasta 16384 bytes |
-| frame total | — | `4 + length` ≤ 16388 bytes |
+| `length` | unsigned integer, big-endian | `1..=16384` |
+| payload | UTF-8 JSON | up to 16384 bytes |
+| total frame | — | `4 + length` ≤ 16388 bytes |
 
-Reglas de codificación:
+Encoding rules:
 
-- UTF-8 sin BOM; sin compresión; sin concatenación de mensajes en un frame.
-- Sin claves duplicadas. Profundidad máxima de JSON: **8**. Máximo **64** claves por objeto y **64** elementos por array. Strings de hasta **1024** caracteres.
-- Enteros exactos en el rango `0..=9007199254740991` (2^53−1); no se usan números en punto flotante para revisiones, épocas, secuencias ni longitudes.
-- Un frame con `length` fuera de rango, JSON inválido, tipo desconocido o campo obligatorio ausente se rechaza con `invalid`; si el framing está corrupto, se cierra la conexión.
-- **v1 es estricto:** los objetos no admiten propiedades adicionales. Una extensión incompatible requiere `openrelay.control/v2` o un campo opcional declarado en una revisión posterior del esquema.
+- UTF-8 without BOM; no compression; no concatenation of messages in one frame.
+- No duplicate keys. Maximum JSON depth: **8**. At most **64** keys per object and **64** elements per array. Strings up to **1024** characters.
+- Exact integers in the range `0..=9007199254740991` (2^53−1); floating-point numbers are not used for revisions, epochs, sequences or lengths.
+- A frame with `length` out of range, invalid JSON, unknown type or a missing required field is rejected with `invalid`; if the framing is corrupt, the connection is closed.
+- **v1 is strict:** objects do not allow additional properties. An incompatible extension requires `openrelay.control/v2` or an optional field declared in a later revision of the schema.
 
-## 4. Envelope de control
+## 4. Control envelope
 
-Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema.json`](../contracts/control-v1.schema.json)):
+Every message is an object with this shape (schema: [`contracts/control-v1.schema.json`](../contracts/control-v1.schema.json)):
 
 ```json
 {
@@ -64,27 +65,27 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
 }
 ```
 
-| Campo | Tipo | Obligatorio | Límite / regla |
+| Field | Type | Required | Limit / rule |
 |---|---|---|---|
-| `schema_version` | string | sí | constante `openrelay.control/v1` |
-| `type` | string | sí | uno de los tipos de §5 |
-| `request_id` | string | peticiones y respuestas | `^[A-Za-z0-9_-]{1,64}$`; único por cliente y sesión |
-| `expected_revision` | entero | sólo `config.set` | `0..=2^53−1`; debe igualar la revisión actual |
-| `revision` | entero | `ack`, `capabilities`, `event` | `0..=2^53−1`; revisión resultante o actual |
-| `payload` | objeto | sí | según el tipo; máx. 64 claves |
+| `schema_version` | string | yes | constant `openrelay.control/v1` |
+| `type` | string | yes | one of the types in §5 |
+| `request_id` | string | requests and responses | `^[A-Za-z0-9_-]{1,64}$`; unique per client and session |
+| `expected_revision` | integer | `config.set` only | `0..=2^53−1`; must equal the current revision |
+| `revision` | integer | `ack`, `capabilities`, `event` | `0..=2^53−1`; resulting or current revision |
+| `payload` | object | yes | depends on the type; max. 64 keys |
 
-## 5. Mensajes v1
+## 5. v1 messages
 
-| Tipo | Dirección | `request_id` | `revision` | `payload` |
+| Type | Direction | `request_id` | `revision` | `payload` |
 |---|---|---|---|---|
-| `hello` | cliente → daemon | sí | no | `{role, version, protocol_version}` |
-| `capabilities` | ambas | sí | sí | objeto de capacidades (§7) |
-| `config.get` | cliente → daemon | sí | no | `{key: string \| null}` |
-| `config.set` | cliente → daemon | sí | no (`expected_revision` sí) | `{key, value}` |
-| `ack` | daemon → cliente | sí (eco) | sí | `{applied, requested, effective}` |
-| `error` | daemon → cliente | sí (eco) | no | `{code, message, retryable, current_revision?}` |
-| `event` | daemon → cliente | no | sí | `{name, data}` |
-| `ping` / `pong` | ambas | sí | no | `{}` (máx. 0 claves) |
+| `hello` | client → daemon | yes | no | `{role, version, protocol_version}` |
+| `capabilities` | both | yes | yes | capabilities object (§7) |
+| `config.get` | client → daemon | yes | no | `{key: string \| null}` |
+| `config.set` | client → daemon | yes | no (`expected_revision` yes) | `{key, value}` |
+| `ack` | daemon → client | yes (echo) | yes | `{applied, requested, effective}` |
+| `error` | daemon → client | yes (echo) | no | `{code, message, retryable, current_revision?}` |
+| `event` | daemon → client | no | yes | `{name, data}` |
+| `ping` / `pong` | both | yes | no | `{}` (max. 0 keys) |
 
 ### 5.1 `hello`
 
@@ -93,11 +94,11 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
   "payload": { "role": "android", "version": "0.2.1", "protocol_version": "openrelay.control/v1" } }
 ```
 
-`role` ∈ `android`, `linux-cli`, `linux-daemon`. El daemon responde `capabilities`. Una versión de protocolo distinta se rechaza con `version_unsupported`.
+`role` ∈ `android`, `linux-cli`, `linux-daemon`. The daemon replies with `capabilities`. A different protocol version is rejected with `version_unsupported`.
 
 ### 5.2 `config.get`
 
-`payload.key` es una clave concreta o `null` para el snapshot completo. La respuesta es un `ack` con `applied: true`, `requested: null` y `effective` con la clave o el snapshot completo. `config.get` no altera la revisión.
+`payload.key` is a specific key or `null` for the full snapshot. The response is an `ack` with `applied: true`, `requested: null` and `effective` containing the key or the full snapshot. `config.get` does not change the revision.
 
 ### 5.3 `config.set`
 
@@ -107,14 +108,14 @@ Todo mensaje es un objeto con esta forma (esquema: [`contracts/control-v1.schema
   "payload": { "key": "audio.gain_db", "value": 3.0 } }
 ```
 
-Reglas:
+Rules:
 
-1. `expected_revision` debe ser igual a la revisión actual del daemon. Si no, se devuelve `conflict` con `current_revision` y **no se aplica nada**.
-2. La clave debe existir y ser de alcance `shared`. Una clave `local` o `readonly` se rechaza con `local_key` / `denied` y no se aplica.
-3. El valor se valida contra tipo y rango de [`config-schema.md`](config-schema.md). Un valor inválido se rechaza con `invalid` y no se aplica.
-4. Si el valor efectivo coincide con el actual, se devuelve `ack` con `applied: false` y la revisión no cambia.
-5. Si se aplica, la revisión avanza exactamente **+1** y el `ack` devuelve `requested` y `effective`. `effective` puede diferir de `requested` por límites del dispositivo o del SO; el cliente debe mostrar ambos.
-6. El daemon emite un `event` `config.changed` con la revisión nueva y `data` `{key, requested, effective}` (valores, no pares) a los clientes suscritos.
+1. `expected_revision` must equal the daemon's current revision. Otherwise it returns `conflict` with `current_revision` and **nothing is applied**.
+2. The key must exist and have `shared` scope. A `local` or `readonly` key is rejected with `local_key` / `denied` and is not applied.
+3. The value is validated against the type and range in [`config-schema.md`](config-schema.md). An invalid value is rejected with `invalid` and is not applied.
+4. If the effective value equals the current one, it returns `ack` with `applied: false` and the revision does not change.
+5. If applied, the revision advances exactly **+1** and the `ack` returns `requested` and `effective`. `effective` may differ from `requested` because of device or OS limits; the client must show both.
+6. The daemon emits a `config.changed` `event` with the new revision and `data` `{key, requested, effective}` (values, not pairs) to subscribed clients.
 
 ### 5.4 `ack`
 
@@ -125,7 +126,7 @@ Reglas:
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
 ```
 
-`requested` es `null` en respuestas a `config.get` y en operaciones sin payload de cambio. `effective` nunca es `null`.
+`requested` is `null` in responses to `config.get` and in operations without a change payload. `effective` is never `null`.
 
 ### 5.5 `error`
 
@@ -135,13 +136,13 @@ Reglas:
                "current_revision": 9 } }
 ```
 
-`message` es texto corto (≤200 caracteres), sin secretos ni rutas internas. Catálogo completo en [`contracts/errors.md`](../contracts/errors.md).
+`message` is short text (≤200 characters), with no secrets or internal paths. Full catalog in [`contracts/errors.md`](../contracts/errors.md).
 
 ### 5.6 `event`
 
-Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.state`; cada nombre fija una forma **cerrada** de `data`, sin claves adicionales y sin objetos ni arrays anidados. `data` no contiene audio ni secretos. Un evento no requiere ACK ni `request_id`. La reconexión usa snapshot + eventos; no hay replay indefinido.
+Events from daemon → client. `payload.name` is `config.changed` or `session.state`; each name fixes a **closed** shape for `data`, with no additional keys and no nested objects or arrays. `data` contains no audio or secrets. An event requires no ACK or `request_id`. Reconnection uses snapshot + events; there is no indefinite replay.
 
-`config.changed` se emite tras un `config.set` aplicado, con la revisión nueva. `data.key` es la clave; `requested` y `effective` son los valores solicitado y efectivo, con las mismas restricciones por clave que `config.set` (pueden diferir por límites del dispositivo o del SO).
+`config.changed` is emitted after an applied `config.set`, with the new revision. `data.key` is the key; `requested` and `effective` are the requested and effective values, with the same per-key restrictions as `config.set` (they may differ because of device or OS limits).
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
@@ -149,7 +150,7 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
                "data": { "key": "audio.gain_db", "requested": 3.0, "effective": 3.0 } } }
 ```
 
-`session.state` informa el cambio de estado de la sesión: `active` al autorizar y `closed` al cerrar. `detail` es opcional, texto corto (≤200) sin secretos ni rutas internas.
+`session.state` reports a session state change: `active` when authorized and `closed` when closed. `detail` is optional short text (≤200) with no secrets or internal paths.
 
 ```json
 { "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
@@ -157,27 +158,27 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
                "data": { "state": "closed", "detail": "client closed" } } }
 ```
 
-| Evento | Campos obligatorios | Campos opcionales | Límites |
+| Event | Required fields | Optional fields | Limits |
 |---|---|---|---|
-| `config.changed` | `key`, `requested`, `effective` | — | `key` 1..=64 con el patrón de §4; `requested`/`effective` según [`config-schema.md`](config-schema.md) |
-| `session.state` | `state` | `detail` | `state` ∈ `active`, `closed`; `detail` ≤ 200 caracteres |
+| `config.changed` | `key`, `requested`, `effective` | — | `key` 1..=64 with the pattern in §4; `requested`/`effective` per [`config-schema.md`](config-schema.md) |
+| `session.state` | `state` | `detail` | `state` ∈ `active`, `closed`; `detail` ≤ 200 characters |
 
-## 6. Revisiones e idempotencia
+## 6. Revisions and idempotency
 
-- La revisión es un entero `0..=2^53−1`, propiedad exclusiva del worker de control del daemon.
-- Empieza en `0` al arrancar el proceso; **no se promete monotonicidad entre reinicios**. Tras reconectar, el cliente obtiene el snapshot y no asume nada de su revisión anterior.
-- Sólo un `config.set` aplicado incrementa la revisión; `config.get`, `ping`, `event` y los rechazos no la cambian.
-- **Idempotencia:** el daemon guarda la última respuesta (`ack` o `error`) por `request_id` en una caché acotada por sesión:
-  - máximo **64** entradas, evicción FIFO;
+- The revision is an integer `0..=2^53−1`, owned exclusively by the daemon's control thread.
+- It starts at `0` when the process starts; **monotonicity across restarts is not promised**. After reconnecting, the client fetches the snapshot and assumes nothing about its previous revision.
+- Only an applied `config.set` increments the revision; `config.get`, `ping`, `event` and rejections do not change it.
+- **Idempotency:** the daemon stores the last response (`ack` or `error`) per `request_id` in a per-session bounded cache:
+  - at most **64** entries, oldest-first eviction;
   - TTL **60 s**;
-  - mismo `request_id` + mismo payload canónico ⇒ se devuelve la respuesta guardada y **no se reaplica**;
-  - mismo `request_id` + payload distinto ⇒ `error` con `request_id_reuse` (no retryable).
-- La caché se pierde al cerrar la sesión; el cliente debe reenviar con `expected_revision` o releer el snapshot. No hay idempotencia global entre sesiones.
-- El orden de mensajes dentro del stream es el orden de aplicación. El daemon no aplica dos `config.set` en paralelo: el worker de control es único.
+  - same `request_id` + same canonical payload ⇒ the stored response is returned and **nothing is reapplied**;
+  - same `request_id` + different payload ⇒ `error` with `request_id_reuse` (not retryable).
+- The cache is lost when the session closes; the client must resend with `expected_revision` or re-read the snapshot. There is no global idempotency across sessions.
+- Message order within the stream is application order. The daemon does not apply two `config.set` operations in parallel: there is a single control thread.
 
-## 7. Capacidades
+## 7. Capabilities
 
-`capabilities` describe qué puede pedir cada extremo y con qué límites (esquema: [`contracts/capabilities-v1.schema.json`](../contracts/capabilities-v1.schema.json)):
+`capabilities` describes what each side may ask for and with which limits (schema: [`contracts/capabilities-v1.schema.json`](../contracts/capabilities-v1.schema.json)):
 
 ```json
 {
@@ -200,119 +201,119 @@ Eventos del daemon → cliente. `payload.name` es `config.changed` o `session.st
 }
 ```
 
-- `remote_actions` sólo admite `config.read` y `config.write`. **No existe** una acción remota para iniciar o parar el micrófono, conceder permisos ni cambiar claves locales.
-- `mic.start`, `mic.stop` y `permission.request` son acciones **locales del dispositivo Android**; no tienen tipo de mensaje en v1. Un cliente que las pida por control recibe `unsupported` (o `local_key` si la petición es de configuración).
-- `config_keys` declara alcance `shared`, `local` o `readonly`; una clave local no se comparte entre dispositivos.
-- `audio.pcm16-48k-mono` es el perfil de audio base y debe anunciarse para recibir audio. `audio.opus-48k-mono` es opcional: habilita el perfil `type=2` sólo si **ambos** extremos la anuncian; si falta en cualquiera, se usa PCM16 (§8.3).
-- `audio.return-pcm16-48k-mono` es opcional y declara el **retorno** Linux→Android (§8.4): sólo se envía si **ambos** extremos la anuncian y la clave local `audio.return_enabled` vale `true`.
+- `remote_actions` only accepts `config.read` and `config.write`. There is **no** remote action to start or stop the microphone, grant permissions or change local keys.
+- `mic.start`, `mic.stop` and `permission.request` are **local actions of the Android device**; they have no message type in v1. A client that asks for them over control receives `unsupported` (or `local_key` if the request is a configuration one).
+- `config_keys` declares scope `shared`, `local` or `readonly`; a local key is not shared between devices.
+- `audio.pcm16-48k-mono` is the base audio profile and must be announced to receive audio. `audio.opus-48k-mono` is optional: it enables the `type=2` profile only if **both** sides announce it; if either is missing, PCM16 is used (§8.3).
+- `audio.return-pcm16-48k-mono` is optional and declares **return** audio Linux→Android (§8.4): it is only sent if **both** sides announce it and the local key `audio.return_enabled` is `true`.
 
-## 8. Framing de audio
+## 8. Audio framing
 
-Un datagrama de audio contiene **exactamente un frame**. Cabecera de **28 bytes**, big-endian, seguida de payload. El perfil base (`type=1`) usa PCM16LE mono de 480 bytes; la extensión compatible `type=2` transporta un paquete Opus variable (§8.3):
+An audio datagram contains **exactly one frame**. A **28-byte** big-endian header is followed by the payload. The base profile (`type=1`) uses PCM16LE mono with 480 bytes; the compatible `type=2` extension carries a variable Opus packet (§8.3):
 
-| Offset | Bytes | Campo | Tipo | Valor / límite v1 |
+| Offset | Bytes | Field | Type | Value / v1 limit |
 |---:|---:|---|---|---|
-| 0 | 1 | `type` | u8 | `1` (audio PCM16LE) o `2` (audio Opus; §8.3) |
+| 0 | 1 | `type` | u8 | `1` (PCM16LE audio) or `2` (Opus audio; §8.3) |
 | 1 | 1 | `version` | u8 | `1` |
-| 2 | 1 | `flags` | u8 | bits 0–1; `0x01` silence, `0x02` discontinuity; bits 2–7 deben ser 0 |
+| 2 | 1 | `flags` | u8 | bits 0–1; `0x01` silence, `0x02` discontinuity; bits 2–7 must be 0 |
 | 3 | 1 | `header_len` | u8 | `28` |
-| 4 | 4 | `epoch` | u32 BE | `1..=4294967295`; `0` inválido |
-| 8 | 4 | `seq` | u32 BE | `0..=4294967295`; +1 por frame, wrap permitido |
-| 12 | 2 | `sample_count` | u16 BE | `240` en type=1; `120`, `240` o `480` en type=2 |
-| 14 | 2 | `duration_us` | u16 BE | `5000` en type=1; `2500`, `5000` o `10000` en type=2, coherente con `sample_count` |
+| 4 | 4 | `epoch` | u32 BE | `1..=4294967295`; `0` is invalid |
+| 8 | 4 | `seq` | u32 BE | `0..=4294967295`; +1 per frame, wrap allowed |
+| 12 | 2 | `sample_count` | u16 BE | `240` in type=1; `120`, `240` or `480` in type=2 |
+| 14 | 2 | `duration_us` | u16 BE | `5000` in type=1; `2500`, `5000` or `10000` in type=2, consistent with `sample_count` |
 | 16 | 4 | `sample_rate_hz` | u32 BE | `48000` |
 | 20 | 2 | `channels` | u16 BE | `1` |
-| 22 | 2 | `reserved` | u16 BE | `0`; otro valor ⇒ rechazo |
-| 24 | 4 | `payload_len` | u32 BE | `480` en type=1; `1..=1172` en type=2 |
-| 28 | variable | payload | bytes | type=1: PCM16LE, 240 muestras (480 bytes); type=2: un paquete Opus (1..=1172 bytes) |
+| 22 | 2 | `reserved` | u16 BE | `0`; any other value ⇒ rejection |
+| 24 | 4 | `payload_len` | u32 BE | `480` in type=1; `1..=1172` in type=2 |
+| 28 | variable | payload | bytes | type=1: PCM16LE, 240 samples (480 bytes); type=2: one Opus packet (1..=1172 bytes) |
 
-Total del datagrama: **508 bytes** para type=1; **29..=1200 bytes** para type=2. Tamaño máximo aceptado: **1200 bytes** (presupuesto conservador de datagrama QUIC). Un datagrama mayor, con `payload_len` distinto de `sample_count × channels × 2` (type=1) o distinto de los bytes recibidos (type=2), o con constantes distintas se rechaza y se cuenta; no se fragmenta a este nivel.
+Total datagram: **508 bytes** for type=1; **29..=1200 bytes** for type=2. Maximum accepted size: **1200 bytes** (a conservative QUIC datagram budget). A larger datagram, one with `payload_len` different from `sample_count × channels × 2` (type=1) or from the bytes received (type=2), or one with different constants is rejected and counted; it is not fragmented at this level.
 
-### 8.1 Semántica de época y secuencia
+### 8.1 Epoch and sequence semantics
 
-- `epoch` identifica una generación del flujo. Empieza en `1` al autorizar la sesión y se incrementa al reiniciar el audio o cambiar el camino que altere el formato/reloj. `0` es inválido.
-- `seq` empieza en `0` en cada época y se incrementa en 1 por frame; el wrap a `0` es válido y se detecta por época/tiempo, no por comparación ingenua.
-- Un frame con `epoch` menor que el actual es **viejo**: se descarta, no se reproduce.
-- Un `seq` duplicado en la misma época se descarta (no se reproduce dos veces).
-- Un hueco de `seq` no se recupera por retransmisión: el receptor decide PLC/silencio y lo cuenta. Nunca se reordena audio más allá de la ventana de reordenamiento (**20 ms**).
-- `flags.silence` indica payload silencioso; el payload sigue presente (480 bytes en type=1; 1..=1172 bytes en type=2). `flags.discontinuity` marca el primer frame tras un hueco o cambio de época; el receptor reinicia su ventana de jitter.
-- El emisor no envía audio antes de que la sesión esté autorizada. El receptor descarta y cuenta cualquier datagrama de audio recibido en `enroll` o antes de la autorización.
+- `epoch` identifies a generation of the stream. It starts at `1` when the session is authorized and increments when audio restarts or the path changes in a way that alters format/clock. `0` is invalid.
+- `seq` starts at `0` in each epoch and increments by 1 per frame; wrap to `0` is valid and is detected by epoch/time, not by naive comparison.
+- A frame with an `epoch` lower than the current one is **old**: it is discarded, not played.
+- A duplicate `seq` in the same epoch is discarded (it is not played twice).
+- A `seq` gap is not recovered by retransmission: the receiver decides PLC/silence and counts it. Audio is never reordered beyond the reorder window (**20 ms**).
+- `flags.silence` marks a silent payload; the payload is still present (480 bytes in type=1; 1..=1172 bytes in type=2). `flags.discontinuity` marks the first frame after a gap or epoch change; the receiver resets its jitter window.
+- The sender does not send audio before the session is authorized. The receiver discards and counts any audio datagram received during `enroll` or before authorization.
 
-### 8.2 Cadencia y colas
+### 8.2 Cadence and queues
 
-- Cadencia nominal: **200 frames/s** (5 ms) en el perfil de 240 muestras; con 120 o 480 muestras la cadencia escala para mantener 48 000 muestras/s (§8.3). Tolerancia de ráfaga del receptor: 10 frames; tasa sostenida máxima 250 frames/s en el perfil de 5 ms.
-- El emisor mantiene una cola de salida muy corta (≤ 2 frames) y purga antes de enviar; el audio viejo se descarta, nunca se recupera.
-- El receptor usa un jitter buffer acotado (objetivo configurable 5–40 ms) y descarta por deadline. El límite exacto de capacidad se fija en; el contrato no permite crecimiento por ráfaga.
-- El desfase de reloj (drift) se corrige en el consumidor con contador de muestras y resampling lento; no se comparan relojes monotónicos Android/Linux directamente.
+- Nominal cadence: **200 frames/s** (5 ms) in the 240-sample profile; with 120 or 480 samples the cadence scales to keep 48,000 samples/s (§8.3). Receiver burst tolerance: 10 frames; maximum sustained rate 250 frames/s in the 5 ms profile.
+- The sender keeps a very short output queue (≤ 2 frames) and purges before sending; old audio is discarded, never recovered.
+- The receiver uses a bounded jitter buffer (target configurable 5–40 ms) and discards by deadline. The exact capacity limit is fixed in the implementation; the contract does not allow burst-driven growth.
+- Clock drift is corrected in the consumer with a sample counter and slow resampling; Android/Linux monotonic clocks are not compared directly.
 
-### 8.3 Perfil Opus negociado (type=2)
+### 8.3 Negotiated Opus profile (type=2)
 
-Extensión compatible de v1 para transportar Opus sin cambiar el perfil base. La cabecera es la misma de 28 bytes; sólo cambian los valores permitidos y el payload:
+A backward-compatible v1 extension to carry Opus without changing the base profile. The header is the same 28 bytes; only the allowed values and the payload change:
 
-| Campo | Valor en type=2 |
+| Field | Value in type=2 |
 |---|---|
 | `type` | `2` |
-| `version`, `header_len`, `sample_rate_hz`, `channels`, `reserved` | iguales que type=1 (`1`, `28`, `48000`, `1`, `0`) |
-| `flags` | mismos bits 0–1; bits 2–7 en 0 |
-| `sample_count` | `120`, `240` o `480` |
-| `duration_us` | `2500` con 120, `5000` con 240, `10000` con 480 |
+| `version`, `header_len`, `sample_rate_hz`, `channels`, `reserved` | same as type=1 (`1`, `28`, `48000`, `1`, `0`) |
+| `flags` | same bits 0–1; bits 2–7 at 0 |
+| `sample_count` | `120`, `240` or `480` |
+| `duration_us` | `2500` with 120, `5000` with 240, `10000` with 480 |
 | `payload_len` | `1..=1172` (1200 − 28) |
-| payload | exactamente **un paquete Opus** (RFC 6716), opaco para el framing |
+| payload | exactly **one Opus packet** (RFC 6716), opaque to the framing |
 
-- El datagrama completo mide `28 + payload_len`, es decir **29..=1200 bytes**; `payload_len` debe coincidir con los bytes recibidos. Un `payload_len` en `0` o mayor que `1172`, un `sample_count` fuera de `{120,240,480}`, una `duration_us` incoherente o cualquier constante alterada se rechaza y se cuenta, igual que en type=1.
-- **Negociación:** `type=2` sólo se usa si **ambos** extremos anuncian la capacidad `audio.opus-48k-mono` en `capabilities` (§7). Si falta en cualquiera de los dos, el emisor usa `type=1` PCM16LE y el receptor no debe recibir type=2. Un receptor que recibe type=2 sin haberlo negociado descarta el datagrama y lo cuenta; no hay mensaje de control por datagrama.
-- **Cambio de perfil:** al pasar de PCM16 a Opus o al revés se incrementa `epoch`, `seq` vuelve a `0` y el primer frame lleva `flags.discontinuity`. El receptor reinicia jitter y PLC con la nueva época.
-- **Cadencia:** se mantienen 48 000 muestras/s: 400 fps con 120 muestras (2.5 ms), 200 fps con 240 (5 ms) y 100 fps con 480 (10 ms); la ráfaga permitida sigue siendo 10 frames. `flags.silence` no elimina el payload: un frame silencioso sigue llevando un paquete Opus válido (DTX, si se usa, es decisión del codificador).
-- **Fuera de contrato:** bitrate, complexity, DTX/FEC, pre-skip del encoder y cualquier otro parámetro interno de Opus.
+- The full datagram is `28 + payload_len`, i.e. **29..=1200 bytes**; `payload_len` must match the bytes received. A `payload_len` of `0` or greater than `1172`, a `sample_count` outside `{120,240,480}`, an inconsistent `duration_us` or any altered constant is rejected and counted, as in type=1.
+- **Negotiation:** `type=2` is used only if **both** sides announce the `audio.opus-48k-mono` capability in `capabilities` (§7). If either is missing, the sender uses `type=1` PCM16LE and the receiver must not receive type=2. A receiver that gets type=2 without negotiation discards the datagram and counts it; there is no per-datagram control message.
+- **Profile change:** switching from PCM16 to Opus or back increments `epoch`, resets `seq` to `0`, and the first frame carries `flags.discontinuity`. The receiver resets jitter and PLC with the new epoch.
+- **Cadence:** 48,000 samples/s are maintained: 400 fps with 120 samples (2.5 ms), 200 fps with 240 (5 ms) and 100 fps with 480 (10 ms); the allowed burst remains 10 frames. `flags.silence` does not remove the payload: a silent frame still carries a valid Opus packet (DTX, if used, is an encoder decision).
+- **Outside the contract:** bitrate, complexity, DTX/FEC, encoder pre-skip and any other internal Opus parameter.
 
-El esquema [`contracts/audio-frame-v1.schema.json`](../contracts/audio-frame-v1.schema.json) mantiene el descriptor raíz para type=1 y describe type=2 en `$defs.audio_frame_opus`; `x-audio-profiles` enumera ambos perfiles y su capacidad.
+The [`contracts/audio-frame-v1.schema.json`](../contracts/audio-frame-v1.schema.json) schema keeps the root descriptor for type=1 and describes type=2 in `$defs.audio_frame_opus`; `x-audio-profiles` lists both profiles and their capability.
 
-### 8.4 Retorno Linux→Android (`type=1`)
+### 8.4 Return audio Linux→Android (`type=1`)
 
-Dirección inversa, opt-in y apagada por defecto (, 2026-11-19):
+Reverse direction, opt-in and off by default:
 
-- Reutiliza el frame `type=1` de §8 sin cambios: PCM16LE, 48 kHz, mono, 240 muestras y 480 bytes de payload. No hay perfil nuevo ni cabecera nueva.
-- Sólo se envía si **ambos** extremos anuncian `audio.return-pcm16-48k-mono` en `capabilities` **y** la clave local del daemon `audio.return_enabled` vale `true`. Si falta cualquiera de las dos condiciones, el daemon **no envía ni un datagrama** de retorno.
-- El retorno es un flujo independiente del micrófono Android→Linux: tiene su propia `epoch` y `seq`, y nunca se mezcla con el flujo de captura en el mismo datagrama ni en la misma época.
-- El extremo Android debe mostrar un aviso de eco/feedback antes de activar el retorno; sin ese aviso no se activa. La captura de audio de apps Android queda fuera de alcance.
-- Cómo se apaga y qué queda fuera de alcance: [`return-audio.md`](return-audio.md).
+- It reuses the `type=1` frame from §8 unchanged: PCM16LE, 48 kHz, mono, 240 samples and 480 bytes of payload. There is no new profile or header.
+- It is sent only if **both** sides announce `audio.return-pcm16-48k-mono` in `capabilities` **and** the daemon's local key `audio.return_enabled` is `true`. If either condition is missing, the daemon sends **not a single datagram** of return audio.
+- Return audio is a stream independent of the Android→Linux microphone stream: it has its own `epoch` and `seq`, and is never mixed with the capture stream in the same datagram or epoch.
+- The Android side must show an echo/feedback warning before enabling return audio; without that warning it is not enabled. Capturing audio from other Android apps is out of scope.
+- How it is disabled and what is out of scope: [`return-audio.md`](return-audio.md).
 
-## 9. Límites exactos v1
+## 9. Exact v1 limits
 
-| Elemento | Límite |
+| Item | Limit |
 |---|---|
-| Prefijo de longitud de control | 4 bytes BE |
-| Payload de control | 1..=16384 bytes |
-| Frame de control total | ≤ 16388 bytes |
-| Profundidad JSON | 8 |
-| Claves por objeto / elementos por array | 64 / 64 |
-| String JSON | 1024 caracteres |
-| Eventos | `config.changed`/`session.state`; `data` cerrada y plana (sin anidar objetos ni arrays) |
-| `request_id` | 1..=64 caracteres `[A-Za-z0-9_-]` |
-| Caché de idempotencia | 64 entradas, TTL 60 s, FIFO, por sesión |
-| Cabecera de audio | 28 bytes |
-| Payload de audio | 480 bytes (240 muestras × 1 canal × 2 bytes) |
-| Muestras por frame Opus | 120, 240 o 480 (2.5, 5 o 10 ms a 48 kHz) |
-| Payload de audio Opus | 1..=1172 bytes (exactamente un paquete Opus) |
-| Datagrama de audio | 508 bytes; máximo aceptado 1200 |
-| Datagrama de audio Opus | 29..=1200 bytes; máximo aceptado 1200 |
-| Frames por datagrama | 1 |
-| Ventana de reordenamiento | 20 ms |
-| Cadencia / ráfaga | 200 fps nominal; 250 fps sostenido; ráfaga 10 |
-| Jitter objetivo | 5–40 ms (configurable; valor por defecto 10 ms) |
+| Control length prefix | 4 bytes BE |
+| Control payload | 1..=16384 bytes |
+| Total control frame | ≤ 16388 bytes |
+| JSON depth | 8 |
+| Keys per object / elements per array | 64 / 64 |
+| JSON string | 1024 characters |
+| Events | `config.changed`/`session.state`; `data` closed and flat (no nested objects or arrays) |
+| `request_id` | 1..=64 characters `[A-Za-z0-9_-]` |
+| Idempotency cache | 64 entries, TTL 60 s, oldest-first, per session |
+| Audio header | 28 bytes |
+| Audio payload | 480 bytes (240 samples × 1 channel × 2 bytes) |
+| Samples per Opus frame | 120, 240 or 480 (2.5, 5 or 10 ms at 48 kHz) |
+| Opus audio payload | 1..=1172 bytes (exactly one Opus packet) |
+| Audio datagram | 508 bytes; maximum accepted 1200 |
+| Opus audio datagram | 29..=1200 bytes; maximum accepted 1200 |
+| Frames per datagram | 1 |
+| Reorder window | 20 ms |
+| Cadence / burst | 200 fps nominal; 250 fps sustained; burst 10 |
+| Jitter target | 5–40 ms (configurable; default 10 ms) |
 
-Estos límites son parte del contrato: y deben aplicarlos y probarlos. Un límite distinto requiere revisión del contrato, no un valor «razonable» en el código.
+These limits are part of the contract: the implementation must enforce and test them. A different limit requires a contract revision, not a "reasonable" value in code.
 
-## 10. Versionado y compatibilidad
+## 10. Versioning and compatibility
 
-- El major vive en `schema_version` (`openrelay.control/v1`, `openrelay.capabilities/v1`, `openrelay.audio-frame/v1`). Un major desconocido se rechaza con `version_unsupported`; no se intenta interpretar.
-- v1 no acepta campos desconocidos. Cambios aditivos compatibles se declaran explícitamente en una revisión documentada del esquema; los incompatibles abren v2.
-- El perfil de audio base es PCM16LE mono 48 kHz fijo. La extensión compatible `type=2` (Opus) se negocia con la capacidad `audio.opus-48k-mono` (§8.3); si falta en cualquiera de los dos extremos se usa PCM16. Cualquier otro códec o parámetro de wire requiere una fase posterior y un contrato nuevo.
-- La sesión valida versión y límites **antes** de aceptar audio o control operativo.
+- The major lives in `schema_version` (`openrelay.control/v1`, `openrelay.capabilities/v1`, `openrelay.audio-frame/v1`). An unknown major is rejected with `version_unsupported`; no attempt is made to interpret it.
+- v1 does not accept unknown fields. Compatible additive changes are declared explicitly in a documented schema revision; incompatible ones open v2.
+- The base audio profile is fixed PCM16LE mono 48 kHz. The compatible `type=2` (Opus) extension is negotiated with the `audio.opus-48k-mono` capability (§8.3); if it is missing on either side, PCM16 is used. Any other codec or wire parameter requires a new contract revision.
+- The session validates version and limits **before** accepting audio or operational control.
 
-## 11. Lo que este contrato no define
+## 11. What this contract does not define
 
-- Handshake TLS, pin SPKI, identidad de cliente, mTLS/Keystore o app-layer: [`security/pairing.md`](security/pairing.md) y el gate (/ADR-0002).
-- Transporte concreto (quiche/Quinn), descubrimiento mDNS y puertos: decisión de.
-- Parámetros internos de Opus (bitrate, complexity, DTX/FEC, pre-skip), DSP/reducción de ruido y métricas de latencia: fases. El wire v1 sólo transporta el paquete Opus opaco de §8.3.
-- API de la CLI y del socket Unix: se fija en; aquí sólo se asume que el daemon es la autoridad de configuración.
+- TLS handshake, SPKI pin, client identity, mTLS/Keystore or app-layer: [`security/pairing.md`](security/pairing.md) and the ADRs.
+- Concrete transport (quinn), mDNS discovery and ports: [ADR-0001](adr/0001-transport.md).
+- Internal Opus parameters (bitrate, complexity, DTX/FEC, pre-skip), DSP/noise reduction and latency metrics: [`codec.md`](codec.md), [ADR-0003](adr/0003-ns.md) and [`latency-budget.md`](latency-budget.md).
+- CLI and Unix socket API: [`cli-quickstart.md`](cli-quickstart.md); this document only assumes the daemon is the configuration authority.

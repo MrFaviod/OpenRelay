@@ -32,20 +32,4 @@ y verifica permisos (sin setuid/setgid, nada fuera del prefijo), que
 que dos ejecuciones produzcan el mismo `sha256`. No instala nada ni escribe
 fuera del directorio temporal; al terminar lo borra.
 
-## Bibliotecas en hosts con PipeWire staged
-
-Antes de comparar la unidad, `package.sh --check` ejecuta `openrelay service
-print-unit` desde el tarball temporal. Si el binario no carga sus bibliotecas
-el script termina con el error del cargador (por ejemplo, `libpipewire-0.3.so.0:
-cannot open shared object file`), no con un «no coincide».
-
-En un host con PipeWire instalado en el sistema no hace falta nada. Si se usa
-un PipeWire staged fuera de las rutas del cargador, exporta `LD_LIBRARY_PATH`
-a su directorio de bibliotecas antes de ejecutar el script:
-
-```sh
-export LD_LIBRARY_PATH=/ruta/al/pipewire/root/usr/lib/<triple>$LD_LIBRARY_PATH
-bash scripts/package.sh --check
-```
-
 El script no fija `LD_LIBRARY_PATH` ni conoce rutas del host.

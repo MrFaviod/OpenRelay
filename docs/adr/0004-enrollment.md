@@ -1,6 +1,6 @@
 # ADR-0004 — Enrolamiento: pendiente, aprobación local e identidad persistente
 
-- **Estado: aceptado para.** No cierra (ver [ADR-0002](0002-identity.md)).
+- **Estado:** Accepted. Describes enrollment as implemented.
 - **Ámbito:** `crates/transport/src/enrollment.rs` y `crates/daemon/src/pairing.rs`.
 
 ## Decisiones
@@ -25,7 +25,7 @@
 openrelay://pair?v=1&h=<host:port>&pin=<64 hex>&t=<64 hex>
 ```
 
-- `pin`: SPKI del certificado efímero del servidor de enrolamiento. El cliente
+- `pin`: SPKI del certificado del servidor de enrolamiento. El cliente
   aborta el handshake si no coincide, antes de enviar el token.
 - `t`: token de un solo uso (32 bytes).
 
@@ -40,7 +40,8 @@ openrelay://pair?v=1&h=<host:port>&pin=<64 hex>&t=<64 hex>
 
 ## Límites
 
-- Sin revocación todavía: quitar una identidad exige editar el archivo.
-- Sin UI: la aprobación es una llamada a `Pairing::approve` del daemon/CLI.
+- Revocación con `openrelay devices remove`: retira la identidad y cierra la
+  sesión abierta.
+- Sin UI en la app: la aprobación pasa por el daemon/CLI.
 - El token sigue con TTL ≤ 300 s y un solo uso por ventana.
 - El cliente no recibe ninguna capacidad por el enrolamiento.

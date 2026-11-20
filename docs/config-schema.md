@@ -1,5 +1,6 @@
 # Configuración v1 — requested/effective y claves locales
 
+The app exposes mute and a gain slider. Gain is stored and not applied yet. Return audio is not available.
 
 ## 1. Modelo
 
@@ -22,7 +23,7 @@
 | `audio.gain_db` | number | `-24.0..=24.0`, múltiplo de `0.5` | `0.0` | shared | Ganancia de captura; el valor efectivo puede quedar limitado por el dispositivo. |
 | `audio.mute` | boolean | `true` / `false` | `false` | shared | Silencia el flujo; no detiene el micrófono ni el FGS. |
 | `audio.jitter_target_ms` | integer | `5..=40` | `10` | shared | Objetivo del jitter buffer del receptor Linux. |
-| `audio.return_enabled` | boolean | `true` / `false` | `false` | **local** | Habilita el retorno de audio Linux→Android (,); apagado por defecto. Ver [`return-audio.md`](return-audio.md). |
+| `audio.return_enabled` | boolean | `true` / `false` | `false` | **local** | Habilita el retorno de audio Linux→Android; apagado por defecto. Ver [`return-audio.md`](return-audio.md). |
 | `ui.theme` | string | `system`, `light`, `dark` | `system` | **local** | Preferencia visual del dispositivo; no se comparte. |
 | `ui.text_scale` | number | `1.0..=2.0` | `1.0` | **local** | Accesibilidad local; no se comparte. |
 | `device.local_volume` | number | `0.0..=1.0` | `1.0` | **local** | Volumen local del dispositivo; no es ganancia del flujo. |
@@ -68,7 +69,7 @@ Clave local:
 
 ## 4. Archivo local
 
-Propuesta (la implementa): `$XDG_CONFIG_HOME/openrelay/config.toml`, sin secretos, escritura atómica y permisos del usuario.
+Propuesta: `$XDG_CONFIG_HOME/openrelay/config.toml`, sin secretos, escritura atómica y permisos del usuario.
 
 ```toml
 # Sólo configuración compartida y preferencias locales del daemon Linux.
@@ -86,7 +87,7 @@ text_scale = 1.0
 ```
 
 - Claves desconocidas o fuera de rango ⇒ el daemon no arranca con esa configuración y reporta el error; no se ignora en silencio.
-- El archivo no contiene token de enrolamiento, claves privadas, ACL ni material de identidad. Esos viven en el estado protegido del daemon (/), no en `config.toml`.
+- El archivo no contiene token de enrolamiento, claves privadas, ACL ni material de identidad. Esos viven en el estado protegido del daemon, no en `config.toml`.
 - Los valores por defecto se aplican sólo si la clave falta; un valor inválido nunca se sustituye por el default en silencio.
 
 ## 5. Validación y errores

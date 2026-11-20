@@ -1,6 +1,6 @@
 # Retorno de audio Linux→Android
 
-**Estado: implementado en el daemon bajo la feature `return-audio`, apagado por defecto.** La lógica vive en `crates/daemon/src/return_audio.rs`, la captura del monitor en `crates/audio-linux/src/monitor.rs` y la puerta en el runtime del daemon.
+**Estado: no disponible en 0.2.1.** El código existe en el daemon bajo la feature `return-audio`, apagado por defecto. La lógica vive en `crates/daemon/src/return_audio.rs`, la captura del monitor en `crates/audio-linux/src/monitor.rs` y la puerta en el runtime del daemon.
 
 ## Qué es
 
@@ -26,18 +26,19 @@ Para apagarlo:
 - Pon `audio.return_enabled = false` (o elimina la clave, que ya vale `false` por defecto).
 - El daemon se compila con la feature de Cargo `return-audio`, **apagada por defecto**; un binario sin ella no puede emitir retorno aunque la config lo pida.
 
-En v0.2.1 el retorno **no está disponible en el producto**: `config set` responde
-`unsupported` para cualquier clave (no hay aplicador), la app no anuncia la
-feature y el CLI no concede la capacidad ACL `return_audio`. Lo descrito aquí es
-el diseño del crate, no una función que se pueda activar hoy.
-
 ## Aviso de eco
 
 Antes de activar el retorno, el extremo Android debe mostrar un aviso de eco/feedback: el audio que suena en el dispositivo puede volver a entrar por su micrófono y realimentarse. Sin ese aviso, el retorno no se activa. El aviso es responsabilidad del cliente Android; el contrato no lo sustituye.
 
-## ACL `return_audio`: pending
+## Not available in 0.2.1
 
-El transporte exige la capacidad ACL `return_audio` para `send_audio` (además de las dos condiciones de opt-in). Hoy **no existe un camino de producto que la conceda**: `pairing::approve` sabe persistir el flag `return_audio` en el archivo de identidades y `pairing::load` lo relee, pero el CLI `openrelay` no expone ningún comando de emparejamiento/aprobación que lo ponga a `true`. Queda en **pendiente**: hasta que exista ese camino, una identidad aprobada no puede recibir retorno y el daemon no debe considerarlo disponible en producción. No se inventa aquí un mensaje ni un flag nuevo; concederlo requiere llamar a `pairing::approve` con `Capabilities::with_return_audio` desde el flujo de aprobación que se implemente.
+El transporte exige la capacidad ACL `return_audio` para `send_audio` (además de
+las dos condiciones de opt-in). Aunque `pairing::approve` sabe persistir el flag
+`return_audio` en el archivo de identidades y `pairing::load` lo relee, ningún
+camino del producto lo concede: la app no anuncia la feature y el CLI no expone
+un comando para otorgarla. Concederlo exige llamar a `pairing::approve` con
+`Capabilities::with_return_audio` desde un flujo de aprobación que todavía no
+existe.
 
 ## Fuera de alcance
 

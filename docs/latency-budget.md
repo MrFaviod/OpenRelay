@@ -1,10 +1,9 @@
-# Presupuesto de latencia y recursos —
+# Latency targets (not measured)
 
-documento fija objetivos y techos para poder medir después, y declara el método
-de cada cifra. Ningún número de aquí está logrado, benchmarkeado ni observado en
-un dispositivo. La prioridad del proyecto es la latencia en LAN; el entorno de
-host observado es Linux aarch64 nativo (Rust 1.80.1), no un
-teléfono.
+**Status: proposed targets, not measurements.** There is no physical baseline
+yet: this document sets targets and ceilings so they can be measured later, and
+declares the method for each number. No number here has been achieved
+benchmarked, or observed on a device. The project's priority is LAN latency.
 
 ## Presupuesto por etapa (propuesto)
 
@@ -45,9 +44,9 @@ El bloque siguiente es la suma de etapas del contrato; no mide latencia.
 
 ## Medición
 
-El presupuesto de arriba sigue siendo **propuesta, no medición**. El método
-físico, el fixture y los comandos están en `docs/measurement-method.md`; el
-arnés vive en `tools/measure/` y la evidencia en `artifacts/latency/`.
+El presupuesto de arriba sigue siendo **propuesta, no medición**. La medición
+física requiere un dispositivo de referencia, una captura con `pw-record` y la
+evidencia guardada con hash; hasta entonces no hay resultados.
 
 - **Latencia extremo a extremo:** p50/p95/p99 por detección de clics y
   correlación cruzada entre referencia y captura `pw-record`. La resolución
@@ -59,20 +58,14 @@ arnés vive en `tools/measure/` y la evidencia en `artifacts/latency/`.
 - **Drift de 1 h:** `cargo test -p openrelay-audio-core --test drift_1h -- --ignored`
   es la referencia simulada; la evidencia de hardware exige un stream real de
   60 min con `ppm` y `resyncs`.
-- **Soak de 8 h:** `python3 tools/measure/soak.py --hours 8...` reporta RSS
-  CPU, xruns, drops y `plc_frames` desde `/proc`, log de PipeWire y snapshot
-  de contadores. Un smoke corto no acredita el soak.
-- **Evidencia:** `python3 tools/measure/latency.py --plan
-  docs/measurement-method.md --require-evidence artifacts/latency/` queda sin
-  resultado sin capturas físicas hasheadas. `--dry-run` es sólo preflight y nunca
-  cuenta como evidencia.
+- **Evidencia:** cada captura se guarda con su hash y el entorno (modelo, SO
+  buffer de audio y punto de red). Sin captura física no hay cifra.
 
 Estado actual: **sin medición física**. No hay baseline físico ni dispositivo de referencia
 medido; estas cifras no se presentan como logradas. El README no publica cifras de
 latencia: sólo este documento las menciona, y como objetivo. Cuando exista evidencia
 válida se actualizará el bloque `verify:latency-budget`; hasta entonces conserva
 `proposed_not_measured` para no declarar mediciones inexistentes.
-
 ## Contadores idle y streaming
 
 `openrelay_audio_core::budget` separa dos acumuladores que nunca se mezclan:
@@ -121,11 +114,11 @@ streaming→idle→streaming, observación repetida, reinicio y saturación.
 | CPU streaming | 150 ms/s | ms/s | `utime+stime` de `/proc/<pid>/stat` por intervalo |
 | Artefacto | 8 MiB | bytes | binario release desplegado, no `target/` |
 | Hilos propios | 4 | hilos | por nombre/rol; ART/Compose/RenderThread aparte |
-| Heap de control | 64 KiB | bytes | worker de control; no incluye audio preasignado |
+| Heap de control | 64 KiB | bytes | hilo de control; no incluye audio preasignado |
 
 Los techos son cotas de propuesta. Cualquier medición futura se compara con
-`budget::check(recurso, observado)`; un exceso devuelve `Verdict::Over`, no un
-PASS.
+`budget::check(recurso, observado)`; un exceso devuelve `Verdict::Over`, no una
+aprobación.
 
 ## Memoria
 
@@ -148,19 +141,19 @@ por slot no describe la memoria real.
   `AUDIO_PATH_STATE_BYTES`; no se cuentan dentro del jitter buffer.
 - **Asignación transitoria en el camino de audio**: cero
   (`TRANSIENT_AUDIO_ALLOC_BYTES = 0`).
-- **Heap del worker de control**: presupuesto separado y acotado a 64 KiB. No
+- **Heap del hilo de control**: presupuesto separado y acotado a 64 KiB. No
   comparte cuenta con el audio preasignado.
 - **No contado**: heap y metadatos del allocador, pilas de hilos, buffers de
   sistema/Android y RSS. Esas cifras se miden aparte con `VmRSS` y no forman
   parte de estas constantes.
 
-Los valores de la tabla son los del host de compilación de este proyecto; las
+Los valores de la tabla son los del host de compilación; las
 constantes se derivan con `size_of` y el test falla si dejan de coincidir.
 
 ## Hilos Android
 
 Sólo los hilos propios de la app entran en el presupuesto: captura, red
-consumidor de jitter y worker de control (4). **ART, Compose y RenderThread son
+consumidor de jitter y hilo de control (4). **ART, Compose y RenderThread son
 hilos externos del sistema**: se miden por separado con Perfetto o
 `dumpsys`, y este presupuesto no los suma ni los presenta como propios.
 
@@ -171,8 +164,8 @@ hilos externos del sistema**: se miden por separado con Perfetto o
   lazo con relojes simulados; no es una prueba de hardware ni de LAN.
 - No elige dispositivo ni teléfono de referencia: la medición física queda
   pendiente y su referencia (modelo, SO, buffer de audio, punto de red) se
-  registrará al medir. El host de compilación es sólo el entorno de compilación y
-  test observado.
-- No aporta cifras logradas ni convierte un criterio global en PASS. Las
-  aportaciones quedan pendiente hasta la revisión independiente y la medición
+  registrará al medir. El host de compilación es sólo el entorno donde se
+  construye y se ejecutan las pruebas.
+- No aporta cifras logradas ni convierte un criterio global en aprobación. Las
+  cifras quedan como objetivos hasta la revisión independiente y la medición
   física.

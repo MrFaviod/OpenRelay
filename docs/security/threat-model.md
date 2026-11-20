@@ -1,106 +1,95 @@
-# Modelo de amenaza — `openrelay` v1
+# Threat model — `openrelay` v1
 
+**Status: Design constraints, not a passed security review.**
 
-Alcance: audio de micrófono Android → Linux por LAN, control bidireccional de configuración y estado, enrolamiento local y sesión autenticada. Quedan fuera: exposición a Internet, captura de audio de otras apps, retorno de audio (fase opt-in) y cualquier API administrativa remota.
+Scope: Android microphone audio → Linux over the LAN, bidirectional control of configuration and state, local enrollment and authenticated sessions. Out of scope: Internet exposure, capture of audio from other apps, return audio (opt-in, not available in 0.2.1) and any remote administrative API.
 
-## 1. Activos
+## 1. Assets
 
-| ID | Activo | Por qué importa |
+| ID | Asset | Why it matters |
 |---|---|---|
-| A1 | Audio del micrófono Android | Dato personal en tiempo real; su interceptación o inyección es la amenaza central. |
-| A2 | Configuración y estado de sesión | Afecta qué se captura, a qué volumen y si el micrófono está activo. |
-| A3 | Identidad persistente del daemon y del cliente | Es el ancla de las sesiones siguientes; suplantarla rompe toda la confianza. |
-| A4 | Ventana de enrolamiento, pin SPKI y token de un solo uso | Permite provisionar identidad; un token filtrado o reutilizado enrola un dispositivo ajeno. |
-| A5 | ACL, capacidades y tickets | Deciden qué puede hacer cada identidad; default deny. |
-| A6 | Logs, metadatos y contadores | No deben filtrar token, claves, audio ni identificadores innecesarios. |
-| A7 | Socket local de control | Un acceso indebido permite cambiar configuración y parar sesiones. |
-| A8 | Artefactos de build y release | Un binario o APK alterado anula el resto de controles. |
+| A1 | Android microphone audio | Real-time personal data; interception or injection is the central threat. |
+| A2 | Configuration and session state | Decides what is captured, at what volume and whether the microphone is active. |
+| A3 | Persistent daemon and client identity | It is the anchor for later sessions; impersonation breaks all trust. |
+| A4 | Enrollment window, SPKI pin and single-use token | It provisions identity; a leaked or reused token enrolls a foreign device. |
+| A5 | ACL, capabilities and tickets | They decide what each identity may do; default deny. |
+| A6 | Logs, metadata and counters | They must not leak tokens, keys, audio or unnecessary identifiers. |
+| A7 | Local control socket | Improper access allows changing configuration and stopping sessions. |
+| A8 | Build and release artifacts | A tampered binary or APK defeats every other control. |
 
-## 2. Fronteras de confianza
+## 2. Trust boundaries
 
-| ID | Frontera | Cruza |
+| ID | Boundary | What crosses it |
 |---|---|---|
-| B1 | App Android ↔ red LAN | Audio, control y mensajes de sesión salen del dispositivo. |
-| B2 | LAN ↔ endpoint `enroll` del daemon | Cliente sin certificado, token, prueba de pin. |
-| B3 | LAN ↔ endpoint `session` del daemon | Identidad de cliente, audio y control operativo. |
-| B4 | CLI ↔ daemon por Unix socket | Operaciones locales autenticadas por UID. |
-| B5 | Daemon ↔ PipeWire / SO | Nodo `Audio/Source`, permisos y dispositivos. |
-| B6 | Daemon ↔ estado en disco | Identidad, ACL y configuración; sin secretos en claro innecesarios. |
+| B1 | Android app ↔ LAN | Audio, control and session messages leave the device. |
+| B2 | LAN ↔ daemon `enroll` endpoint | Client without a certificate, token, pin proof. |
+| B3 | LAN ↔ daemon `session` endpoint | Client identity, audio and operational control. |
+| B4 | CLI ↔ daemon over Unix socket | Local operations authenticated by UID. |
+| B5 | Daemon ↔ PipeWire / OS | `Audio/Source` node, permissions and devices. |
+| B6 | Daemon ↔ on-disk state | Identity, ACL and configuration; no unnecessary plaintext secrets. |
 
-**Regla de frontera:** `enroll` y `session` son **endpoints distintos**, con certificado de servidor distinto y conjuntos de mensajes disjuntos. El pin del QR de enrolamiento **no** es el ancla de las sesiones posteriores. Un mismo canal no puede pasar de enrolamiento a sesión sin una conexión nueva y una identidad provisionada.
+**Boundary rule:** `enroll` and `session` are **separate endpoints** with disjoint message sets and different ALPN. The enrollment endpoint never carries audio or operational control. The pin from the enrollment QR is the server identity the phone stores and later requires for sessions; it is not a client credential and never substitutes for the client certificate.
 
-## 3. Adversarios considerados
+## 3. Adversaries considered
 
-1. Observador pasivo en la LAN (sniffing, metadata).
-2. Atacante activo en la LAN (MITM, ARP/ND spoofing, DNS/mDNS falso, replay).
-3. App o usuario malicioso en la misma LAN que intenta conectar o floodear.
-4. Par emparejado malicioso o comprometido que ya tiene una identidad.
-5. Ladrón de un dispositivo Android desbloqueado o de la máquina Linux.
-6. Usuario local sin privilegios en la máquina Linux.
-7. Atacante de disponibilidad (flood de conexiones, mensajes o datagramas).
-8. Observador físico del QR o de la terminal durante el enrolamiento.
-9. Dependencia o artefacto de build comprometido.
+1. Passive observer on the LAN (sniffing, metadata).
+2. Active attacker on the LAN (MITM, ARP/ND spoofing, fake DNS/mDNS, replay).
+3. Malicious app or user on the same LAN that tries to connect or flood.
+4. Malicious or compromised paired peer that already holds an identity.
+5. Thief with an unlocked Android device or the Linux machine.
+6. Unprivileged local user on the Linux machine.
+7. Availability attacker (connection, message or datagram flood).
+8. Physical observer of the QR or the terminal during enrollment.
+9. Compromised dependency or build artifact.
 
-## 4. Invariantes de seguridad
+## 4. Security invariants
 
-- **I1.** Nunca se entrega audio antes de que la sesión esté autorizada.
-- **I2.** El endpoint de enrolamiento no acepta audio, control operativo ni tickets.
-- **I3.** El endpoint de sesión exige identidad de cliente válida: mTLS con `peer_cert` explícito + ACL, o app-layer estándar revisado con binding al canal TLS (decisión /ADR-0002 en). `verify_peer(true)` **no** sustituye la comprobación de `peer_cert`.
-- **I4.** No hay TOFU silencioso: una identidad desconocida no se acepta ni se recuerda sin aprobación local explícita.
-- **I5.** No existe `verify=false`, `danger_accept_invalid_certs` ni equivalente en builds de release; tampoco fallback automático a UDP claro ni 0-RTT.
-- **I6.** El canal remoto no concede permisos Android, no inicia el micrófono y no escribe claves locales.
-- **I7.** Todo parser y toda cola tienen límites de tamaño, profundidad y tasa; nada asigna memoria proporcional a la entrada.
-- **I8.** Revocar una identidad cierra sus sesiones e invalida sus tickets.
+- **I1.** Audio is never delivered before the session is authorized.
+- **I2.** The enrollment endpoint accepts no audio, operational control or tickets.
+- **I3.** The session endpoint requires a valid client identity: mTLS with explicit `peer_cert` + ACL, or a reviewed standard app-layer scheme bound to the TLS channel. `verify_peer(true)` **does not** replace the `peer_cert` check.
+- **I4.** There is no silent TOFU: an unknown identity is neither accepted nor remembered without explicit local approval.
+- **I5.** No `verify=false`, `danger_accept_invalid_certs` or equivalent exists in release builds; there is no automatic fallback to cleartext UDP and no 0-RTT.
+- **I6.** The remote channel grants no Android permissions, does not start the microphone and does not write local keys.
+- **I7.** Every parser and every queue has size, depth and rate limits; nothing allocates memory proportional to input.
+- **I8.** Revoking an identity closes its sessions and invalidates its tickets.
 
-## 5. Amenazas y tratamiento
+## 5. Threats and treatment
 
-| ID | Amenaza | Superficie | Mitigación | Riesgo residual |
-|---|---|---|---|---|
-| T-01 | Sniffing del audio o del control en la LAN | B1/B3 | TLS 1.3/QUIC con cifrado y autenticación; sin UDP claro; sin downgrade | Metadatos de volumen/duración visibles para un observador de red; se acepta en LAN. |
-| T-02 | MITM en el enrolamiento para robar el token | B2 | El cliente valida el pin SPKI del certificado efímero **antes** de enviar el token; TTL corto; token de un solo uso; aprobación local con fingerprint y código corto | Usuario que aprueba sin comparar el código; se mitiga con UI y se acepta como error humano. |
-| T-03 | Suplantación del daemon en sesión | B3 | Identidad persistente del servidor y anclaje de confianza definido en (CA local o pin de sesión); el cliente rechaza un ancla distinta | Compromiso de la máquina Linux; fuera del modelo. |
-| T-04 | Cliente sin certificado aceptado como sesión | B3 | `peer_cert == None` se rechaza antes de control/audio; ACL default deny; test negativo obligatorio en | Implementación futura podría malinterpretar `verify_peer`; el gate lo prueba. |
-| T-05 | TOFU: aceptar y recordar una identidad no aprobada | B2/B3 | Sin alta automática; identidad sólo tras aprobación local; estado perdido ⇒ re-enrolar, nunca aceptar un servidor/cliente nuevo en silencio | Usuario que re-enrola sin verificar; se registra en el acta. |
-| T-06 | Replay o reutilización del token de enrolamiento | B2 | Token aleatorio de 256 bits, un solo uso, TTL ≤120 s, ligado a la ventana; se invalida al aprobar, cancelar o expirar; no se registra en logs | Captura física del QR durante la ventana; TTL y confirmación local lo acotan. |
-| T-07 | Audio o control inyectados en el endpoint de enrolamiento | B2 | El servidor de enrolamiento sólo habla mensajes de enrolamiento; audio/control/ticket se rechazan con error y cierre; el receptor de audio descarta todo datagrama fuera de sesión autorizada | Un bug de implementación; cubierto por `enrollment_boundary` en. |
-| T-08 | App maliciosa en la LAN intenta conectar a `session` | B3 | Identidad de cliente obligatoria + ACL; rate limit por IP/identidad; rechazo sin filtrar si la identidad existe | Fuerza bruta de recursos; se acota con cuotas y se monitoriza. |
-| T-09 | Par emparejado malicioso pide más de lo permitido | B3 | Capacidades y ACL por operación; claves locales rechazadas; sin shell, archivos, HTTP ni elevación; el micrófono lo inicia sólo el usuario Android | El par puede saturar su propia cuota de control; se limita y se corta la sesión. |
-| T-10 | Ladrón usa un dispositivo ya emparejado | B1/B3 | Revocación por identidad cierra sesión e invalida tickets; tickets de vida corta; re-enrolamiento tras revocar; bloqueo del dispositivo es responsabilidad de Android | Ventana hasta que el usuario revoca; se documenta. |
-| T-11 | Usuario local sin privilegios controla el daemon | B4 | Socket en `$XDG_RUNTIME_DIR/openrelay/control.sock`, directorio `0700`, socket `0600`, `SO_PEERCRED` con UID propietario; sin TCP administrativo | Procesos del mismo UID; se acepta (mismo usuario). |
-| T-12 | Flood de conexiones, mensajes o datagramas | B2/B3 | Límites antes y después del handshake: conexiones por IP, tasa de intentos, tamaño máximo, profundidad, strings, frames por datagrama, timeouts y cuotas por identidad; colas acotadas con descarte | DoS volumétrico en la red o el host; fuera del control de la aplicación. |
-| T-13 | Parser malicioso provoca pánico, OOM o consumo cuadrático | B2/B3 | Límites exactos de [`docs/protocol.md`](../protocol.md); rechazo sin asignación proporcional; fuzz de control y datagrama en | Bug desconocido; el fuzz es requisito de, no de. |
-| T-14 | Fuga de token, claves o audio en logs | A6/B6 | Token nunca persistido ni emitido por `--json`; logs sin secretos; material de identidad en estado protegido; revisión en | Logs de depuración de terceros; se prohíbe en código y se revisa. |
-| T-15 | QR observado por un tercero cercano | B2 | `openrelay pair open` sólo en TTY, TTL corto, token de un solo uso, aprobación local; el QR no se imprime con `--json` ni se escribe en disco | Cámara en el momento exacto; el código corto y la aprobación local lo acotan. |
-| T-16 | Dependencia o artefacto de build comprometido | A8 | Ledger con pin/licencia/procedencia; builds reproducibles y SBOM; sin binarios opacos; revisión de licencias | Compromiso upstream no detectado; se reduce con pin y auditoría, no se elimina. |
-| T-17 | Micrófono activo sin conocimiento del usuario | B1/B5 | FGS con notificación y parada local; inicio desde UI visible; muerte de proceso no deja micrófono huérfano; el remoto no puede iniciarlo | Bug de OEM/OS; se prueba en API28/34/37 en. |
-| T-18 | Nodo PipeWire expuesto tras terminar la sesión | B5 | El nodo deja de producir al parar; no se publica Audio/Source sin sesión activa; parada local y por `session stop` | Nodo visible vacío durante la transición; se acepta y se documenta. |
+| Threat | Surface | Mitigation | Residual risk |
+|---|---|---|---|
+| Sniffing of audio or control on the LAN | B1/B3 | TLS 1.3/QUIC with encryption and authentication; no cleartext UDP; no downgrade | Volume/duration metadata visible to a network observer; accepted on the LAN. |
+| MITM during enrollment to steal the token | B2 | The client validates the SPKI pin of the server certificate **before** sending the token; short TTL; single-use token; local approval with fingerprint and short code | A user who approves without comparing the code; mitigated by the UI and accepted as human error. |
+| Daemon impersonation in a session | B3 | Persistent server identity and trust anchor; the client rejects a different anchor | Compromise of the Linux machine; outside the model. |
+| Client without a certificate accepted as a session | B3 | `peer_cert == None` is rejected before control/audio; ACL default deny; mandatory negative test | A future implementation could misread `verify_peer`; covered by negative tests. |
+| TOFU: accepting and remembering an unapproved identity | B2/B3 | No automatic enrollment; identity only after local approval; lost state ⇒ re-enroll, never silently accept a new server/client | A user who re-enrolls without verifying; recorded in the local log. |
+| Replay or reuse of the enrollment token | B2 | 256-bit random token, single use, TTL ≤300 s, bound to the window; invalidated on approval, cancellation or expiry; never logged | Physical capture of the QR during the window; TTL and local confirmation bound it. |
+| Audio or control injected into the enrollment endpoint | B2 | The enrollment server only speaks enrollment messages; audio/control/ticket are rejected with an error and close; the audio receiver discards every datagram outside an authorized session | An implementation bug; covered by enrollment boundary tests. |
+| Malicious app on the LAN tries to connect to `session` | B3 | Mandatory client identity + ACL; rate limit per IP/identity; rejection does not reveal whether the identity exists | Resource brute force; bounded by quotas and monitored. |
+| Malicious paired peer asks for more than allowed | B3 | Capabilities and ACL per operation; local keys rejected; no shell, files, HTTP or elevation; only the Android user starts the microphone | The peer can exhaust its own control quota; it is limited and the session is closed. |
+| Thief uses an already paired device | B1/B3 | Revocation by identity closes the session and invalidates tickets; short-lived tickets; re-enroll after revoking; device lock is Android's responsibility | Window until the user revokes; documented. |
+| Unprivileged local user controls the daemon | B4 | Socket at `$XDG_RUNTIME_DIR/openrelay/control.sock`, directory `0700`, socket `0600`, `SO_PEERCRED` with owner UID; no administrative TCP | Processes with the same UID; accepted (same user). |
+| Flood of connections, messages or datagrams | B2/B3 | Limits before and after the handshake: connections per IP, attempt rate, maximum size, depth, strings, frames per datagram, timeouts and per-identity quotas; bounded queues with discard | Volumetric DoS on the network or host; outside the application's control. |
+| Malicious parser causes panic, OOM or quadratic cost | B2/B3 | Exact limits from [`docs/protocol.md`](../protocol.md); rejection without proportional allocation; fuzzing of control and datagram in release validation | Unknown bug; fuzzing is a release requirement. |
+| Token, key or audio leak in logs | A6/B6 | Token neither written to disk nor included in status JSON; logs without secrets; identity material in protected state | Third-party debug logs; prohibited in code and reviewed. |
+| QR observed by a nearby third party | B2 | `openrelay pair` only in a TTY, short TTL, single-use token, local approval; the link is shown in the terminal and not written to disk | Camera at the exact moment; the short code and local approval bound it. |
+| Compromised dependency or build artifact | A8 | Dependencies pinned and recorded with license and provenance; reproducible builds and SBOM; no opaque binaries; license review | Undetected upstream compromise; reduced by pinning and audit, not eliminated. |
+| Microphone active without the user's knowledge | B1/B5 | Foreground service with notification and local stop; start from visible UI; process death leaves no orphaned microphone; the remote cannot start it | OEM/OS bug; tested on supported Android versions. |
+| PipeWire node exposed after the session ends | B5 | The node stops producing when capture stops; no `Audio/Source` is published without an active session; local stop and `devices remove` closes the session | Empty visible node during the transition; accepted and documented. |
 
-## 6. Riesgos residuales aceptados
+## 6. Accepted residual risks
 
-Se aceptan explícitamente, con revisión en el gate:
+1. **Human approval error** during enrollment (comparing fingerprint/code is the user's responsibility).
+2. **Volumetric DoS** at network/host level, outside the application's scope.
+3. **Compromise of the OS or of an already paired device**; revocation is the response, not prevention.
+4. **Android OEM bugs** in foreground services, microphone or Keystore; tested on specific devices.
+5. **Network metadata** (IP, ports, traffic volume, session duration).
+6. **License uncertainty around RNNoise weights** and DFN artifacts; they are not distributed until resolved.
+7. **Keystore limitation** if there is no signing bridge: it is declared in ADR-0002, and a non-exportable hardware key is not promised.
 
-1. **Aprobación humana errónea** en el enrolamiento (comparar fingerprint/código es responsabilidad del usuario).
-2. **DoS volumétrico** a nivel de red/host, fuera del alcance de la aplicación.
-3. **Compromiso del SO o del dispositivo** ya emparejado; la revocación es la respuesta, no la prevención.
-4. **Bugs de OEM Android** en FGS, micrófono o Keystore; se prueban dispositivos concretos en y la matriz.
-5. **Metadatos de red** (IP, puertos, volumen de tráfico, duración de sesión).
-6. **Incertidumbre de licencia de pesos RNNoise** y de artefactos DFN; no se distribuyen hasta resolverla.
-7. **Limitación de Keystore** si no hay bridge de firma: se declarará en ADR-0002 y no se prometerá clave HW no exportable. **No se inventa un esquema criptográfico en.**
+## 7. Assumptions and limits
 
-## 7. Supuestos y límites
-
-- La LAN se considera hostil; el modelo **no** asume una red doméstica confiable.
-- El daemon Linux no se expone a Internet. Si el usuario lo hace, queda fuera de soporte y debe documentarse como riesgo propio.
-- El audio es PCM16 mono 48 kHz en v1; el contrato exacto está en [`docs/protocol.md`](../protocol.md).
-- La identidad de cliente, el handshake de enrolamiento, el formato exacto de los mensajes de pairing y el almacenamiento de claves son **diseño pendiente de **; este documento sólo fija requisitos y prohibiciones.
-- No hay auditoría de implementación: no tiene código que auditar. Los tests negativos citados (`tls_identity_gate`, `enrollment_boundary`, `pairing_flow`) se ejecutan en.
-
-## 8. Pendientes que bloquean el gate
-
-| Pendiente | Dueño | Criterio de cierre |
-|---|---|---|
-| Elección mTLS vs app-layer con binding TLS (/ADR-0002) | | Cliente sin identidad rechazado; `peer_cert` probado; sin cripto propia. |
-| Anclaje de confianza del servidor de sesión (CA local o pin de sesión) | | Cliente rechaza un ancla distinta; sin `verify=false`. |
-| Formato exacto de QR y mensajes de enrolamiento | | Token de un solo uso, TTL, pin validado antes del token, audio/control rechazados. |
-| Límites numéricos de flood y cuotas por identidad | | Valores medidos y probados, no sólo declarados aquí. |
-| Bridge Keystore o limitación declarada | | ADR-0002 con decisión y límite explícito. |
+- The LAN is considered hostile; the model **does not** assume a trusted home network.
+- The Linux daemon is not exposed to the Internet. If the user does so, it is out of support and must be documented as their own risk.
+- Audio is PCM16 mono 48 kHz in v1; the exact contract is in [`docs/protocol.md`](../protocol.md).
+- Client identity, the enrollment handshake, the exact pairing message format and key storage are defined in their ADRs; this document sets requirements and prohibitions.
+- There is no implementation audit yet. The negative identity, enrollment-boundary and pairing tests live in the test suites.

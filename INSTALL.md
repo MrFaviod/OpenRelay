@@ -150,25 +150,27 @@ sudo firewall-cmd --reload
 3. Launch **OpenRelay** and grant the microphone permission. Notification permission is optional, but it lets you stop and mute from the shade.
 
 > [!NOTE]
-> The v0.2.1 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC (a pasted `openrelay://pair` URI is the proven path; QR scanning from a camera is untested on a physical phone) and streams the microphone to the PC as PCM16.
+> The v0.2.1 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC — paste the `openrelay://pair` link or scan the QR — and streams the microphone to the PC as PCM16.
 
 ## Pair a phone
 
 1. Check that the daemon answers (`openrelay status`) and that UDP **47000-47001** is open in the host firewall ([Firewall](#firewall)).
 2. On the PC run `openrelay pair`. `--ttl N` sets the window in seconds (1-300, default 120); `--advertise IP` overrides the LAN address put in the QR when the PC has several interfaces (an IP literal, not a hostname); `--yes` approves the first phone without asking.
-3. The terminal prints an `openrelay://pair?v=1&h=…` URI and a QR. In the app tap **Emparejar con PC** and paste the URI (the proven path). Scanning the QR with the camera is implemented but untested on a physical phone.
+3. The terminal prints an `openrelay://pair?v=1&h=…` URI and a QR. In the app, tap **Emparejar con PC**, then paste the link or scan the QR (**Escanear QR**) and tap **Emparejar**.
 4. The phone shows **Esperando aprobación en la PC…**. The PC prints the device fingerprint (`Dispositivo: …`) and asks `¿Aprobar este dispositivo? [y/N]`; answer `y`.
 5. The app switches to **Emparejado con** the host address. Start capture: the app shows **Enviando a** the host and the PC's `openrelay status` reports one session with `pipewire: {"ok": true}`.
 6. On Linux, choose **`openrelay-mic`** as the microphone in your conferencing or recording app. `openrelay devices` lists the paired identity and its capabilities.
 
 The pairing window closes on rejection, expiry, Ctrl-C, EOF or a QR failure, so a later `openrelay pair` is never blocked by a stale window. After approval it stays open for a few seconds so the phone can receive its client certificate. See [docs/security/pairing.md](docs/security/pairing.md) for what the QR does and does not trust.
 
+The app and the CLI prompts are in Spanish.
+
 ## Build from source
 
 ### Linux
 
 ```sh
-# Ubuntu 24.04 / Debian 13
+# Ubuntu 24.04 / Debian 12
 sudo apt install build-essential pkg-config clang libclang-dev cmake git \
   libpipewire-0.3-dev libspa-0.2-dev libpulse-dev libopus-dev
 # Fedora

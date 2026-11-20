@@ -73,7 +73,9 @@ sudo ufw allow 47000:47001/udp
 openrelay pair
 ```
 
-It prints a QR code and a `openrelay://pair?...` link. In the app, tap **Emparejar con PC**, scan the QR or paste the link, then answer `y` on the PC when the fingerprint appears.
+It prints a QR code and an `openrelay://pair?...` link. In the app, tap **Emparejar con PC**, scan the QR (**Escanear QR**) or paste the link, then tap **Emparejar** and answer `y` on the PC when the fingerprint appears.
+
+The app and CLI prompts are in Spanish.
 
 **3. Talk**
 
@@ -109,7 +111,7 @@ git clone https://github.com/MrFaviod/OpenRelay && cd OpenRelay
 cargo build --release --locked -p openrelay-cli # -> target/release/openrelay
 ```
 
-The Android build is in [INSTALL.md](INSTALL.md#android-from-source). Tests, including the end-to-end audio harness, are described in [docs/testing.md](docs/testing.md).
+The Android build is in [INSTALL.md](INSTALL.md#android-from-source).
 
 ## Docs
 

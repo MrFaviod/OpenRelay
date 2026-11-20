@@ -89,7 +89,7 @@ Session grants are per device: `mic`, `control_read`, `control_write` (and optio
 
 - Identity is per device, not per connection. The ACL is indexed by SPKI pin and capability. Default deny.
 - `identities.json` is the persisted approval list; `grants.txt` mirrors the control grants. Both are mode 0600 in the state directory, as are the CA and server keys.
-- Removing a device means removing its entry from `identities.json` and its pin from the running ACL, then restarting the daemon. Removal closes that device's future sessions; it does not erase the audit trail of the approval.
+- Removing a device with `openrelay devices remove` takes it out of `identities.json` and the running ACL, and closes its live session at once. It does not erase the audit trail of the approval.
 - If the daemon state is regenerated, the server pin changes and every phone must pair again. There is no silent anchor rotation.
 - **Trust limit:** local approval is human. The fingerprint reduces operator error; it does not eliminate it.
 

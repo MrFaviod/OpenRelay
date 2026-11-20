@@ -13,6 +13,7 @@ openrelay config set KEY VALUE --rev N [--socket PATH] write one key
 openrelay pair [--ttl 120] [--advertise IP] [--yes] [--socket PATH]
                                                            QR + local approval of a phone
 openrelay devices [--state-dir PATH] list approved identities
+openrelay devices remove FINGERPRINT [--socket PATH] revoke a device and close its sessions
 openrelay service print-unit print the systemd --user unit
 openrelay --help | openrelay <command> --help
 ```
@@ -83,6 +84,8 @@ Dispositivo: 9f2c…
 ¿Aprobar este dispositivo? [y/N]
 ```
 
+(Approve this device? [y/N])
+
 `y` signs a `clientAuth` leaf for the device key and hands it back over the enrollment stream; the phone then connects to the session endpoint. `n` rejects it. Flags:
 
 | Flag | Effect |
@@ -104,6 +107,8 @@ With no approved device it prints `openrelay: no hay dispositivos aprobados` on 
 
 The list is read from `identities.json`. A device absent from it is denied by the ACL, even if it completed enrollment.
 
+Revoke a device with `openrelay devices remove <fingerprint>`. It also closes any live session for that device.
+
 ## 4. `audio.stats`
 
 `audio.stats` is a daemon operation, not a subcommand: it reports per-session counters and is meant for scripts. Send one JSON line over the control socket (any same-UID client works):
@@ -122,7 +127,15 @@ printf '%s\n' '{"request_id":"stats-1","op":"audio.stats"}' |
    "ns_frames_bypassed":2880,"ns_added_latency_samples":0}]}}
 ```
 
-`pcm16_frames` climbing while `decode_errors` and `dropped_*` stay at zero is the quickest proof that audio is arriving. `sessions: ` means no phone is connected. The full socket protocol is in [cli.md](cli.md).
+`pcm16_frames` climbing while `decode_errors` and `dropped_*` stay at zero is the quickest proof that audio is arriving. `sessions: ` means no phone is connected.
+
+The control socket takes one JSON line per request and returns one line per response:
+
+```json
+{"request_id":"cli-1","op":"audio.stats"}
+```
+
+Operations are `status`, `config.get`, `config.set`, `capabilities` and `audio.stats`. Success returns `{"request_id":…,"ok":true,"result":…}`, where `result` is the v1 `ack`, `capabilities` or `error`. An operation error returns `{"request_id":…,"ok":false,"error":{"code","message","retryable"[,"current_revision"]}}`. Reusing a `request_id` with the same operation returns the stored response for 60 s; reusing it with another payload returns `request_id_reuse`. Only clients with the same UID are accepted (`SO_PEERCRED`), and there are no TCP listeners.
 
 ## 5. Discover the settings
 
@@ -214,4 +227,4 @@ openrelay pair --ttl 300
 diff <(openrelay service print-unit) ~.config/systemd/user/openrelay.service && echo "unit up to date"
 ```
 
-The full socket protocol (one JSON line per request) is documented in [cli.md](cli.md). Pairing security is covered in [security/pairing.md](security/pairing.md).
+Pairing security is covered in [security/pairing.md](security/pairing.md).

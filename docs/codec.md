@@ -1,8 +1,8 @@
-# Códec Opus
+# Opus codec
 
 **Estado: implementado a nivel de crate, no integrado en la sesión.** La app
-Android todavía no negocia Opus; el flujo real es PCM16 y así lo declaran el
-README y la matriz de compatibilidad. El camino PCM16 fijo de sigue siendo
+Android todavía no negocia Opus; el flujo real es PCM16 y así lo declara el
+README. El camino PCM16 fijo sigue siendo
 el contrato por defecto y no se modifica. Este documento describe
 `openrelay-codec`, sus perfiles y sus límites; no afirma calidad por escucha ni
 latencia extremo a extremo medida.
@@ -80,7 +80,7 @@ El códec es **opcional**:
   sesión/negociación (fuera del alcance de este crate). En v1 no hay
   autodetección: el receptor debe saber si el payload es PCM16 u Opus.
 - **Rollback**: si el perfil no se negocia, el códec falla o la calidad no es
-  aceptable, el emisor vuelve a emitir PCM16 fijo de. El receptor conserva
+  aceptable, el emisor vuelve a emitir PCM16 fijo. El receptor conserva
   el camino PCM16 como fallback; no se requiere convertir datos ya enviados.
 - Un `OpusEncoder`/`OpusDecoder` nuevo por sesión y por dirección; no son
   `Sync`, así que cada estado se usa desde un solo hilo a la vez.

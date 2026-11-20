@@ -1,5 +1,6 @@
 # Errores — contrato v1
 
+**Status: normative error catalog, implemented by the control path.** Control errors travel as an `error` message on the reliable stream; audio has no per-frame replies. This catalog is part of the contract. New codes are not invented by the implementation.
 
 ## 1. Forma en el wire
 
@@ -95,5 +96,3 @@ Cuando varios problemas coinciden, el daemon reporta en este orden:
 6. alcance de clave (`local_key`);
 7. estado (`busy`, `not_found`);
 8. interno (`internal`).
-
-Este orden es normativo para que los tests de no dependan del texto del mensaje.
