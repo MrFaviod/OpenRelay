@@ -189,7 +189,6 @@ pub struct ProductRuntime {
     /// Ventana de enrolamiento abierta por `pair.open`, si hay una.
     enroll: Option<EnrollWindow>,
     pairing: Pairing,
-    sessions: u64,
     started: Instant,
 }
 
@@ -250,7 +249,6 @@ pub fn start(config: &RuntimeConfig) -> Result<(ProductRuntime, RuntimeReady), R
             quic,
             enroll: None,
             pairing: Pairing::new(),
-            sessions: 0,
             started: Instant::now(),
         },
         ready,
@@ -423,9 +421,10 @@ fn read_cert(path: &Path) -> Result<CertificateDer<'static>, RuntimeError> {
 }
 
 impl ProductRuntime {
-    /// Segundos desde el arranque y sesiones QUIC autorizadas en esta ejecución.
+    /// Segundos desde el arranque y sesiones QUIC vivas en este momento.
     pub fn status(&self) -> (u64, u64) {
-        (self.started.elapsed().as_secs(), self.sessions)
+        let live = self.quic.as_ref().map_or(0, |quic| quic.live.len() as u64);
+        (self.started.elapsed().as_secs(), live)
     }
 
     /// Revisión que ven el admin local y el remoto.
@@ -851,7 +850,6 @@ impl ProductRuntime {
         while let Some(event) = quic.server.next_event() {
             match event {
                 ServerEvent::Authorized { session, .. } => {
-                    self.sessions += 1;
                     if !quic.live.contains(&session) {
                         quic.live.push(session);
                     }
