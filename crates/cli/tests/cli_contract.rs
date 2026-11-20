@@ -156,6 +156,12 @@ fn status_fails_nonzero_when_no_daemon() {
         .output()
         .expect("ejecutar openrelay status");
     assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("the daemon is not running (no socket at"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("openrelay daemon"), "stderr: {stderr}");
 }
 
 #[test]

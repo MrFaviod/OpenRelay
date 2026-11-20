@@ -206,8 +206,14 @@ fn peer_is_self(stream: &UnixStream) -> io::Result<bool> {
 /// Sends a request `op` with `args` to the daemon at `path` and returns the
 /// complete response.
 pub fn request(path: &Path, op: &str, args: &Value) -> Result<Value, String> {
-    let mut stream =
-        UnixStream::connect(path).map_err(|e| format!("no daemon at {}: {e}", path.display()))?;
+    let mut stream = UnixStream::connect(path).map_err(|e| match e.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused => format!(
+            "the daemon is not running (no socket at {}). Start it with: \
+             systemctl --user enable --now openrelay.service   (or: openrelay daemon)",
+            path.display()
+        ),
+        _ => format!("no daemon at {}: {e}", path.display()),
+    })?;
     stream
         .set_read_timeout(Some(IO_TIMEOUT))
         .map_err(|e| e.to_string())?;
