@@ -221,7 +221,7 @@ PHONE_PID=$!
 
 AUTHORIZED=0
 for _ in $(seq 1 150); do
-    if /usr/bin/grep -q "autorizada" "$OUT/fake-phone.log" 2>/dev/null; then
+    if /usr/bin/grep -Eq "session authorized|autorizada" "$OUT/fake-phone.log" 2>/dev/null; then
         AUTHORIZED=1
         break
     fi
@@ -397,7 +397,7 @@ fi
 
 if "$PHONE" --identity "$OUT/fake-phone.json" --expect-refused >"$OUT/fake-phone-refused.log" 2>&1 \
     && /usr/bin/grep -q 'REFUSED: .*unauthorized' "$OUT/fake-phone-refused.log" \
-    && ! /usr/bin/grep -q 'sesión autorizada' "$OUT/fake-phone-refused.log"; then
+    && ! /usr/bin/grep -Eq 'session authorized|sesión autorizada' "$OUT/fake-phone-refused.log"; then
     cat "$OUT/fake-phone-refused.log"
     pass "removed identity is rejected at session authorization (connect refused/unauthorized)"
 else
