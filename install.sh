@@ -17,6 +17,10 @@
 #                       install the unit but do not enable or start it
 #   OPENRELAY_FORCE=1   install even if required shared libraries are missing
 #   OPENRELAY_UNINSTALL=1 remove a previous install and exit
+#
+# Update an existing install to the latest release:
+#
+#   curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --update
 set -eu
 
 REPO="MrFaviod/OpenRelay"
@@ -27,6 +31,18 @@ say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
+
+update_only=0
+for arg in "$@"; do
+  case "$arg" in
+    --update) update_only=1 ;;
+    --uninstall) OPENRELAY_UNINSTALL=1 ;;
+    *) die "unknown option: $arg (use --update or --uninstall)" ;;
+  esac
+done
+if [ "$update_only" = 1 ] && [ ! -x "$BIN_DIR/openrelay" ]; then
+  die "OpenRelay is not installed in $BIN_DIR; run the installer without --update"
+fi
 
 if [ "${OPENRELAY_UNINSTALL:-}" = 1 ]; then
   if command -v systemctl >/dev/null 2>&1 && [ -f "$UNIT_DIR/openrelay.service" ]; then
@@ -93,9 +109,15 @@ if command -v ldd >/dev/null 2>&1; then
   fi
 fi
 
+updating=0
+[ -x "$BIN_DIR/openrelay" ] && updating=1
 mkdir -p "$BIN_DIR"
 install -m 0755 "$src/openrelay" "$BIN_DIR/openrelay"
-say "Installed $BIN_DIR/openrelay"
+if [ "$updating" = 1 ]; then
+  say "Updated $BIN_DIR/openrelay to $tag"
+else
+  say "Installed $BIN_DIR/openrelay"
+fi
 
 if [ "${OPENRELAY_NO_UNIT:-}" != 1 ]; then
   mkdir -p "$UNIT_DIR"
@@ -115,7 +137,10 @@ elif [ "${OPENRELAY_NO_SERVICE:-}" = 1 ]; then
   say "Service not started (OPENRELAY_NO_SERVICE=1); start it with: systemctl --user enable --now openrelay.service"
 elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
   systemctl --user daemon-reload || true
-  if systemctl --user enable --now openrelay.service; then
+  # enable --now does not reload a running daemon, so restart it to pick up
+  # the new binary when this is an update.
+  if systemctl --user enable openrelay.service &&
+    systemctl --user restart openrelay.service; then
     i=0
     while [ "$i" -lt 10 ]; do
       if "$BIN_DIR/openrelay" status >/dev/null 2>&1; then
@@ -140,6 +165,17 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) warn "$BIN_DIR is not in your PATH. Add it: export PATH=\"$BIN_DIR:\$PATH\"" ;;
 esac
+
+if [ "$updating" = 1 ]; then
+  cat <<EOF
+
+  OpenRelay is updated to $tag. Paired phones and settings are kept.
+
+  Status:     openrelay status
+  If you run the daemon by hand (openrelay daemon), restart it now.
+EOF
+  exit 0
+fi
 
 cat <<EOF
 
