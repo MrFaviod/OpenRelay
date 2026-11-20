@@ -1,4 +1,4 @@
-//! Puente JNI de test (F2-10c): handshake mTLS real con la clave de AndroidKeyStore.
+//! Puente JNI de test: handshake mTLS real con la clave de AndroidKeyStore.
 //!
 //! La clave privada nunca sale de Java: `KeystoreSigner.sign` firma por JNI.
 //! `unsafe` sólo aparece como permiso del lint en los dos atributos de export.

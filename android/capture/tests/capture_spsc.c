@@ -1,4 +1,4 @@
-/* tests/capture_spsc.c — host tests for the shared T13a SPSC capture core.
+/* tests/capture_spsc.c — host tests for the shared SPSC capture core.
  * Written before src/spsc.c exists: the initial run must fail at link with
  * EXPECTED_MISSING_IMPLEMENTATION, which is not a functional RED.
  * Every case is independent: own ring, own buffers, cleanup at "done".

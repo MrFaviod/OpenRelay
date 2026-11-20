@@ -37,7 +37,7 @@ las dos condiciones de opt-in). Aunque `pairing::approve` sabe persistir el flag
 `return_audio` en el archivo de identidades y `pairing::load` lo relee, ningún
 camino del producto lo concede: la app no anuncia la feature y el CLI no expone
 un comando para otorgarla. Concederlo exige llamar a `pairing::approve` con
-`Capabilities::with_return_audio` desde un flujo de aprobación que todavía no
+`Capabilities::with_return_audio()` desde un flujo de aprobación que todavía no
 existe.
 
 ## Fuera de alcance

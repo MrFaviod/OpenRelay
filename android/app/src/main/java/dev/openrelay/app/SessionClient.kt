@@ -1,7 +1,7 @@
 package dev.openrelay.app
 
 /**
- * Cliente de sesión de producto (F4). Habla QUIC de sesión (`openrelay-session/1`)
+ * Cliente de sesión de producto. Habla QUIC de sesión (`openrelay-session/1`)
  * por UDP contra el endpoint aprovisionado y control `openrelay.control/v1`.
  *
  * La clave privada no sale de [KeystoreSigner]. La provisión (endpoint,

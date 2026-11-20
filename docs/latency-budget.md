@@ -2,7 +2,7 @@
 
 **Status: proposed targets, not measurements.** There is no physical baseline
 yet: this document sets targets and ceilings so they can be measured later, and
-declares the method for each number. No number here has been achieved
+declares the method for each number. No number here has been achieved,
 benchmarked, or observed on a device. The project's priority is LAN latency.
 
 ## Presupuesto por etapa (propuesto)
@@ -29,14 +29,14 @@ El bloque siguiente es la suma de etapas del contrato; no mide latencia.
 <!-- verify:latency-budget -->
 ```json
 {
-  "status": "proposed_not_measured"
-  "end_to_end_budget_us": 25000
-  "end_to_end_ceiling_us": 80000
+  "status": "proposed_not_measured",
+  "end_to_end_budget_us": 25000,
+  "end_to_end_ceiling_us": 80000,
   "stages": [
-    {"stage": "capture", "budget_us": 5000, "ceiling_us": 12000}
-    {"stage": "frame", "budget_us": 5000, "ceiling_us": 5000}
-    {"stage": "lan", "budget_us": 3000, "ceiling_us": 15000}
-    {"stage": "jitter", "budget_us": 10000, "ceiling_us": 40000}
+    {"stage": "capture", "budget_us": 5000, "ceiling_us": 12000},
+    {"stage": "frame", "budget_us": 5000, "ceiling_us": 5000},
+    {"stage": "lan", "budget_us": 3000, "ceiling_us": 15000},
+    {"stage": "jitter", "budget_us": 10000, "ceiling_us": 40000},
     {"stage": "resample_output", "budget_us": 2000, "ceiling_us": 8000}
   ]
 }
@@ -58,7 +58,7 @@ evidencia guardada con hash; hasta entonces no hay resultados.
 - **Drift de 1 h:** `cargo test -p openrelay-audio-core --test drift_1h -- --ignored`
   es la referencia simulada; la evidencia de hardware exige un stream real de
   60 min con `ppm` y `resyncs`.
-- **Evidencia:** cada captura se guarda con su hash y el entorno (modelo, SO
+- **Evidencia:** cada captura se guarda con su hash y el entorno (modelo, SO,
   buffer de audio y punto de red). Sin captura física no hay cifra.
 
 Estado actual: **sin medición física**. No hay baseline físico ni dispositivo de referencia
@@ -81,7 +81,7 @@ La línea base del pipeline es **una sola y compartida**: cada `observe`
 acumula el delta en el modo vigente y avanza la línea base del otro modo sin
 sumarle nada (`rebase`). Así cada delta se cuenta exactamente una vez y
 alternar `streaming → idle → streaming` no reatribuye emisiones ya contadas: si
-el buffer emitió 1, 2 y 3 frames y se observó en streaming, idle y streaming
+el buffer emitió 1, 2 y 3 frames y se observó en streaming, idle y streaming,
 los acumuladores dan 2 en streaming y 1 en idle (suma 3), no 5.
 
 Casos límite declarados:
@@ -92,7 +92,7 @@ Casos límite declarados:
   al modo vigente en la siguiente observación, porque no hay muestra intermedia
   que lo divida. Para atribuir el límite con precisión, observa antes de cambiar
   de modo.
-- **Saturación**: `frames`, `samples`, `gaps`, `plc_frames`, `dropped`
+- **Saturación**: `frames`, `samples`, `gaps`, `plc_frames`, `dropped`,
   `resyncs`, `underruns` y `overruns` saturan en `u64::MAX`; un flujo hostil no
   desborda ni paniquea.
 - **Reinicio del pipeline**: si los contadores leídos retroceden (buffer o
@@ -134,7 +134,7 @@ por slot no describe la memoria real.
 | `DriftController` | 144 | configuración, ratio, integral y contadores |
 | **Camino de audio** | **10064** | `AUDIO_PATH_STATE_BYTES` = suma de los tres |
 
-- **Audio preasignado**: `AUDIO_PREALLOCATED_BYTES = size_of::<JitterBuffer>`
+- **Audio preasignado**: `AUDIO_PREALLOCATED_BYTES = size_of::<JitterBuffer>()`
   (8872 B). Se reserva una vez y no crece con el flujo.
 - **Estado del resampler y del controlador**: se declaran aparte
   (`RESAMPLER_STATE_BYTES`, `DRIFT_STATE_BYTES`) y sólo entran en el total
@@ -152,7 +152,7 @@ constantes se derivan con `size_of` y el test falla si dejan de coincidir.
 
 ## Hilos Android
 
-Sólo los hilos propios de la app entran en el presupuesto: captura, red
+Sólo los hilos propios de la app entran en el presupuesto: captura, red,
 consumidor de jitter y hilo de control (4). **ART, Compose y RenderThread son
 hilos externos del sistema**: se miden por separado con Perfetto o
 `dumpsys`, y este presupuesto no los suma ni los presenta como propios.

@@ -4,7 +4,7 @@ package dev.openrelay.app
  * Captura nativa: envoltorio fino sobre libopenrelay_capture.so (Oboe + core C).
  * Flujo: create -> start -> read (en bucle) -> stop -> close -> destroy.
  * read devuelve muestras copiadas (>= 0) o un código de error negativo.
- * Sin permiso RECORD_AUDIO concedido, start fallará; el permiso lo gestiona T13b.
+ * Sin permiso RECORD_AUDIO concedido, start fallará; el permiso lo pide la capa de UI.
  */
 class AudioEngine {
     private var handle: Long = nativeCreate()

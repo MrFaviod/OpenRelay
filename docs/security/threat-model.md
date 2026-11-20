@@ -46,7 +46,7 @@ Scope: Android microphone audio → Linux over the LAN, bidirectional control of
 
 - **I1.** Audio is never delivered before the session is authorized.
 - **I2.** The enrollment endpoint accepts no audio, operational control or tickets.
-- **I3.** The session endpoint requires a valid client identity: mTLS with explicit `peer_cert` + ACL, or a reviewed standard app-layer scheme bound to the TLS channel. `verify_peer(true)` **does not** replace the `peer_cert` check.
+- **I3.** The session endpoint requires a valid client identity: mTLS with explicit `peer_cert()` + ACL, or a reviewed standard app-layer scheme bound to the TLS channel. `verify_peer(true)` **does not** replace the `peer_cert()` check.
 - **I4.** There is no silent TOFU: an unknown identity is neither accepted nor remembered without explicit local approval.
 - **I5.** No `verify=false`, `danger_accept_invalid_certs` or equivalent exists in release builds; there is no automatic fallback to cleartext UDP and no 0-RTT.
 - **I6.** The remote channel grants no Android permissions, does not start the microphone and does not write local keys.
@@ -60,7 +60,7 @@ Scope: Android microphone audio → Linux over the LAN, bidirectional control of
 | Sniffing of audio or control on the LAN | B1/B3 | TLS 1.3/QUIC with encryption and authentication; no cleartext UDP; no downgrade | Volume/duration metadata visible to a network observer; accepted on the LAN. |
 | MITM during enrollment to steal the token | B2 | The client validates the SPKI pin of the server certificate **before** sending the token; short TTL; single-use token; local approval with fingerprint and short code | A user who approves without comparing the code; mitigated by the UI and accepted as human error. |
 | Daemon impersonation in a session | B3 | Persistent server identity and trust anchor; the client rejects a different anchor | Compromise of the Linux machine; outside the model. |
-| Client without a certificate accepted as a session | B3 | `peer_cert == None` is rejected before control/audio; ACL default deny; mandatory negative test | A future implementation could misread `verify_peer`; covered by negative tests. |
+| Client without a certificate accepted as a session | B3 | `peer_cert() == None` is rejected before control/audio; ACL default deny; mandatory negative test | A future implementation could misread `verify_peer`; covered by negative tests. |
 | TOFU: accepting and remembering an unapproved identity | B2/B3 | No automatic enrollment; identity only after local approval; lost state ⇒ re-enroll, never silently accept a new server/client | A user who re-enrolls without verifying; recorded in the local log. |
 | Replay or reuse of the enrollment token | B2 | 256-bit random token, single use, TTL ≤300 s, bound to the window; invalidated on approval, cancellation or expiry; never logged | Physical capture of the QR during the window; TTL and local confirmation bound it. |
 | Audio or control injected into the enrollment endpoint | B2 | The enrollment server only speaks enrollment messages; audio/control/ticket are rejected with an error and close; the audio receiver discards every datagram outside an authorized session | An implementation bug; covered by enrollment boundary tests. |

@@ -1,4 +1,4 @@
-//! Cola acotada del retorno Linux→Android (F8/T24, `docs/protocol.md` §8.4).
+//! Cola acotada del retorno Linux→Android (`docs/protocol.md` §8.4).
 //!
 //! El retorno reutiliza el frame `type=1` (PCM16LE, 48 kHz, mono, 240
 //! muestras). El puente no decodifica a mano: el transporte ya entrega el

@@ -1,4 +1,4 @@
-/* T13a S3c - pruebas C11 del lifecycle compartido con backend simulado.
+/* Pruebas C11 del lifecycle compartido con backend simulado.
  *
  * Mismo motor futuro: cada caso llama simbolos publicos openrelay_capture_*; el
  * fixture solo aporta hardware/formatos/contadores y el owner opaco. Este

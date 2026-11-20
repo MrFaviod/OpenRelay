@@ -1,4 +1,4 @@
-//! T07 — drift de 1 h con relojes independientes y resampling real.
+//! Drift de 1 h con relojes independientes y resampling real.
 //!
 //! La simulación es virtual y determinista: 48 kHz, frames de 5 ms, relojes de
 //! productor y consumidor independientes con ppm de signo opuesto, jitter de

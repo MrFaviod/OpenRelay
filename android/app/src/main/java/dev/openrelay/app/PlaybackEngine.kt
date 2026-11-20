@@ -1,7 +1,7 @@
 package dev.openrelay.app
 
 /**
- * Política pura del retorno Linux→Android (D-08: fase separada, opt-in y
+ * Política pura del retorno Linux→Android (opt-in y
  * apagada por defecto). Vive separada del JNI para poder probarse en la JVM:
  * sin `enabled` y sin aviso de eco confirmado, no se arranca la salida.
  */

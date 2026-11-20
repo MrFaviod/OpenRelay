@@ -3,7 +3,7 @@
  * Productor: openrelay_playback_write (hilo Kotlin). Consumidor: callback de Oboe,
  * que llena el buffer de salida y completa con silencio si el anillo se queda
  * corto: el callback no bloquea ni espera al productor. El anillo es el mismo
- * openrelay_spsc de la captura (T13a); no se reimplementa ni se comparte con el
+ * openrelay_spsc de la captura; no se reimplementa ni se comparte con el
  * flujo de micrófono. Códigos de error: los OPENRELAY_CAPTURE_ERR_* del ABI (negativos).
  */
 #include <atomic>

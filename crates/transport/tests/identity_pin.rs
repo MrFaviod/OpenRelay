@@ -1,4 +1,4 @@
-//! Pruebas de identidad T10b: extracción SPKI con parser DER estándar y pin
+//! Pruebas de identidad: extracción SPKI con parser DER estándar y pin
 //! SHA-256. Los vectores (certificados, SPKI y pines) fueron generados con
 //! OpenSSL CLI, no con el código bajo prueba. Son certificados de test; no hay
 //! material de producción en el repo.

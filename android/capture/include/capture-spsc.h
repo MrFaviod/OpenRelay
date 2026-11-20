@@ -1,4 +1,4 @@
-/* MIT — contrato del SPSC compartido T13a. Implementación aparte.
+/* MIT — contrato del SPSC compartido. Implementación aparte.
  * C11 interno; cliente C/C++ mediante esta interfaz C. PCM mono int16_t.
  * Un productor y un consumidor; capacidad fija de 960 muestras.
  * create/destroy sólo fuera de RT. destroy exige actores detenidos y

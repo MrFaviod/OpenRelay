@@ -1,4 +1,4 @@
-/* src/capture-owner.c - owner privado de vida caller-owned (T13a).
+/* src/capture-owner.c - owner privado de vida caller-owned.
  *
  * gate: bits 0..30 cuentan prestamos vivos, bit 31 = cerrado. Un prestamo
  * exige gate abierto y un unico compare_exchange_strong de cuenta+1. release

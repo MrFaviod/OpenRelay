@@ -1,4 +1,4 @@
-/* Pruebas independientes del owner estable/lifetime (T13a).
+/* Pruebas independientes del owner estable/lifetime.
  * Usan solo capture-owner.h (API privada exacta) y el core real.
  * Un proceso por caso: owner_tests <1|2read|2drain|3|4|5|6|7>.
  * Sincronizacion determinista con condvars y timeout de setup; sin sleeps.

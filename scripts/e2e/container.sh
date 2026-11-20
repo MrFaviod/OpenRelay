@@ -163,7 +163,7 @@ else
 fi
 
 # MODE=serve keeps the desktop stack and daemon alive for an external phone
-# (the real Android app in redroid) and exposes the pairing URI plus an env
+# (the real Android app in a containerized emulator) and exposes the pairing URI plus an env
 # file so the host can drive recordings with `docker exec`.
 if [ "${MODE:-e2e}" = serve ]; then
     step "serve: pairing window for the real phone"

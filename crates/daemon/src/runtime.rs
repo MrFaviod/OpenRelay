@@ -981,7 +981,7 @@ where
     targets
 }
 
-/// Una vuelta del retorno Linux→Android (F8/T24).
+/// Una vuelta del retorno Linux→Android.
 ///
 /// Sólo actúa en sesiones que cumplen la puerta [`return_targets`]: la feature
 /// anunciada por el peer, la local efectiva (derivada de

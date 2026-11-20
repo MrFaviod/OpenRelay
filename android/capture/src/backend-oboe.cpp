@@ -1,4 +1,4 @@
-/* openrelay capture - adapter Oboe del backend privado (T13a).
+/* openrelay capture - adapter Oboe del backend privado.
  * Implementa openrelay_be_ops sobre oboe::AudioStream de entrada y la factory
  * openrelay_capture_backend_create de capture-backend.h. Un solo stream por objeto.
  * El callback de datos empuja con openrelay_capture_push; el hilo de error llama a

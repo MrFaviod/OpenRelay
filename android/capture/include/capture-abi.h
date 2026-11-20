@@ -1,4 +1,4 @@
-/* openrelay capture ABI v1 — BASELINE T13a para implementar y probar (ajuste padre). No es ejecución.
+/* openrelay capture ABI v1 — baseline para implementar y probar. No es ejecución.
  * Declaraciones únicamente. Sin implementación, sin Oboe, sin JNI.
  * Autocontenido: C99, anchos fijos, sin cabeceras del producto.
  *
@@ -96,7 +96,7 @@ extern "C" {
 /* Worker de control. Crea el objeto en OPEN y reserva cap_samples.
  * v1 acepta sólo OPENRELAY_CAPTURE_RING_SAMPLES; otro valor es ERR_ARGS y
  * *out queda null. out null es ERR_NULL y *out no se escribe.
- * No consulta RECORD_AUDIO: el permiso es de T13b. */
+ * No consulta RECORD_AUDIO: el permiso lo gestiona la capa de UI. */
 int32_t openrelay_capture_open(openrelay_capture **out, uint32_t cap_samples);
 
 /* Worker de control. Tabla normativa en acceptance.json/lifecycle.

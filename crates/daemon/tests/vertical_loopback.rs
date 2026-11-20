@@ -1,4 +1,4 @@
-//! Vertical loopback F2-14a: cliente QUIC/mTLS real sobre UDP 127.0.0.1 ->
+//! Vertical loopback: cliente QUIC/mTLS real sobre UDP 127.0.0.1 ->
 //! `SessionServer` -> `serve` -> `PipeWireSource::producer()`.
 //!
 //! Requiere un daemon PipeWire privado en ejecución (PIPEWIRE_REMOTE,

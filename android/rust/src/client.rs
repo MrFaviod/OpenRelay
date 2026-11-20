@@ -1,4 +1,4 @@
-//! Cliente de sesión de producto (F4): UDP real, control `openrelay.control/v1`
+//! Cliente de sesión de producto: UDP real, control `openrelay.control/v1`
 //! y cierre local. La clave privada no entra aquí: la firma la pide
 //! [`super::KeystoreKey`] al `KeystoreSigner` de Java.
 //!

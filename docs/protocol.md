@@ -33,7 +33,7 @@ Each control message occupies exactly one stream frame:
 
 ```text
 +----------------+----------------------------------------+
-| u32 BE length | length bytes of UTF-8 JSON |
+| u32 BE length  | length bytes of UTF-8 JSON             |
 +----------------+----------------------------------------+
 ```
 
@@ -57,10 +57,10 @@ Every message is an object with this shape (schema: [`contracts/control-v1.schem
 
 ```json
 {
-  "schema_version": "openrelay.control/v1"
-  "type": "config.set"
-  "request_id": "8f14e45fceea167a"
-  "expected_revision": 7
+  "schema_version": "openrelay.control/v1",
+  "type": "config.set",
+  "request_id": "8f14e45fceea167a",
+  "expected_revision": 7,
   "payload": { "key": "audio.gain_db", "value": 3.0 }
 }
 ```
@@ -90,7 +90,7 @@ Every message is an object with this shape (schema: [`contracts/control-v1.schem
 ### 5.1 `hello`
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "hello", "request_id": "h1"
+{ "schema_version": "openrelay.control/v1", "type": "hello", "request_id": "h1",
   "payload": { "role": "android", "version": "0.2.1", "protocol_version": "openrelay.control/v1" } }
 ```
 
@@ -103,8 +103,8 @@ Every message is an object with this shape (schema: [`contracts/control-v1.schem
 ### 5.3 `config.set`
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17"
-  "expected_revision": 7
+{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17",
+  "expected_revision": 7,
   "payload": { "key": "audio.gain_db", "value": 3.0 } }
 ```
 
@@ -120,9 +120,9 @@ Rules:
 ### 5.4 `ack`
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
-  "payload": { "applied": true
-               "requested": { "key": "audio.gain_db", "value": 3.0 }
+{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8,
+  "payload": { "applied": true,
+               "requested": { "key": "audio.gain_db", "value": 3.0 },
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
 ```
 
@@ -131,8 +131,8 @@ Rules:
 ### 5.5 `error`
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-17"
-  "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-17",
+  "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true,
                "current_revision": 9 } }
 ```
 
@@ -145,16 +145,16 @@ Events from daemon → client. `payload.name` is `config.changed` or `session.st
 `config.changed` is emitted after an applied `config.set`, with the new revision. `data.key` is the key; `requested` and `effective` are the requested and effective values, with the same per-key restrictions as `config.set` (they may differ because of device or OS limits).
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
-  "payload": { "name": "config.changed"
+{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8,
+  "payload": { "name": "config.changed",
                "data": { "key": "audio.gain_db", "requested": 3.0, "effective": 3.0 } } }
 ```
 
 `session.state` reports a session state change: `active` when authorized and `closed` when closed. `detail` is optional short text (≤200) with no secrets or internal paths.
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8
-  "payload": { "name": "session.state"
+{ "schema_version": "openrelay.control/v1", "type": "event", "revision": 8,
+  "payload": { "name": "session.state",
                "data": { "state": "closed", "detail": "client closed" } } }
 ```
 
@@ -182,20 +182,20 @@ Events from daemon → client. `payload.name` is `config.changed` or `session.st
 
 ```json
 {
-  "schema_version": "openrelay.capabilities/v1"
-  "device_id": "a1b2c3d4e5f60718"
-  "role": "android"
-  "features": ["control.v1", "audio.pcm16-48k-mono", "session.v1"]
-  "remote_actions": ["config.read", "config.write"]
+  "schema_version": "openrelay.capabilities/v1",
+  "device_id": "a1b2c3d4e5f60718",
+  "role": "android",
+  "features": ["control.v1", "audio.pcm16-48k-mono", "session.v1"],
+  "remote_actions": ["config.read", "config.write"],
   "limits": {
-    "max_control_payload_bytes": 16384
-    "max_audio_datagram_bytes": 1200
-    "max_reorder_ms": 20
-    "max_config_keys": 32
+    "max_control_payload_bytes": 16384,
+    "max_audio_datagram_bytes": 1200,
+    "max_reorder_ms": 20,
+    "max_config_keys": 32,
     "max_request_id_len": 64
-  }
+  },
   "config_keys": [
-    { "key": "audio.gain_db", "scope": "shared", "type": "number", "minimum": -24, "maximum": 24 }
+    { "key": "audio.gain_db", "scope": "shared", "type": "number", "minimum": -24, "maximum": 24 },
     { "key": "ui.theme", "scope": "local", "type": "string" }
   ]
 }

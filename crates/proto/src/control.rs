@@ -6,7 +6,7 @@
 //! hasta 64 respuestas (`ack` o `error`) durante 60 s para ser idempotente.
 //!
 //! La autenticación y la ACL no se implementan aquí: [`AuthorizedPeer`] es la
-//! frontera que F2 entregará ya resuelta. Esta crate no expone ninguna acción
+//! frontera que el transporte entrega ya resuelta. Esta crate no expone ninguna acción
 //! remota de micrófono, permisos ni claves locales.
 
 use std::collections::VecDeque;
@@ -345,7 +345,7 @@ pub const CONFIG_KEY_SPECS: [KeySpec; 10] = [
         max_chars: None,
     },
     KeySpec {
-        // Retorno de audio Linux→Android (F8/T24, D-08). Clave local del
+        // Retorno de audio Linux→Android. Clave local del
         // daemon: el panel Android no la escribe por el canal remoto.
         name: "audio.return_enabled",
         scope: ConfigScope::Local,
@@ -714,7 +714,7 @@ pub fn classify_remote_action(name: &str) -> Result<RemoteAction, ErrorCode> {
     }
 }
 
-/// Frontera de autenticación resuelta por F2. No autentica: declara.
+/// Frontera de autenticación resuelta por el transporte. No autentica: declara.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthorizedPeer {
     device_id: String,
@@ -851,7 +851,7 @@ pub enum Feature {
     AudioPcm16_48kMono,
     /// `audio.opus-48k-mono`.
     AudioOpus48kMono,
-    /// `audio.return-pcm16-48k-mono` (retorno Linux→Android, F8/T24).
+    /// `audio.return-pcm16-48k-mono` (retorno Linux→Android).
     AudioReturnPcm48kMono,
     /// `enrollment.v1`.
     EnrollmentV1,

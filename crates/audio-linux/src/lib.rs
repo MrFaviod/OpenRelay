@@ -12,11 +12,11 @@
 //! `openrelay-audio-core`. Aquí no se redefine el wire ni se añaden métricas de
 //! jitter/drift: eso pertenece al core.
 //!
-//! Estado de T11a: la fuente se construye y se conecta **inactiva**; activarla
+//! La fuente se construye y se conecta **inactiva**; activarla
 //! es una decisión explícita del propietario. El nodo real y la captura
-//! end-to-end son T11b.
+//! end-to-end quedan fuera de esta crate.
 //!
-//! F7 añade dos rutas opcionales, apagadas por defecto y sin `unsafe` propio:
+//! Esta crate añade dos rutas opcionales, apagadas por defecto y sin `unsafe` propio:
 //! el feature `pulse` ejecuta `pactl` por proceso para publicar un sink nulo y
 //! una fuente remapeada cuando no hay PipeWire, y el feature `alsa` abre un
 //! dispositivo `hw:` sólo si la configuración lo pide. PipeWire sigue siendo la

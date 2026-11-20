@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- T19: FGS de micrófono. target/compile 35, así que NO se declara
+<!-- FGS de micrófono. target/compile 35, así que NO se declara
      ACCESS_LOCAL_NETWORK (existe desde API 37 y sólo con target >= 37).
      POST_NOTIFICATIONS es runtime desde API 33; denegarlo no impide el FGS. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">

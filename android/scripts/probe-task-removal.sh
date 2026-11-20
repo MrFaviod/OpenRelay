@@ -15,7 +15,7 @@ adb_s shell run-as "$PKG" rm -f files/holdFgsForExternalTaskRemoval.xml >/dev/nu
 adb_s shell am instrument -w -r -e class "dev.openrelay.app.LifecycleActionsTest#holdFgsForExternalTaskRemoval" \
   -e listener dev.openrelay.app.FgsXmlListener -e fgsXmlName holdFgsForExternalTaskRemoval.xml \
   "$TEST_PKG/$RUNNER" > "$OUT/hold.instrument" 2>&1 &
-HOLD=$!
+INSTR_PID=$!
 ok=0
 for i in $(seq 1 40); do
   if adb_s shell dumpsys activity services "$PKG" | grep -q "isForeground=true"; then ok=1; break; fi
@@ -36,4 +36,4 @@ adb_s shell dumpsys activity recents > "$OUT/recents-after.txt"
 adb_s shell dumpsys notification --noredact > "$OUT/notif-after.txt"
 log "fgs_foreground_after=$(grep -c 'isForeground=true' "$OUT/services-after.txt")"
 log "app_task_after=$(grep -c 'dev.openrelay.app' "$OUT/recents-after.txt")"
-wait "$HOLD"; log "hold_instrument_exit=$?"
+wait "$INSTR_PID"; log "hold_instrument_exit=$?"

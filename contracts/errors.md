@@ -6,13 +6,13 @@
 
 ```json
 {
-  "schema_version": "openrelay.control/v1"
-  "type": "error"
-  "request_id": "c-17"
+  "schema_version": "openrelay.control/v1",
+  "type": "error",
+  "request_id": "c-17",
   "payload": {
-    "code": "conflict"
-    "message": "revision mismatch"
-    "retryable": true
+    "code": "conflict",
+    "message": "revision mismatch",
+    "retryable": true,
     "current_revision": 9
   }
 }
@@ -39,7 +39,7 @@
 | `denied` | Operación no permitida por ACL o clave readonly | no | no | Capacidad no concedida |
 | `unsupported` | Operación o tipo no soportado en v1 | no | no | Acción remota de micrófono, códec futuro |
 | `busy` | Recurso ocupado; reintentar más tarde | sí | no | Ventana de enrolamiento activa, cambio en curso |
-| `unauthorized` | Identidad ausente, inválida o revocada | no | sí | Sesión sin `peer_cert`/ACL o app-layer fallido |
+| `unauthorized` | Identidad ausente, inválida o revocada | no | sí | Sesión sin `peer_cert()`/ACL o app-layer fallido |
 | `too_large` | Frame o mensaje supera el límite declarado | no | sí | Control >16384 bytes o datagrama >1200 |
 | `not_found` | Clave, sesión o identidad inexistente | no | no | `config.get` de clave desconocida |
 | `internal` | Fallo interno sin detalle sensible | sí | no | Error inesperado del daemon |

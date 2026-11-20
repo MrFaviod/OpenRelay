@@ -1,4 +1,4 @@
-//! T06 — jitter acotado, descarte por deadline, huecos/PLC y contadores.
+//! Jitter acotado, descarte por deadline, huecos/PLC y contadores.
 //!
 //! Los tests usan un reloj monotónico local explícito en microsegundos: el
 //! buffer nunca compara tiempos de dispositivos distintos, sólo diferencias

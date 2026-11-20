@@ -5,7 +5,7 @@
 //! token. El servidor compara el token en tiempo constante, exige ventana
 //! vigente y de un solo uso, y cierra cualquier conexión que intente audio,
 //! control de sesión o tickets. El enrolamiento no crea identidad persistente
-//! ni ACL: eso queda para F3 (T15).
+//! ni ACL: eso queda fuera de este módulo.
 //!
 //! Los mensajes son JSON acotado con prefijo `u32` big-endian, igual que el
 //! framing de control, pero con un contrato propio y mínimo:

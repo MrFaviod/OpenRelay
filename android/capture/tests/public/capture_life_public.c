@@ -1,4 +1,4 @@
-/* T13a S3a — public lifecycle tests for the frozen capture ABI.
+/* Public lifecycle tests for the frozen capture ABI.
  * Subset: OPEN/CLOSED plus argument/ownership negatives reachable with no
  * adapter, no hardware, no STARTED. Header: include/capture-abi.h (frozen
  * product copy, sha256 298f88c6...). Plain C11, no framework, no simulated

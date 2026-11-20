@@ -1,4 +1,4 @@
-//! Retorno de audio Linux→Android (F8/T24, D-08).
+//! Retorno de audio Linux→Android.
 //!
 //! Aquí vive la lógica pura y testeable del retorno: la decisión
 //! [`should_send`] y el emisor [`ReturnEmitter`], que toma bloques PCM16LE mono

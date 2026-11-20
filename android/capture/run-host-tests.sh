@@ -1,5 +1,5 @@
 #!/bin/sh
-# run-host-tests.sh — strict host runner for the T13a shared SPSC core.
+# run-host-tests.sh — strict host runner for the shared SPSC core.
 #
 # Rules this runner enforces, because a printed warning is not a gate:
 #   * a header that differs from the frozen contract FAILS the run (pinned
@@ -121,7 +121,7 @@ for f in "$SRC" "$TST" "$WRAP" "$SCEN" "$RES"; do
     fi
 done
 
-say "== openrelay T13a SPSC host runner (strict) =="
+say "== openrelay SPSC host runner (strict) =="
 say "root=$ROOT"
 say "cc=$($CC --version 2>/dev/null | head -1)"
 say "flags=$STD $INC"

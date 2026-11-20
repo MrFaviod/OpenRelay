@@ -1,4 +1,4 @@
-/* T13a life inflight regressions (read/drain en vuelo frente a destroy).
+/* Life inflight regressions (read/drain en vuelo frente a destroy).
  *
  * Un proceso = un escenario:
  *   read     : consumidor retenido DENTRO de openrelay_capture_read (tras __real_openrelay_spsc_read).

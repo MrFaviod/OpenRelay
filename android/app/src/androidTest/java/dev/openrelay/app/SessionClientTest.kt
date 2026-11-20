@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * F4: el cliente de producto rechaza una provisión mala sin abrir sesión,
+ * El cliente de producto rechaza una provisión mala sin abrir sesión,
  * parsea un ACK distinguiendo requested de effective, y, con un fixture
  * externo, abre una sesión real sobre UDP con la clave de AndroidKeyStore.
  *

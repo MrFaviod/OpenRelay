@@ -1,6 +1,6 @@
 //! `openrelay-proto` — subconjunto de control del contrato `openrelay.control/v1`.
 //!
-//! Alcance de T08: envelope, framing de control (`u32` BE + JSON acotado),
+//! Alcance: envelope, framing de control (`u32` BE + JSON acotado),
 //! máquina de estados de configuración (revisión, `request_id`,
 //! `expected_revision`, conflicto, ACK efectivo, capacidades y catálogo de
 //! errores) e idempotencia por sesión.
@@ -14,7 +14,7 @@
 //! La autoridad de configuración es el worker de control del daemon: un único
 //! hilo aplica las operaciones en orden. Esta crate modela ese worker; no
 //! autentica ni autoriza por sí misma: recibe un [`control::AuthorizedPeer`]
-//! ya autenticado por la frontera de F2.
+//! ya autenticado por la frontera de transporte.
 
 pub mod control;
 pub mod wire;

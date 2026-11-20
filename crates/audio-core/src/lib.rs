@@ -6,10 +6,10 @@
 //! cabecera big-endian de 28 bytes y payload PCM16LE de 480 bytes. La
 //! extensión compatible `type=2` (Opus 48 kHz mono, un paquete por datagrama)
 //! sólo se usa si ambos extremos anuncian `audio.opus-48k-mono`; el perfil
-//! PCM16 `type=1` queda byte a byte igual. Jitter (T06) y drift/resample (T07)
+//! PCM16 `type=1` queda byte a byte igual. Jitter y drift/resample
 //! consumen ese frame sin redefinir el contrato.
 //!
-//! Interfaz para consumidores (jitter/PLC en T06, captura en T14):
+//! Interfaz para consumidores (jitter/PLC y captura):
 //!
 //! ```
 //! use openrelay_audio_core::{AudioFrame, Flags, DATAGRAM_LEN, SAMPLE_COUNT};

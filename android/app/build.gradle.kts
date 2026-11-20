@@ -1,6 +1,6 @@
-// Módulo app de openrelay (base T12). Sin audio, sin JNI y sin backend: sólo
+// Módulo app de openrelay. Sin audio, sin JNI y sin backend: sólo
 // una Activity Compose que muestra el placeholder. NDK/CMake/ABIs quedan
-// fijados para que T13 añada el puente nativo sin renegociar versiones.
+// fijados para que el puente nativo se añada sin renegociar versiones.
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -20,7 +20,7 @@ android {
         versionCode = 3
         versionName = "0.2.1"
 
-        // Runner listo para T14; las dependencias de test están fijadas abajo.
+        // Runner listo para la instrumentación; las dependencias de test están fijadas abajo.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // STL compartida: Oboe 1.11 exige c++_shared en el AAR Prefab.
@@ -30,7 +30,7 @@ android {
             }
         }
 
-        // Sólo estas dos ABIs, también para el futuro código nativo de T13.
+        // Sólo estas dos ABIs, también para el futuro código nativo.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -38,7 +38,7 @@ android {
 
     buildTypes {
         release {
-            // Sin minify en T12: no hay reglas ni backend que ofuscar.
+            // Sin minify: no hay reglas ni backend que ofuscar.
             isMinifyEnabled = false
         }
     }
@@ -65,7 +65,7 @@ android {
         }
     }
 
-    // Puente Rust de F2-10c: android/rust/build.sh deja las .so aquí.
+    // Puente Rust: android/rust/build.sh deja las .so aquí.
     sourceSets["main"].jniLibs.srcDir(file("../rust/target/jniLibs"))
 
     packaging {

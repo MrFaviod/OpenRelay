@@ -1,4 +1,4 @@
-/* src/spsc.c — real shared T13a SPSC capture core (C11).
+/* src/spsc.c — real shared SPSC capture core (C11).
  *
  * Fixed capacity OPENRELAY_CAPTURE_RING_SAMPLES (960) mono int16 samples, one
  * producer and one consumer. create/destroy are the only allocating

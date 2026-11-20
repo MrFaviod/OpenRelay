@@ -13,16 +13,16 @@
 //! La identidad del dispositivo se construye con un [`rustls::sign::SigningKey`]
 //! externo: el material privado nunca entra en este crate. [`identity`] expone
 //! el pin SPKI (SHA-256 del `SubjectPublicKeyInfo`), el parser DER y los
-//! verificadores; el puente Android Keystore sigue siendo trabajo de F2/T10c.
+//! verificadores; el puente Android Keystore queda fuera de esta crate.
 //!
-//! Límites deliberados de T10:
+//! Límites deliberados:
 //!
 //! - El crate es sans-IO. El llamador entrega y recibe datagramas; los tests
 //!   usan un enlace en memoria con paquetes QUIC reales. El socket UDP de
-//!   producción y el JNI se cablean en T13/T14.
+//!   producción y el JNI se cablean fuera de esta crate.
 //! - No hay tickets de sesión ni 0-RTT: la autorización se evalúa después del
 //!   handshake y antes de leer cualquier dato de aplicación.
-//! - `G3` (Keystore real), `G4` (NDK) y `G5` (LAN) **no** quedan probados por
+//! - El Keystore real, el NDK y la LAN **no** quedan probados por
 //!   este crate ni por sus tests.
 //!
 //! El frame de audio es el de [`openrelay_audio_core`] y el control usa el framing de

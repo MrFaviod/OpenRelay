@@ -1,5 +1,5 @@
-// Proyecto Android de openrelay (base T12). Sólo módulo app; el core Rust se
-// integra por JNI en T13 y no se compila desde Gradle en esta fase.
+// Proyecto Android de openrelay. Sólo módulo app; el core Rust se
+// integra por JNI y no se compila desde Gradle.
 pluginManagement {
     repositories {
         google {

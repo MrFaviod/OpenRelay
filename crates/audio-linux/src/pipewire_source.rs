@@ -5,7 +5,7 @@
 //! empuja muestras hasta que el propietario autorizado llame a
 //! [`PipeWireSource::activate`]. Sin esa llamada el stream queda conectado pero
 //! en pausa, que es el único estado admisible mientras no exista un daemon que
-//! decida cuándo capturar (T14).
+//! decida cuándo capturar.
 //!
 //! El callback de proceso sólo hace tres cosas: tomar un buffer del stream,
 //! copiar muestras ya presentes en el SPSC mediante
@@ -438,7 +438,7 @@ impl PipeWireSource {
 
     /// Corre el bucle principal hasta que el propietario lo detenga.
     ///
-    /// Bloquea el hilo llamante; en T11a no se invoca desde ningún binario.
+    /// Bloquea el hilo llamante; no se invoca desde ningún binario.
     pub fn run(&self) {
         self._mainloop.run();
     }

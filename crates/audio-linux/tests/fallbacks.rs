@@ -1,4 +1,4 @@
-//! Pruebas de los fallbacks de F7: PulseAudio por proceso y ALSA opt-in.
+//! Pruebas de los fallbacks: PulseAudio por proceso y ALSA opt-in.
 //!
 //! Las pruebas de PulseAudio usan un ejecutor falso que registra cada llamada y
 //! mantiene un conjunto de módulos; la prueba de integración levanta una

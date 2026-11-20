@@ -1,4 +1,4 @@
-//! Regresiones B de ciclo de vida y envío público (corte T10 tests-B).
+//! Regresiones B de ciclo de vida y envío público.
 //!
 //! Dos mecanismos, sin mocks: peer QUIC crudo con handshake mTLS real, ALPN
 //! `openrelay-session/1` y pin SPKI, igual que el cliente de `quinn_regressions`.

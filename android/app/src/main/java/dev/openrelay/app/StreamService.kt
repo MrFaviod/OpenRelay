@@ -322,7 +322,7 @@ class StreamService : Service() {
      * devuelve [PlaybackEngine.ERROR_FEEDBACK_NOT_ACKNOWLEDGED] si falta
      * cualquiera de las dos. Sin eso no hay hilo ni salida.
      *
-     * El toggle y el aviso visual siguen en HOLD: hoy nadie llama a
+     * El toggle y el aviso visual siguen pendientes: hoy nadie llama a
      * [attachReturnPlayback], así que el servicio se comporta igual que antes.
      */
     internal class ReturnPump(
@@ -638,7 +638,7 @@ class StreamService : Service() {
 
         private val gate = Any()
 
-        /** Retorno activo. Null mientras nadie enganche una sesión (HOLD de UI). */
+        /** Retorno activo. Null mientras nadie enganche una sesión. */
         @Volatile private var returnPump: ReturnPump? = null
         private val _running = AppState(false)
         private val _muted = AppState(false)
@@ -725,7 +725,7 @@ class StreamService : Service() {
          * [PlaybackEngine.start] no acepta (sin opt-in o sin aviso de eco
          * confirmado), no se crea hilo ni se toca la salida: el servicio
          * queda exactamente como estaba. Es el punto de entrada que usará el
-         * toggle, todavía en HOLD.
+         * toggle, todavía pendiente.
          */
         fun attachReturnPlayback(session: SessionClient, playback: PlaybackEngine): Boolean {
             synchronized(gate) {

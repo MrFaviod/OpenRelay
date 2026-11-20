@@ -54,7 +54,7 @@ The token lives in memory only. It is compared in constant time and invalidated 
 6. On `y`, the daemon signs a `clientAuth` leaf for the device key with the local CA, adds the pin to the transport ACL and to `identities.json`/`grants.txt`, and sends the result back over the enrollment stream:
 
 ```json
-{"type":"enroll.result","version":1,"status":"accepted"
+{"type":"enroll.result","version":1,"status":"accepted",
  "client_leaf":"<hex DER>","session_ca":"<hex DER>","session_port":47000}
 ```
 

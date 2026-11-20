@@ -47,7 +47,7 @@ comparación de calidad requiere escucha, que este entregable no incluye.
 
 ## Pérdida de paquetes: PLC, no FEC
 
-- `OpusDecoder::decode(None)` (o `Some(&)`) decodifica sin paquete y libopus
+- `OpusDecoder::decode(None)` (o `Some(&[])`) decodifica sin paquete y libopus
   aplica **PLC** con la última duración de paquete conocida. La salida mide
   siempre exactamente una trama del perfil.
 - El PLC depende del estado del decodificador: hay que decodificar el flujo en
@@ -66,7 +66,7 @@ codificador:
 
 - `openrelay_audio_core::LinearResampler` es un corrector de drift: su ratio está
   clampado a `[0.98, 1.02]`, por lo que no sirve para 44.1 → 48 (ratio 1.088).
-- El remuestreo 44.1 → 48 corresponde a la etapa de captura/adaptación previa
+- El remuestreo 44.1 → 48 corresponde a la etapa de captura/adaptación previa,
   fuera de este crate. `OpusEncoder::encode` rechaza cualquier buffer que no
   tenga exactamente las muestras del perfil a 48 kHz (`InvalidPcmLength`).
 
@@ -88,11 +88,11 @@ El códec es **opcional**:
 ## API
 
 - `CodecProfile::{LowDelay2p5Ms, LowDelay5Ms, LowDelay10Ms}` con
-  `samples_per_frame`, `frame_duration_us`, `from_frame_samples` y `ALL`.
-- `OpusEncoder::new(profile, bitrate_bps)`, `encode(&[i16]) -> Vec<u8>`
-  `lookahead_samples`, `reset`.
-- `OpusDecoder::new(profile)`, `decode(Option<&[u8]>) -> Vec<i16>`, `reset`.
-- Errores en `CodecError` (sin `thiserror`): tamaños y bitrates inválidos
+  `samples_per_frame()`, `frame_duration_us()`, `from_frame_samples()` y `ALL`.
+- `OpusEncoder::new(profile, bitrate_bps)`, `encode(&[i16]) -> Vec<u8>`,
+  `lookahead_samples()`, `reset()`.
+- `OpusDecoder::new(profile)`, `decode(Option<&[u8]>) -> Vec<i16>`, `reset()`.
+- Errores en `CodecError` (sin `thiserror`): tamaños y bitrates inválidos,
   longitudes PCM incorrectas, paquete demasiado grande y errores de libopus.
 
 ## Dependencias y licencias
@@ -114,7 +114,7 @@ cargo clippy -p openrelay-codec -- -D warnings
 cargo fmt -p openrelay-codec -- --check
 ```
 
-`codec_profiles` cubre: roundtrip en 2.5/5/10 ms y bitrates 64/80/96 kbps
+`codec_profiles` cubre: roundtrip en 2.5/5/10 ms y bitrates 64/80/96 kbps,
 rechazo de tamaños y bitrates inválidos, PLC con longitud correcta, paquete
 dentro de 1200 − 28 bytes, SNR/energía frente a un seno y lookahead de 2.5 ms.
 Pasar estas pruebas no demuestra calidad perceptual, latencia E2E ni

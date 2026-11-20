@@ -1,4 +1,4 @@
-/* openrelay capture - FRONTERA BACKEND PRIVADA (T13a S3c, tests-first).
+/* openrelay capture - FRONTERA BACKEND PRIVADA (tests-first).
  * Header INTERNO: no es ABI publico, no se instala, no declara openrelay_capture_*.
  * El unico motor es el futuro openrelay_capture_* sobre el SPSC real; aqui solo se
  * fija como habla ese motor con el hardware detras de su objeto opaco.

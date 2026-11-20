@@ -14,17 +14,17 @@ un frame PCM16 por DATAGRAM y el control por un stream fiable con framing
 Tres restricciones mandan sobre la elección:
 
 1. La toolchain está fijada a **Rust 1.80.1** en `rust-toolchain.toml`.
-2. La identidad debe poder firmar con una clave **no exportable** de Android
+2. La identidad debe poder firmar con una clave **no exportable** de Android,
    lo que exige un gancho de firma externa en el stack TLS.
 3. El crate debe ser reutilizable en Linux y Android sin arrastrar un runtime
    asíncrono ni HTTP/3, porque el bucle de audio lo gobierna el llamador.
 
 ## 2. Decisión
 
-Se adopta **`quinn-proto` 0.11.12** con **`rustls` 0.23.22** y **`ring` 0.17.8**
+Se adopta **`quinn-proto` 0.11.12** con **`rustls` 0.23.22** y **`ring` 0.17.8**,
 en modo **sans-IO**: `openrelay-transport` recibe y devuelve datagramas UDP y no abre
 sockets ni hilos. El crate se declara en
-[`crates/transport/Cargo.toml`](..../crates/transport/Cargo.toml):
+[`crates/transport/Cargo.toml`](../../crates/transport/Cargo.toml):
 
 | Dependencia | Pin | Papel |
 |---|---|---|
@@ -37,21 +37,21 @@ sockets ni hilos. El crate se declara en
 
 Se usa el **crate `quinn-proto`**, no el crate `quinn` 0.11.12: este último no
 existe en esa versión y el primero es el que expone la API sans-IO con
-`peer_identity`, `handshake_data` y `export_keying_material`.
+`peer_identity()`, `handshake_data()` y `export_keying_material()`.
 
 ### 2.1 Reparto de superficies
 
 - **Audio:** DATAGRAM QUIC, un `AudioFrame` v1 por datagrama, sin fragmentación
   en este nivel. El datagrama de contrato son 508 B (cabecera 28 B + 480 B de
   payload) y el máximo aceptado es 1200 B
-  ([`crates/audio-core/src/frame.rs`](..../crates/audio-core/src/frame.rs)).
+  ([`crates/audio-core/src/frame.rs`](../../crates/audio-core/src/frame.rs)).
   Un datagrama mayor cierra la conexión con código `0x101` en lugar de
   truncarse.
 - **Control:** stream bidireccional fiable con `u32` BE de longitud + JSON, con
   `MAX_CONTROL_FRAME = 16388` (16384 de payload + 4 de longitud) tomado de
   `openrelay-proto`, no redeclarado aquí.
 - **ALPN:** `openrelay-enroll/1` y `openrelay-session/1` son constantes separadas en
-  [`crates/transport/src/lib.rs`](..../crates/transport/src/lib.rs). El
+  [`crates/transport/src/lib.rs`](../../crates/transport/src/lib.rs). El
   servidor de sesión rechaza con `RejectReason::Alpn` cualquier handshake que no
   negocie `openrelay-session/1`, y esa comprobación ocurre **antes** de mirar la
   identidad.
@@ -78,7 +78,7 @@ recorta en silencio.
 
 - **0-RTT:** `tls.max_early_data_size = 0` en el servidor y
   `tls.enable_early_data = false` en el cliente. Además el cliente expone
-  `has_0rtt` y `accepted_0rtt` para que la prueba afirme que nunca ocurre.
+  `has_0rtt()` y `accepted_0rtt()` para que la prueba afirme que nunca ocurre.
 - **Tickets de sesión:** `send_tls13_tickets = 0`.
 - **HTTP/3 y Tokio:** no hay dependencia ni tarea de fondo; el `Endpoint` se
   bombea con `poll_transmit`/`poll_timeout`/`handle_timeout` desde el llamador.
@@ -92,8 +92,8 @@ recorta en silencio.
   Android.
 - Al ser sans-IO, ninguna prueba de este crate acredita red real, latencia ni
   comportamiento de socket.
-- La API pública (`SessionServer`, `SessionClient`, `SessionLimits`
-  `Capabilities`, `Acl`, `RejectReason`, `ServerEvent`, `ClientEvent`
+- La API pública (`SessionServer`, `SessionClient`, `SessionLimits`,
+  `Capabilities`, `Acl`, `RejectReason`, `ServerEvent`, `ClientEvent`,
   `TransportError`) queda disponible para los consumidores del daemon.
 
 ## 4. Alternativas rechazadas
@@ -111,9 +111,9 @@ recorta en silencio.
 ## 5. Riesgos conocidos
 
 - **Motivo de rechazo impreciso en audio malformado:** en
-  [`quinn.rs`](..../crates/transport/src/quinn.rs), un `AudioFrame::decode`
+  [`quinn.rs`](../../crates/transport/src/quinn.rs), un `AudioFrame::decode`
   fallido emite `ServerEvent::Rejected` con `RejectReason::Tls`, un motivo que
-  corresponde a otra capa. No cambia el cierre fail-closed (código `0x102`)
+  corresponde a otra capa. No cambia el cierre fail-closed (código `0x102`),
   pero confunde la telemetría; corregirlo exige ampliar `RejectReason`, lo que
   es un cambio de API.
 - **Sin medición:** ninguna cifra de latencia, CPU o memoria de este ADR es una

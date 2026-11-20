@@ -1,4 +1,4 @@
-/* Fixture host de hardware (T13a S3c). NO es Oboe ni Android y NO tiene
+/* Fixture host de hardware. NO es Oboe ni Android y NO tiene
  * estados del motor ni generacion propia: solo formato negociado, contadores
  * de llamadas y posibilidades de entrada que el test declara. El token que
  * apunta es el que el motor paso como argumento, no uno inventado aqui.

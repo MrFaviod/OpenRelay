@@ -7,8 +7,8 @@
 ## 1. Contexto
 
 Los invariantes de seguridad exigen que el endpoint de sesión no entregue audio
-sin identidad de cliente válida, y que el de enrolamiento no transporte audio
-control ni tickets ([`docs/security/pairing.md`](../security/pairing.md)
+sin identidad de cliente válida, y que el de enrolamiento no transporte audio,
+control ni tickets ([`docs/security/pairing.md`](../security/pairing.md),
 [`docs/security/threat-model.md`](../security/threat-model.md)). El contrato v1
 deja explícitamente fuera de su alcance el handshake, el pin SPKI y la identidad
 de cliente: son de este ADR.
@@ -17,7 +17,7 @@ La restricción dura es Android: una clave de `AndroidKeyStore` **no es
 exportable**. Cualquier diseño que necesite los bytes de la clave privada en
 memoria del proceso queda descartado de entrada. `verify_peer(true)` por sí solo
 no acredita un cliente, y en quiche esa opción **aún acepta clientes sin
-certificado** si no se comprueba `peer_cert` explícitamente.
+certificado** si no se comprueba `peer_cert()` explícitamente.
 
 ## 2. Decisión
 
@@ -26,11 +26,11 @@ certificado** si no se comprueba `peer_cert` explícitamente.
 1. El servidor de sesión exige certificado de cliente mediante
    `WebPkiClientVerifier` construido sobre la **CA local**. No hay modo sin
    cliente en la superficie de sesión.
-2. Tras el handshake, el servidor lee `peer_identity`, extrae el certificado
+2. Tras el handshake, el servidor lee `peer_identity()`, extrae el certificado
    hoja y calcula su **pin SPKI SHA-256**; sin identidad de peer rechaza con
    `RejectReason::NoPeerCertificate`. Una cadena válida sin entrada en la `Acl`
    se rechaza con `NoAclEntry`. La `Acl` es *default deny* por construcción:
-   `Acl::new` está vacía y `Capabilities::none` no concede nada.
+   `Acl::new()` está vacía y `Capabilities::none()` no concede nada.
 3. El cliente exige **cadena contra la CA local y pin SPKI del servidor**
    mediante `PinnedServerVerifier`, que ejecuta primero la verificación webpki
    normal (cadena, nombre, validez) y sólo después compara el pin. Un pin
@@ -47,7 +47,7 @@ certificado** si no se comprueba `peer_cert` explícitamente.
 | | Enrolamiento (`openrelay-enroll/1`) | Sesión (`openrelay-session/1`) |
 |---|---|---|
 | Certificado de cliente | **No se pide** (`with_no_client_auth`) | **Obligatorio** (`WebPkiClientVerifier`) |
-| Identidad de peer | Ausente por diseño | `peer_cert` + pin SPKI + ACL |
+| Identidad de peer | Ausente por diseño | `peer_cert()` + pin SPKI + ACL |
 | DATAGRAM | Deshabilitado (`datagram_receive_buffer_size(None)`, send 0) | Audio permitido tras autorizar |
 | Tickets TLS | `send_tls13_tickets = 0` | `send_tls13_tickets = 0` |
 | 0-RTT | `max_early_data_size = 0` / `enable_early_data = false` | Igual |
@@ -55,7 +55,7 @@ certificado** si no se comprueba `peer_cert` explícitamente.
 
 El cliente de enrolamiento valida el **pin del certificado del servidor antes de
 enviar el token**: `EnrollClient::connect` construye el verificador con pin y el
-token sólo se escribe en `send_token`, que exige `is_ready`. Un pin incorrecto
+token sólo se escribe en `send_token`, que exige `is_ready()`. Un pin incorrecto
 aborta el handshake y el token nunca sale del dispositivo.
 
 ### 2.2 Ventana de enrolamiento
@@ -118,14 +118,14 @@ Este ADR fija el camino, no el puente:
 - **La ACL es un mapa en memoria** indexado por pin. La persistencia, la
   revocación y las cuotas por identidad se apoyan en el archivo de identidades
   del daemon y en `openrelay devices remove`.
-- **`Capabilities` se evalúa en el servidor por operación** (`mic`
+- **`Capabilities` se evalúa en el servidor por operación** (`mic`,
   `control_read`, `control_write`, `return_audio`), no en el cliente. Un cliente
   malicioso que abra un stream antes de autorizar recibe cierre `0x103`.
 - **Sin cuotas medidas por identidad.** El modelo de amenaza pide «límites
   numéricos de flood y cuotas por identidad» con valores medidos; aquí sólo hay
   los topes estructurales de ADR-0001.
 - **La ventana de enrolamiento admite un solo cliente** y no tiene límite de
-  intentos por IP; `attempts` cuenta intentos pero no los limita.
+  intentos por IP; `attempts()` cuenta intentos pero no los limita.
 - **`EnrollReject::Reused` no es alcanzable hoy.** Tras aceptar, la ventana pasa
   a `None`, así que el reintento se reporta como `NoWindow`. El rechazo es
   correcto (el segundo intento no entra), pero el motivo declarado en el enum no
@@ -136,7 +136,7 @@ Este ADR fija el camino, no el puente:
 - Persistencia de identidad, revocación y tickets.
 - Formato exacto del QR y de los mensajes de emparejamiento.
 - Almacenamiento de la CA local en Android y su provisión.
-- El puente de firma Android queda como trabajo futuro; si no se puede cumplir
+- El puente de firma Android queda como trabajo futuro; si no se puede cumplir,
   la salida **no** es exportar la clave: es elegir el camino app-layer estándar
   revisado con binding TLS, o declarar la limitación explícitamente en una
   revisión de este ADR.

@@ -1,4 +1,4 @@
-/* src/life.c - motor lifecycle openrelay_capture_* sobre el SPSC real (T13a S3c).
+/* src/life.c - motor lifecycle openrelay_capture_* sobre el SPSC real.
  *
  * Unico motor. Reserva el objeto y el anillo openrelay_spsc, y luego llama a la
  * factory privada openrelay_capture_backend_create(&be, owner). Sin stubs.

@@ -1,4 +1,4 @@
-/* Fixture host de hardware (T13a S3c). Simula el adapter, no el motor.
+/* Fixture host de hardware. Simula el adapter, no el motor.
  * No copia muestras, no reserva anillo y no inventa generacion: enable() solo
  * recuerda el token que el motor paso. Guarda el owner opaco sin mirarlo. */
 #include "backend_fixture.h"

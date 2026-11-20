@@ -214,7 +214,7 @@ fn packets_fit_datagram_budget() {
 
 #[test]
 fn snr_sanity_vs_fixed_pcm16_on_sine() {
-    // El PCM16 fijo de T05 ocupa 480 bytes por trama de 5 ms (768 kbps).
+    // El PCM16 fijo ocupa 480 bytes por trama de 5 ms (768 kbps).
     // Comparamos la señal decodificada contra la entrada original: debe
     // conservar la forma de onda, no sólo la energía.
     let profile = CodecProfile::LowDelay5Ms;

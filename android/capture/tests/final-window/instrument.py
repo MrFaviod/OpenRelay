@@ -42,7 +42,7 @@ if n_v2 == 1:
 
 decl = (
     decl_anchor
-    + "/* T13a final-window hooks: solo en la copia instrumentada de test. */\n"
+    + "/* final-window hooks: solo en la copia instrumentada de test. */\n"
     + "void openrelay_t13a_hook_start_gate_open(openrelay_capture *cap, uint64_t tok);\n"
     + "void openrelay_t13a_hook_push_reject(openrelay_capture *cap, uint64_t generation);\n"
 )

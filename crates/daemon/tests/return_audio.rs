@@ -1,4 +1,4 @@
-//! Tests del retorno Linux→Android (F8/T24).
+//! Tests del retorno Linux→Android.
 //!
 //! Sin la feature `return-audio` este archivo compila vacío y el binario de
 //! test termina con 0: la puerta es el `cfg` a nivel de archivo, no un

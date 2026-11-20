@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""run-lifecycle-tests.py - gate portable fail-closed de la integracion lifecycle host T13a (final).
+"""run-lifecycle-tests.py - gate portable fail-closed de la integracion lifecycle host.
 
 Uso: python3 run-lifecycle-tests.py [--out DIR]
 
@@ -365,7 +365,7 @@ def owned_suite():
 
 
 def final_window_suite():
-    """Oraculos T13a final-window (mismos oraculos; candidato life.c congelado, WINDOW_WANT=0)."""
+    """Oraculos final-window (mismos oraculos; candidato life.c congelado, WINDOW_WANT=0)."""
     bld = OUT / "final-window" / "build"
     bld.mkdir(parents=True)
     rc = sh([sys.executable, "tests/final-window/instrument.py", str(PKG / "src/life.c"), str(bld / "life_instr.c")],

@@ -1,4 +1,4 @@
-//! E2E F3 sobre QUIC en memoria: enrolar (QR -> token -> SPKI) -> pendiente ->
+//! E2E sobre QUIC en memoria: enrolar (QR -> token -> SPKI) -> pendiente ->
 //! approve a archivo -> load ACL -> mTLS autorizado -> config.set con revisión
 //! y ACK -> ticket emitido y canjeado -> revocación (sesión cerrada, ticket
 //! inválido, reconexión NoAclEntry, archivo sin la identidad).

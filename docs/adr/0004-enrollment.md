@@ -31,9 +31,9 @@ openrelay://pair?v=1&h=<host:port>&pin=<64 hex>&t=<64 hex>
 
 ## Persistencia
 
-- Archivo JSON: `{"version":1,"identities":[{"spki":"<64 hex>","mic":bool
+- Archivo JSON: `{"version":1,"identities":[{"spki":"<64 hex>","mic":bool,
   "control_read":bool,"control_write":bool,"return_audio":bool}]}`.
-- Escritura atómica: `<path>.tmp` creado con `create_new` y modo `0600`
+- Escritura atómica: `<path>.tmp` creado con `create_new` y modo `0600`,
   `sync_all`, luego `rename`.
 - `load` de un archivo inexistente devuelve ACL vacía. Versión o forma
   desconocida es error (fail-closed).

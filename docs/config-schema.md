@@ -40,30 +40,30 @@ Reglas:
 ## 3. Ejemplo de intercambio
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17"
-  "expected_revision": 7
+{ "schema_version": "openrelay.control/v1", "type": "config.set", "request_id": "c-17",
+  "expected_revision": 7,
   "payload": { "key": "audio.gain_db", "value": 3.0 } }
 ```
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8
-  "payload": { "applied": true
-               "requested": { "key": "audio.gain_db", "value": 3.0 }
+{ "schema_version": "openrelay.control/v1", "type": "ack", "request_id": "c-17", "revision": 8,
+  "payload": { "applied": true,
+               "requested": { "key": "audio.gain_db", "value": 3.0 },
                "effective": { "key": "audio.gain_db", "value": 3.0 } } }
 ```
 
 Conflicto de revisión:
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-18"
-  "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-18",
+  "payload": { "code": "conflict", "message": "revision mismatch", "retryable": true,
                "current_revision": 8 } }
 ```
 
 Clave local:
 
 ```json
-{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-19"
+{ "schema_version": "openrelay.control/v1", "type": "error", "request_id": "c-19",
   "payload": { "code": "local_key", "message": "key is local to the device", "retryable": false } }
 ```
 

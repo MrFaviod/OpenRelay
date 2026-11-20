@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://github.com/MrFaviod/OpenRelay/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/MrFaviod/OpenRelay?style=flat-square&color=14b8a6"></a>
-  <a href="https://github.com/MrFaviod/OpenRelay/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/MrFaviod/OpenRelay/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-8b5cf6?style=flat-square"></a>
   <img alt="Linux x86_64 | aarch64" src="https://img.shields.io/badge/linux-x86__64%20%7C%20aarch64-0f172a?style=flat-square&logo=linux&logoColor=white">
   <img alt="Android 9+" src="https://img.shields.io/badge/android-9%2B-0f172a?style=flat-square&logo=android&logoColor=3ddc84">
@@ -47,7 +46,7 @@ The app captures the phone's microphone and sends it to the PC over Wi-Fi. On Li
 curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh
 ```
 
-It installs `openrelay` into `~.local/bin` (no root) after checking the download against `SHA256SUMS`.
+It installs `openrelay` into `~/.local/bin` (no root) after checking the download against `SHA256SUMS`.
 
 **Android** 9 or newer: get `openrelay-0.2.1-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it.
 
@@ -58,7 +57,7 @@ Manual install, building from source and per-distro packages are in the [install
 **1. Start the daemon**
 
 ```sh
-systemctl --user enable --now openrelay.service # or just: openrelay daemon
+systemctl --user enable --now openrelay.service   # or just: openrelay daemon
 ```
 
 If you have a firewall, open UDP 47000–47001:
@@ -84,9 +83,9 @@ Tap **Iniciar captura local** in the app. Select **openrelay-mic** as the microp
 Useful commands:
 
 ```sh
-openrelay status # is it running, how many phones are connected
-openrelay devices # paired phones
-openrelay devices remove <fingerprint> # unpair a phone
+openrelay status            # is it running, how many phones are connected
+openrelay devices           # paired phones
+openrelay devices remove <fingerprint>   # unpair a phone
 ```
 
 More in the [CLI guide](docs/cli-quickstart.md).
@@ -108,7 +107,7 @@ sudo apt install build-essential pkg-config clang libclang-dev cmake \
   libpipewire-0.3-dev libspa-0.2-dev libpulse-dev libopus-dev
 
 git clone https://github.com/MrFaviod/OpenRelay && cd OpenRelay
-cargo build --release --locked -p openrelay-cli # -> target/release/openrelay
+cargo build --release --locked -p openrelay-cli   # -> target/release/openrelay
 ```
 
 The Android build is in [INSTALL.md](INSTALL.md#android-from-source).

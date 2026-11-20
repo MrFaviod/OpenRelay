@@ -3,18 +3,18 @@
 One binary does two jobs. It is the **daemon** (`openrelay daemon`) and the **client** that talks to it over a local Unix socket. Every command that talks to the daemon prints JSON on stdout, so it pipes cleanly into `jq`.
 
 ```text
-openrelay daemon [--socket PATH] [--quic ADDR | --no-quic] [--state-dir PATH]
+openrelay daemon        [--socket PATH] [--quic ADDR | --no-quic] [--state-dir PATH]
                         [--identity-der PATH --identity-key PATH --client-ca PATH
                          --client-ca-key PATH --identities PATH --control-grants PATH]
-openrelay status [--socket PATH] daemon state
-openrelay capabilities [--socket PATH] keys, ranges, current revision
-openrelay config get [KEY] [--socket PATH] read one key, or all of them
-openrelay config set KEY VALUE --rev N [--socket PATH] write one key
-openrelay pair [--ttl 120] [--advertise IP] [--yes] [--socket PATH]
+openrelay status        [--socket PATH]                    daemon state
+openrelay capabilities  [--socket PATH]                    keys, ranges, current revision
+openrelay config get    [KEY] [--socket PATH]              read one key, or all of them
+openrelay config set    KEY VALUE --rev N [--socket PATH]  write one key
+openrelay pair          [--ttl 120] [--advertise IP] [--yes] [--socket PATH]
                                                            QR + local approval of a phone
-openrelay devices [--state-dir PATH] list approved identities
-openrelay devices remove FINGERPRINT [--socket PATH] revoke a device and close its sessions
-openrelay service print-unit print the systemd --user unit
+openrelay devices       [--state-dir PATH]                 list approved identities
+openrelay devices remove FINGERPRINT [--socket PATH]       revoke a device and close its sessions
+openrelay service print-unit                               print the systemd --user unit
 openrelay --help | openrelay <command> --help
 ```
 
@@ -30,7 +30,7 @@ It stays in the foreground until Ctrl-C or SIGTERM, and never forks; there is no
 systemctl --user enable --now openrelay.service
 ```
 
-On first start the default daemon **provisions its own identity** in `${XDG_CONFIG_HOME:-~.config}/openrelay/` and opens the session endpoint on `0.0.0.0:47000` (UDP). `--state-dir DIR` moves the state directory; `--no-quic` starts only the local control socket and creates no identity or files; `--quic ADDR` changes the bind address/port. Passing the six `--identity-*` / `--client-ca*` / `--identities` / `--control-grants` flags uses an existing provision instead of generating one (all six are required together).
+On first start the default daemon **provisions its own identity** in `${XDG_CONFIG_HOME:-~/.config}/openrelay/` and opens the session endpoint on `0.0.0.0:47000` (UDP). `--state-dir DIR` moves the state directory; `--no-quic` starts only the local control socket and creates no identity or files; `--quic ADDR` changes the bind address/port. Passing the six `--identity-*` / `--client-ca*` / `--identities` / `--control-grants` flags uses an existing provision instead of generating one (all six are required together).
 
 | File | Contents | Mode |
 |---|---|---|
@@ -49,14 +49,14 @@ The daemon needs inbound UDP **47000** (sessions) and, while a pairing window is
 
 ```sh
 openrelay status
-openrelay status | jq.
+openrelay status | jq .
 ```
 
 ```json
 {"ok":true,"request_id":"cli-1234-…","result":{
-  "version":"0.2.1","uptime_s":42,"sessions":1
-  "quic":"0.0.0.0:47000"
-  "pipewire":{"ok":true}
+  "version":"0.2.1","uptime_s":42,"sessions":1,
+  "quic":"0.0.0.0:47000",
+  "pipewire":{"ok":true},
   "pair":{"open":false,"pending":0,"expires_at":null}}}
 ```
 
@@ -100,7 +100,7 @@ List what is approved without talking to the daemon:
 
 ```sh
 openrelay devices
-# 9f2c… mic=sí control_read=sí control_write=sí return_audio=no
+# 9f2c…  mic=sí control_read=sí control_write=sí return_audio=no
 ```
 
 With no approved device it prints `openrelay: no hay dispositivos aprobados` on stderr and exits 0.
@@ -120,14 +120,14 @@ printf '%s\n' '{"request_id":"stats-1","op":"audio.stats"}' |
 
 ```json
 {"ok":true,"request_id":"stats-1","result":{"sessions":[
-  {"session":1,"pin":"9f2c…","pcm16_frames":2880,"opus_frames":0
-   "plc_frames":0,"dropped_duplicates":0,"dropped_reordered":0
-   "dropped_cadence":0,"discontinuities":1,"epoch_resets":1
-   "decode_errors":0,"ns_stages":0,"ns_frames_processed":0
+  {"session":1,"pin":"9f2c…","pcm16_frames":2880,"opus_frames":0,
+   "plc_frames":0,"dropped_duplicates":0,"dropped_reordered":0,
+   "dropped_cadence":0,"discontinuities":1,"epoch_resets":1,
+   "decode_errors":0,"ns_stages":0,"ns_frames_processed":0,
    "ns_frames_bypassed":2880,"ns_added_latency_samples":0}]}}
 ```
 
-`pcm16_frames` climbing while `decode_errors` and `dropped_*` stay at zero is the quickest proof that audio is arriving. `sessions: ` means no phone is connected.
+`pcm16_frames` climbing while `decode_errors` and `dropped_*` stay at zero is the quickest proof that audio is arriving. `sessions: []` means no phone is connected.
 
 The control socket takes one JSON line per request and returns one line per response:
 
@@ -140,7 +140,7 @@ Operations are `status`, `config.get`, `config.set`, `capabilities` and `audio.s
 ## 5. Discover the settings
 
 ```sh
-openrelay capabilities | jq.
+openrelay capabilities | jq .
 ```
 
 This lists every key with its type, range and scope, plus the current `revision`. The keys:
@@ -165,21 +165,21 @@ Defaults and ownership are in [config-schema.md](config-schema.md).
 ## 6. Read and write configuration
 
 ```sh
-openrelay config get # full snapshot
-openrelay config get audio.mute # one key
+openrelay config get                     # full snapshot
+openrelay config get audio.mute          # one key
 ```
 
 A read answers with an `ack` that carries the `effective` value and the current `revision`:
 
 ```json
-{"ok":true,"result":{"type":"ack","revision":0
+{"ok":true,"result":{"type":"ack","revision":0,
   "payload":{"applied":true,"effective":{"key":"audio.mute","value":false}}}}
 ```
 
 Writes are **optimistic**. You pass the revision you last read, and if someone else changed the configuration in the meantime (the phone, for instance), the write is rejected instead of silently overwriting their change.
 
 ```sh
-rev=$(openrelay config get audio.mute | jq -r.result.revision)
+rev=$(openrelay config get audio.mute | jq -r .result.revision)
 openrelay config set audio.mute true --rev "$rev"
 ```
 
@@ -188,7 +188,7 @@ On a conflict the CLI exits 1, prints the JSON error on stdout and a one-line re
 ```sh
 $ openrelay config set audio.mute true --rev 7
 {"error":{"code":"conflict","current_revision":0,"message":"revision mismatch","retryable":true},"ok":false,"request_id":"cli-1234-…"}
-openrelay: el daemon devolvió error # stderr
+openrelay: el daemon devolvió error        # stderr
 ```
 
 `VALUE` is parsed as `true`/`false`, an integer, a decimal, or text, in that order. The key decides whether the value is valid. For example, `0.5` is not an integer.
@@ -224,7 +224,7 @@ journalctl --user -u openrelay.service -f
 openrelay pair --ttl 300
 
 # Check that the installed unit matches the one the binary ships with
-diff <(openrelay service print-unit) ~.config/systemd/user/openrelay.service && echo "unit up to date"
+diff <(openrelay service print-unit) ~/.config/systemd/user/openrelay.service && echo "unit up to date"
 ```
 
 Pairing security is covered in [security/pairing.md](security/pairing.md).

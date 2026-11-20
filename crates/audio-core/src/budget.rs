@@ -3,7 +3,7 @@
 //! ## Qué es y qué no es
 //!
 //! Todas las cifras de este módulo son **propuestas de presupuesto**, no
-//! resultados: no hay baseline física (D-07) y esta crate no mide hardware. El
+//! resultados: no hay baseline física y esta crate no mide hardware. El
 //! método de medida está declarado por recurso para que la medición física
 //! posterior sea comparable; las pruebas sólo comprueban coherencia interna y
 //! que los contadores leen las métricas reales de [`crate::jitter`] y

@@ -9,7 +9,7 @@ opcional, no un paquete del sistema.
 | `systemd/openrelay.service` | Unidad `systemd --user` opcional; ejecuta `openrelay daemon`. |
 | `../scripts/package.sh` | Construye y valida un tarball reproducible con `--check`. |
 
-La unidad usa el binario en `~.local/bin/openrelay` y el socket por defecto
+La unidad usa el binario en `~/.local/bin/openrelay` y el socket por defecto
 `$XDG_RUNTIME_DIR/openrelay/control.sock`. No abre puertos administrativos, no
 necesita root y no modifica el sistema: corre con los privilegios del usuario
 que la activa. La instalación y desinstalación manuales están en
@@ -21,10 +21,10 @@ que la activa. La instalación y desinstalación manuales están en
 temporal:
 
 ```
-openrelay-<versión>
-  openrelay 0755
-  openrelay.service 0644
-  README.md 0644
+openrelay-<versión>/
+  openrelay           0755
+  openrelay.service   0644
+  README.md     0644
 ```
 
 y verifica permisos (sin setuid/setgid, nada fuera del prefijo), que

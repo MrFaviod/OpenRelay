@@ -570,7 +570,7 @@ fn client_fails_closed_on_truncated_result_and_fin() {
 
 /// Test E: tras una respuesta `enroll.result` truncada con FIN, el cliente no
 /// sólo registra `Rejected(Malformed)`: falta la terminalidad real de la
-/// conexión. La lane de fix no puede limitarse a un `Rejected` local + buffer
+/// conexión. El arreglo no puede limitarse a un `Rejected` local + buffer
 /// vacío dejando la conexión viva.
 #[test]
 fn client_is_terminal_after_truncated_result_and_fin() {

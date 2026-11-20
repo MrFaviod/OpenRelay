@@ -6,7 +6,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * F2-10c: handshake mTLS real con la clave de AndroidKeyStore. El puente Rust
+ * Handshake mTLS real con la clave de AndroidKeyStore. El puente Rust
  * (libopenrelay_bridge.so) firma por JNI con KeystoreSigner; el informe empieza por
  * "OK" sólo si el servidor autorizó y el Keystore firmó al menos una vez.
  */

@@ -8,7 +8,7 @@
 //!
 //! El crate es sans-IO: [`SessionServer`] y [`SessionClient`] reciben y
 //! devuelven datagramas UDP. Los tests usan un enlace en memoria; el socket de
-//! producción se cablea en T13/T14 sin cambiar esta frontera.
+//! producción se cablea fuera de esta crate sin cambiar esta frontera.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
