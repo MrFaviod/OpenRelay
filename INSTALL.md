@@ -51,7 +51,7 @@ What it does, step by step:
 3. Downloads `openrelay-<version>-<target>.tar.gz` and `SHA256SUMS`.
 4. **Verifies the checksum.** On a mismatch it stops and installs nothing.
 5. Checks the downloaded binary for missing shared libraries (`libpipewire`, `libopus`) **before installing** and aborts with the package names unless `OPENRELAY_FORCE=1` is set.
-6. Installs `openrelay` into `~/.local/bin` (mode 0755) and `openrelay.service` into `~/.config/systemd/user/`. It does **not** enable the unit, and it warns if `~/.local/bin` is not in your `PATH`.
+6. Installs `openrelay` into `~/.local/bin` (mode 0755) and `openrelay.service` into `~/.config/systemd/user/`. If a `systemd --user` session is available, it reloads systemd, enables and starts the unit, waits up to 5 seconds for `openrelay status`, and prints `OpenRelay daemon is running.`; on failure it shows the unit status and the journal command without failing the install. Set `OPENRELAY_NO_SERVICE=1` to install the unit without starting it, or `OPENRELAY_NO_UNIT=1` to skip it. Without a user session it tells you to run `openrelay daemon`. It also warns if `~/.local/bin` is not in your `PATH`.
 
 It never uses `sudo`, and by default it writes only under your home directory.
 
@@ -60,6 +60,7 @@ It never uses `sudo`, and by default it writes only under your home directory.
 | `OPENRELAY_VERSION=v0.2.2` | install a specific release |
 | `OPENRELAY_BIN_DIR=/some/dir` | install the binary somewhere else |
 | `OPENRELAY_NO_UNIT=1` | skip the systemd unit |
+| `OPENRELAY_NO_SERVICE=1` | install the unit but do not enable or start it |
 | `OPENRELAY_FORCE=1` | install even when `libpipewire` or `libopus` is missing |
 | `OPENRELAY_UNINSTALL=1` | remove the binary and the unit |
 
@@ -104,7 +105,7 @@ openrelay service print-unit | head -3
 
 ## Run it as a user service
 
-The unit is optional. `openrelay daemon` runs fine in a terminal too.
+The installer already enables and starts the unit. These commands are the manual fallback, and `openrelay daemon` runs fine in a terminal too.
 
 ```sh
 systemctl --user daemon-reload

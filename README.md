@@ -46,7 +46,7 @@ The app captures the phone's microphone and sends it to the PC over Wi-Fi. On Li
 curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh
 ```
 
-It installs `openrelay` into `~/.local/bin` (no root) after checking the download against `SHA256SUMS`.
+It installs `openrelay` into `~/.local/bin` (no root) after checking the download against `SHA256SUMS`, and enables and starts the systemd user service when a user session is available.
 
 **Android** 9 or newer: get `openrelay-0.2.2-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it.
 
@@ -54,7 +54,7 @@ Manual install, building from source and per-distro packages are in the [install
 
 ## Usage
 
-**1. Start the daemon**
+**1. Start the daemon** (the installer already did this; manual fallback:)
 
 ```sh
 systemctl --user enable --now openrelay.service   # or just: openrelay daemon

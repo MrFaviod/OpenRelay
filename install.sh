@@ -13,6 +13,8 @@
 #                       file:// directory with the same asset layout also works
 #   OPENRELAY_BIN_DIR   install directory (default: ~/.local/bin)
 #   OPENRELAY_NO_UNIT=1 skip the systemd --user unit
+#   OPENRELAY_NO_SERVICE=1
+#                       install the unit but do not enable or start it
 #   OPENRELAY_FORCE=1   install even if required shared libraries are missing
 #   OPENRELAY_UNINSTALL=1 remove a previous install and exit
 set -eu
@@ -98,7 +100,40 @@ say "Installed $BIN_DIR/openrelay"
 if [ "${OPENRELAY_NO_UNIT:-}" != 1 ]; then
   mkdir -p "$UNIT_DIR"
   install -m 0644 "$src/openrelay.service" "$UNIT_DIR/openrelay.service"
-  say "Installed $UNIT_DIR/openrelay.service (not enabled)"
+  if [ "$BIN_DIR" != "$HOME/.local/bin" ]; then
+    # The packaged unit points at %h/.local/bin; keep it on the chosen path.
+    escaped=$(printf '%s' "$BIN_DIR/openrelay" | sed 's/[\\&|]/\\&/g')
+    sed -i "s|^ExecStart=.*|ExecStart=\"$escaped\" daemon|" "$UNIT_DIR/openrelay.service"
+  fi
+  say "Installed $UNIT_DIR/openrelay.service"
+fi
+
+started=0
+if [ "${OPENRELAY_NO_UNIT:-}" = 1 ]; then
+  say "No service installed; start the daemon with: openrelay daemon"
+elif [ "${OPENRELAY_NO_SERVICE:-}" = 1 ]; then
+  say "Service not started (OPENRELAY_NO_SERVICE=1); start it with: systemctl --user enable --now openrelay.service"
+elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+  systemctl --user daemon-reload || true
+  if systemctl --user enable --now openrelay.service; then
+    i=0
+    while [ "$i" -lt 10 ]; do
+      if "$BIN_DIR/openrelay" status >/dev/null 2>&1; then
+        started=1
+        say "OpenRelay daemon is running."
+        break
+      fi
+      i=$((i + 1))
+      sleep 0.5
+    done
+  fi
+  if [ "$started" != 1 ]; then
+    warn "the openrelay service did not become ready; the install is complete"
+    systemctl --user status openrelay.service --no-pager 2>&1 | tail -n 20 >&2 || true
+    warn "logs: journalctl --user -u openrelay.service -e"
+  fi
+else
+  say "No systemd user session. Start it with: openrelay daemon"
 fi
 
 case ":$PATH:" in
@@ -110,10 +145,9 @@ cat <<EOF
 
   OpenRelay $tag is installed.
 
-  Run in the foreground:   openrelay daemon
-  Or as a user service:    systemctl --user daemon-reload
-                           systemctl --user enable --now openrelay.service
-  Check it:                openrelay status
+  Next step:  openrelay pair
+  Status:     openrelay status
+  Service:    systemctl --user status openrelay.service   (or: openrelay daemon)
 
   Quick guide: https://github.com/$REPO/blob/main/docs/cli-quickstart.md
 EOF
