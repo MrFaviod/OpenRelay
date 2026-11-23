@@ -49,7 +49,7 @@ Default socket: $XDG_RUNTIME_DIR/openrelay/control.sock (0700 dir, 0600 socket).
 
 const DAEMON_USAGE: &str = "\
 Usage: openrelay daemon [--socket PATH] [--state-dir PATH] [--no-quic]
-                 [--quic ADDR]
+                 [--quic ADDR | --tailscale]
                  [--identity-der PATH --identity-key PATH]
                  [--client-ca PATH --client-ca-key PATH]
                  [--identities PATH --control-grants PATH]
@@ -61,6 +61,9 @@ By default it provisions ${XDG_CONFIG_HOME:-~/.config}/openrelay (local CA,
 server certificate, empty identities and grants) and opens QUIC on
 0.0.0.0:47000. --state-dir changes the directory; the six files override it.
 --no-quic leaves the session endpoint off.
+--tailscale binds QUIC and pairing to this PC's Tailscale IPv4 (from
+`tailscale ip -4`) instead of every interface, and the pairing QR advertises
+it: the phone reaches the PC over the tailnet and no LAN port is opened.
 ";
 
 const PAIR_USAGE: &str = "\
@@ -263,6 +266,7 @@ fn cmd_daemon(rest: &[String]) -> ExitCode {
 /// Arguments specific to `openrelay daemon`.
 struct DaemonOpts {
     quic: Option<SocketAddr>,
+    tailscale: bool,
     no_quic: bool,
     state_dir: Option<PathBuf>,
     identity_der: Option<PathBuf>,
@@ -277,6 +281,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
     let mut socket: Option<PathBuf> = None;
     let mut quic: Option<SocketAddr> = None;
     let mut no_quic = false;
+    let mut tailscale = false;
     let mut state_dir: Option<PathBuf> = None;
     let mut identity_der: Option<PathBuf> = None;
     let mut identity_key: Option<PathBuf> = None;
@@ -309,6 +314,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
             "--identities" => identities = Some(take("--identities", &mut it)?),
             "--control-grants" => control_grants = Some(take("--control-grants", &mut it)?),
             "--no-quic" => no_quic = true,
+            "--tailscale" => tailscale = true,
             "--quic" => match it.next().and_then(|text| text.parse::<SocketAddr>().ok()) {
                 Some(addr) => quic = Some(addr),
                 None => {
@@ -336,6 +342,7 @@ fn parse_daemon(rest: &[String]) -> Result<(PathBuf, RuntimeConfig), ExitCode> {
     };
     let files = DaemonOpts {
         quic,
+        tailscale,
         no_quic,
         state_dir,
         identity_der,
@@ -352,6 +359,10 @@ impl DaemonOpts {
     fn into_config(self) -> Result<RuntimeConfig, ExitCode> {
         if self.no_quic && self.quic.is_some() {
             eprintln!("openrelay: --no-quic and --quic are mutually exclusive\n\n{DAEMON_USAGE}");
+            return Err(ExitCode::from(2));
+        }
+        if self.tailscale && (self.no_quic || self.quic.is_some()) {
+            eprintln!("openrelay: --tailscale excludes --quic and --no-quic\n\n{DAEMON_USAGE}");
             return Err(ExitCode::from(2));
         }
         let any_file = self.identity_der.is_some()
@@ -417,6 +428,16 @@ impl DaemonOpts {
         } else {
             match self.quic {
                 Some(addr) => Some(addr),
+                None if self.tailscale => match tailscale_ipv4() {
+                    Ok(ip) => {
+                        eprintln!("openrelay: Tailscale address {ip}");
+                        Some(SocketAddr::from((ip, 47000)))
+                    }
+                    Err(error) => {
+                        eprintln!("openrelay: --tailscale: {error}");
+                        return Err(ExitCode::from(1));
+                    }
+                },
                 None => Some(SocketAddr::from(([0, 0, 0, 0], 47000))),
             }
         };
@@ -426,6 +447,22 @@ impl DaemonOpts {
             local_device_id: "openrelay-cli-local".to_owned(),
         })
     }
+}
+
+/// This PC's Tailscale IPv4, as reported by `tailscale ip -4`.
+fn tailscale_ipv4() -> Result<std::net::Ipv4Addr, String> {
+    let output = std::process::Command::new("tailscale")
+        .args(["ip", "-4"])
+        .output()
+        .map_err(|error| format!("cannot run `tailscale ip -4`: {error}"))?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        let reason = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("`tailscale ip -4` failed: {}", reason.trim()));
+    }
+    text.lines()
+        .find_map(|line| line.trim().parse().ok())
+        .ok_or_else(|| "Tailscale reported no IPv4; is it up (`tailscale up`)?".to_owned())
 }
 
 fn cmd_status(rest: &[String]) -> ExitCode {

@@ -591,10 +591,18 @@ impl ProductRuntime {
                 _ => return Err(failure(ErrorCode::Invalid, "ttl_s out of 1..=300")),
             },
         };
+        // Con QUIC atado a una IP concreta (p. ej. la de Tailscale), el
+        // enrolamiento escucha en esa misma IP y el QR la anuncia.
+        let bound_ip = self
+            .quic_addr
+            .map(|addr| addr.ip())
+            .filter(|ip| !ip.is_unspecified());
         let host = match args.get("advertise") {
-            None | Some(Value::Null) => primary_lan_ipv4()
-                .map(IpAddr::V4)
-                .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            None | Some(Value::Null) => bound_ip.unwrap_or_else(|| {
+                primary_lan_ipv4()
+                    .map(IpAddr::V4)
+                    .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))
+            }),
             Some(Value::String(text)) => match text.parse::<IpAddr>() {
                 Ok(ip) => ip,
                 Err(_) => return Err(failure(ErrorCode::Invalid, "advertise must be an IP")),
@@ -602,7 +610,10 @@ impl ProductRuntime {
             Some(_) => return Err(failure(ErrorCode::Invalid, "advertise must be text")),
         };
         let addr = SocketAddr::new(host, ENROLL_PORT);
-        let bind = SocketAddr::new(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), ENROLL_PORT);
+        let bind = SocketAddr::new(
+            bound_ip.unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
+            ENROLL_PORT,
+        );
         let socket = UdpSocket::bind(bind)
             .map_err(|error| failure(ErrorCode::Busy, &format!("port {ENROLL_PORT}: {error}")))?;
         let owner = match args.get("owner_pid") {
