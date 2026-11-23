@@ -38,7 +38,7 @@ It stays in the foreground until Ctrl-C or SIGTERM, and never forks; there is no
 systemctl --user enable --now openrelay.service
 ```
 
-On first start the default daemon **provisions its own identity** in `${XDG_CONFIG_HOME:-~/.config}/openrelay/` and opens the session endpoint on `0.0.0.0:47000` (UDP). `--state-dir DIR` moves the state directory; `--no-quic` starts only the local control socket and creates no identity or files; `--quic ADDR` changes the bind address/port. Passing the six `--identity-*` / `--client-ca*` / `--identities` / `--control-grants` flags uses an existing provision instead of generating one (all six are required together).
+On first start the default daemon **provisions its own identity** in `${XDG_CONFIG_HOME:-~/.config}/openrelay/` and opens the session endpoint on `0.0.0.0:47000` (UDP). `--state-dir DIR` moves the state directory; `--no-quic` starts only the local control socket and creates no identity or files; `--quic ADDR` changes the bind address/port; `--tailscale` binds sessions and enrollment to the IPv4 that `tailscale ip -4` reports, so nothing listens on the LAN. Passing the six `--identity-*` / `--client-ca*` / `--identities` / `--control-grants` flags uses an existing provision instead of generating one (all six are required together).
 
 | File | Contents | Mode |
 |---|---|---|
@@ -51,7 +51,7 @@ On first start the default daemon **provisions its own identity** in `${XDG_CONF
 
 The control socket lives at `$XDG_RUNTIME_DIR/openrelay/control.sock`. Its directory is mode 0700 and the socket is 0600. It only accepts clients with the **same UID** (`SO_PEERCRED`), and it never listens on TCP.
 
-The daemon needs inbound UDP **47000** (sessions) and, while a pairing window is open, **47001** (enrollment). Open both in the host firewall; see [INSTALL.md](../INSTALL.md#firewall).
+The daemon needs inbound UDP **47000** (sessions) and, while a pairing window is open, **47001** (enrollment). Open both in the host firewall; see [INSTALL.md](../INSTALL.md#firewall). With `--tailscale` there is nothing to open: both ports are bound to the Tailscale IP, which the tailnet already reaches.
 
 ## 2. Check it
 
@@ -97,7 +97,7 @@ Approve this device? [y/N]
 | Flag | Effect |
 |---|---|
 | `--ttl N` | window length in seconds, `1`–`300` (default `120`) |
-| `--advertise IP` | address written into the QR; an IP literal, not a hostname. Defaults to the PC's primary LAN IPv4 |
+| `--advertise IP` | address written into the QR; an IP literal, not a hostname. Defaults to the daemon's bound IP (the Tailscale IP with `--tailscale`), otherwise the PC's primary LAN IPv4 |
 | `--yes` | approve the first device without prompting |
 
 The window closes on rejection, expiry, Ctrl-C, EOF on stdin or a QR failure, so the next `openrelay pair` is never blocked by a stale window; the daemon also drops a window whose CLI process died. After approval it stays open for a few seconds so the phone can receive its certificate. Only one window can exist at a time; a second attempt answers `busy`.

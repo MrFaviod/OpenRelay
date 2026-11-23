@@ -78,6 +78,20 @@ If you have a firewall, open UDP 47000–47001:
 sudo ufw allow 47000:47001/udp
 ```
 
+**Over Tailscale instead** (no LAN port open): with Tailscale up on the PC and the phone, start the daemon with `--tailscale`. It listens only on the PC's Tailscale IP, and `openrelay pair` puts that IP in the QR, so the phone connects through the tailnet. Tailscale already accepts traffic on its own interface, so there is no firewall rule to add.
+
+```sh
+openrelay daemon --tailscale
+```
+
+With the systemd unit, add the flag with `systemctl --user edit openrelay.service`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=%h/.local/bin/openrelay daemon --tailscale
+```
+
 **2. Pair the phone** (only once)
 
 ```sh
