@@ -2,6 +2,20 @@
 
 All notable changes to OpenRelay. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-23
+
+### Added
+
+- New logo and app icon, with a themed (monochrome) icon on Android 13+.
+- `openrelay daemon --tailscale` binds sessions and pairing to the PC's Tailscale address, so nothing listens on the LAN.
+- Return audio from the PC to the phone: `devices grant`, `audio.return_enabled` and a switch in the app. The daemon's `return-audio` build feature stays off by default.
+- `install.sh --update` and `install.sh --uninstall`.
+
+### Changed
+
+- The installer enables and starts the user service, and the CLI tells you how to start the daemon when it is not running.
+- The capture gain (`audio.gain_db`) is applied to the audio, and `audio.mute` set from the PC mutes the virtual microphone.
+
 ## [0.2.2] - 2026-11-20
 
 ### Changed
@@ -35,6 +49,7 @@ All notable changes to OpenRelay. The format follows [Keep a Changelog](https://
 
 First preview.
 
+[0.3.0]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/MrFaviod/OpenRelay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/MrFaviod/OpenRelay/compare/v0.1.0...v0.2.0

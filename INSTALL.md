@@ -58,7 +58,7 @@ It never uses `sudo`, and by default it writes only under your home directory.
 
 | Variable | Effect |
 |---|---|
-| `OPENRELAY_VERSION=v0.2.2` | install a specific release |
+| `OPENRELAY_VERSION=v0.3.0` | install a specific release |
 | `OPENRELAY_BIN_DIR=/some/dir` | install the binary somewhere else |
 | `OPENRELAY_NO_UNIT=1` | skip the systemd unit |
 | `OPENRELAY_NO_SERVICE=1` | install the unit but do not enable or start it |
@@ -68,13 +68,13 @@ It never uses `sudo`, and by default it writes only under your home directory.
 Example:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | OPENRELAY_VERSION=v0.2.2 sh
+curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | OPENRELAY_VERSION=v0.3.0 sh
 ```
 
 ## Linux: manual install from a release
 
 ```sh
-VERSION=0.2.2
+VERSION=0.3.0
 TARGET=x86_64-unknown-linux-gnu        # or aarch64-unknown-linux-gnu
 BASE=https://github.com/MrFaviod/OpenRelay/releases/download/v$VERSION
 
@@ -90,7 +90,7 @@ install -Dm0644 "openrelay-$VERSION/openrelay.service" ~/.config/systemd/user/op
 The release tarball contains four files:
 
 ```text
-openrelay-0.2.2/
+openrelay-0.3.0/
   openrelay           the daemon and CLI
   openrelay.service   optional systemd --user unit
   README.md           packaging notes
@@ -152,7 +152,7 @@ sudo firewall-cmd --reload
 3. Launch **OpenRelay** and grant the microphone permission. Notification permission is optional, but it lets you stop and mute from the shade.
 
 > [!NOTE]
-> The v0.2.2 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC — paste the `openrelay://pair` link or scan the QR — and streams the microphone to the PC as PCM16.
+> The v0.3.0 APK is **debug-signed** and still a preview. Enable *install from unknown sources* for the browser or file manager you download it with, then open the APK. It pairs with the PC — paste the `openrelay://pair` link or scan the QR — and streams the microphone to the PC as PCM16.
 
 ### Build a signed release APK
 

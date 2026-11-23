@@ -2,7 +2,7 @@
 
 **Status: Design constraints, not a passed security review.**
 
-Scope: Android microphone audio → Linux over the LAN, bidirectional control of configuration and state, local enrollment and authenticated sessions. Out of scope: Internet exposure, capture of audio from other apps, return audio (opt-in, not available in 0.2.2) and any remote administrative API.
+Scope: Android microphone audio → Linux over the LAN, bidirectional control of configuration and state, local enrollment and authenticated sessions. Out of scope: Internet exposure, capture of audio from other apps, return audio (opt-in, not available in 0.3.0) and any remote administrative API.
 
 ## 1. Assets
 

@@ -54,7 +54,7 @@ It installs `openrelay` into `~/.local/bin` (no root) after checking the downloa
 curl -fsSL https://raw.githubusercontent.com/MrFaviod/OpenRelay/main/install.sh | sh -s -- --update
 ```
 
-**Android** 9 or newer: get `openrelay-0.2.2-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it.
+**Android** 9 or newer: get `openrelay-0.3.0-android-debug.apk` from the [latest release](https://github.com/MrFaviod/OpenRelay/releases/latest) and install it.
 
 Manual install, building from source and per-distro packages are in the [install guide](INSTALL.md).
 

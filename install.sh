@@ -8,7 +8,7 @@
 # against the release SHA256SUMS before anything is installed.
 #
 # Environment:
-#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.2.2
+#   OPENRELAY_VERSION   release tag to install (default: latest), e.g. v0.3.0
 #   OPENRELAY_BASE_URL  download base (default: the GitHub release URL); a
 #                       file:// directory with the same asset layout also works
 #   OPENRELAY_BIN_DIR   install directory (default: ~/.local/bin)
