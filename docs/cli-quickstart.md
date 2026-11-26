@@ -62,7 +62,7 @@ openrelay status | jq .
 
 ```json
 {"ok":true,"request_id":"cli-1234-…","result":{
-  "version":"0.3.0","uptime_s":42,"sessions":1,
+  "version":"0.3.1","uptime_s":42,"sessions":1,
   "quic":"0.0.0.0:47000",
   "pipewire":{"ok":true},
   "pair":{"open":false,"pending":0,"expires_at":null}}}
@@ -70,7 +70,7 @@ openrelay status | jq .
 
 | Field | Meaning |
 |---|---|
-| `version` | daemon version (`0.3.0` in this release) |
+| `version` | daemon version (`0.3.1` in this release) |
 | `uptime_s` | seconds since the daemon started |
 | `sessions` | authorized sessions alive right now (one per streaming phone) |
 | `quic` | session bind address, or `null` when `--no-quic` |

@@ -447,11 +447,11 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openrelay-audio-core"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "openrelay-audio-linux"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "alsa",
  "openrelay-audio-core",
@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "openrelay-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "openrelay-daemon",
  "openrelay-proto",
@@ -475,14 +475,14 @@ dependencies = [
 
 [[package]]
 name = "openrelay-codec"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "opus",
 ]
 
 [[package]]
 name = "openrelay-daemon"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "openrelay-audio-core",
  "openrelay-audio-linux",
@@ -500,14 +500,14 @@ dependencies = [
 
 [[package]]
 name = "openrelay-dsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "openrelay-proto"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "openrelay-transport"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "openrelay-audio-core",

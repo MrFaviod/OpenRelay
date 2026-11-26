@@ -50,8 +50,8 @@ android {
         applicationId = "dev.openrelay.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.3.1"
 
         // Runner listo para la instrumentación; las dependencias de test están fijadas abajo.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

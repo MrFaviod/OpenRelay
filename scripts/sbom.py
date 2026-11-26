@@ -2,7 +2,7 @@
 """Genera un SBOM CycloneDX 1.5 desde Cargo.lock, sin dependencias externas.
 
 Uso:
-    python3 scripts/sbom.py --lock Cargo.lock --output dist/openrelay-0.3.0.cdx.json
+    python3 scripts/sbom.py --lock Cargo.lock --output dist/openrelay-0.3.1.cdx.json
 
 El SBOM lista cada paquete resuelto en Cargo.lock (workspace y registro) con su
 versión y su licencia, tomada de `cargo metadata --locked --all-features`. Si

@@ -1,6 +1,6 @@
 # Pairing and session security
 
-**Status: implemented since v0.2.0, current release v0.3.0.** This document describes what the daemon, the CLI and the Android app actually do. Where the implementation is weaker than the original design, it says so.
+**Status: implemented since v0.2.0, current release v0.3.1.** This document describes what the daemon, the CLI and the Android app actually do. Where the implementation is weaker than the original design, it says so.
 
 ## 1. Two surfaces
 

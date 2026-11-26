@@ -272,7 +272,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openrelay-audio-core"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "openrelay-bridge"
@@ -291,14 +291,14 @@ dependencies = [
 
 [[package]]
 name = "openrelay-codec"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "opus",
 ]
 
 [[package]]
 name = "openrelay-proto"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "openrelay-transport"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "openrelay-audio-core",
