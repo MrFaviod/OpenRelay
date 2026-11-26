@@ -154,6 +154,55 @@ fn client_advertises_opus_before_sending_it() {
     );
 }
 
+/// El micrófono entrega bloques del tamaño de su burst (144 muestras en un
+/// POCO X4 Pro con VoltageOS), no de 240. El puente debe agruparlos en frames
+/// PCM16 completos: antes cada bloque corto fallaba en `encode`, la app
+/// cerraba la sesión y reconectaba en bucle hasta agotar la cuota del daemon.
+#[test]
+fn short_capture_bursts_are_reframed_to_pcm16() {
+    let (endpoint, material, key, _keep, observed) = spawn_fixture();
+    let parts: Vec<&str> = material.trim().split(' ').collect();
+    let ca = decode_der(parts[0]);
+    let pin = SpkiPin::from_hex(parts[1]).expect("pin");
+    let client_chain = vec![decode_der(parts[2]), ca.clone()];
+
+    let mut client = ProductClient::open(Provision {
+        endpoint,
+        server_name: "localhost".into(),
+        ca_der: ca,
+        pin,
+        chain: client_chain,
+        key,
+    })
+    .expect("open");
+    client.wait_authorized().expect("autorizado");
+    client.hello().expect("hello");
+
+    // 50 bloques de 144 = 7200 muestras = 30 frames de 240.
+    let burst = [0i16; 144];
+    for _ in 0..50 {
+        client
+            .send_audio(&burst)
+            .expect("un bloque corto no debe romper la sesión");
+        thread::sleep(Duration::from_millis(3));
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && pcm16_frames(&observed) < 30 {
+        thread::sleep(Duration::from_millis(20));
+    }
+    client.close().expect("cierre");
+    assert_eq!(pcm16_frames(&observed), 30, "frames PCM16 recibidos");
+}
+
+fn pcm16_frames(observed: &Observed) -> usize {
+    observed
+        .lock()
+        .expect("observaciones")
+        .iter()
+        .filter(|item| matches!(item, Observation::Audio(1)))
+        .count()
+}
+
 fn saw_opus_audio(observed: &Observed) -> bool {
     observed
         .lock()

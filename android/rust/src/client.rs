@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use openrelay_audio_core::AudioPayload;
+use openrelay_audio_core::{AudioFormat, AudioPayload, SAMPLE_COUNT};
 use openrelay_proto::control::{
     Capabilities as PeerCapabilities, ConfigKey, ConfigValue, ErrorMsg, Feature, PeerRole,
     RemoteAction,
@@ -96,6 +96,9 @@ struct Shared {
     audio: AudioSender,
     /// Cola acotada del retorno Linux→Android; apagada por defecto.
     return_audio: ReturnQueue,
+    /// Muestras capturadas que aún no completan un frame (el burst del
+    /// dispositivo no tiene por qué ser múltiplo de 240).
+    pending: Vec<i16>,
     /// `true` cuando Java pidió el cierre: el hilo sale sin emitir `IoFault`.
     stop: bool,
 }
@@ -193,6 +196,7 @@ impl ProductClient {
             advertised: None,
             audio: AudioSender::new(),
             return_audio: ReturnQueue::new(),
+            pending: Vec::new(),
             stop: false,
         }));
         // El primer vuelo sale ya: si no, el servidor no tiene a quién contestar.
@@ -338,14 +342,28 @@ impl ProductClient {
             &guard.server_features,
             guard.advertised == Some((choice, guard.return_audio.enabled())),
         );
-        let payload = guard.audio.encode(format, samples)?;
-        match payload {
-            // PCM16 sale por el mismo `send_audio` de siempre: byte a byte igual.
-            AudioPayload::Pcm16(frame) => guard.client.send_audio(&frame).map_err(show),
-            payload @ AudioPayload::Opus(_) => {
-                guard.client.send_audio_payload(&payload).map_err(show)
+        let need = match choice.profile() {
+            Some(profile) if format == AudioFormat::Opus => profile.samples_per_frame(),
+            _ => SAMPLE_COUNT,
+        };
+        guard.pending.extend_from_slice(samples);
+        while guard.pending.len() >= need {
+            let block: Vec<i16> = guard.pending.drain(..need).collect();
+            let payload = guard.audio.encode(format, &block)?;
+            match payload {
+                // PCM16 sale por el mismo `send_audio` de siempre: byte a byte igual.
+                AudioPayload::Pcm16(frame) => guard.client.send_audio(&frame).map_err(show)?,
+                payload @ AudioPayload::Opus(_) => {
+                    guard.client.send_audio_payload(&payload).map_err(show)?
+                }
             }
         }
+        // Tope: nunca más de un frame pendiente (no acumular latencia).
+        if guard.pending.len() > need {
+            let extra = guard.pending.len() - need;
+            guard.pending.drain(..extra);
+        }
+        Ok(())
     }
 
     /// Siguiente evento, o `None` si la cola está vacía. No bloquea.
